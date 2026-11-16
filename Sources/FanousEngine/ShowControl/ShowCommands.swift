@@ -39,7 +39,7 @@ public enum ShowCommands {
     static func cue(from value: JSONValue) -> Cue? {
         guard let number = value["number"]?.double, let name = value["name"]?.string else { return nil }
         let values = (value["values"]?.array ?? []).compactMap(cueValue(from:))
-        let trigger = value["trigger"]?.string.flatMap(parseTimecode)
+        let trigger = value["trigger"]?.string.flatMap { parseTimecode($0) }
         return Cue(
             id: value["id"]?.string.flatMap(UUID.init(uuidString:)) ?? UUID(), number: number, name: name, fadeTime: value["fade"]?.double ?? 0,
             values: values, timecodeTrigger: trigger, followTime: value["follow"]?.double)
@@ -49,15 +49,20 @@ public enum ShowCommands {
         CueList(cues: (project["cues"]?.array ?? []).compactMap(cue(from:)))
     }
 
-    /// "hh:mm:ss:ff@25", 25 without "@rate"; the rate as the guide writes it ("29.97df", "29.97ndf"), the engine's label
-    /// ("29.97 DF") or the raw value ("fps2997df"), case and spaces ignored. Field ranges are not checked here: `validateCue`
-    /// refuses an out-of-range trigger (`Timecode.isValid`), while a project stored by an older build keeps its trigger armed.
-    static func parseTimecode(_ text: String) -> Timecode? {
-        let parts = text.split(separator: "@")
-        guard let time = parts.first else { return nil }
-        func key(_ s: String) -> String { s.lowercased().replacingOccurrences(of: " ", with: "") }
-        let rate = parts.count > 1 ? TimecodeRate.allCases.first { [key($0.label), $0.rawValue.lowercased()].contains(key(String(parts[1]))) } : .fps25
-        let fields = time.split(separator: ":").map { Int($0) }
+    /// "hh:mm:ss:ff@25", 25 without "@rate"; the rate as the guide writes it ("29.97df", "29.97ndf") or the engine's label
+    /// ("29.97 DF"), case and spaces ignored. `strict` (cue.add, cue.set) is the web's `parseTrigger` minus the conveniences
+    /// it normalizes before sending (`;`, spaces before `@`, surrounding whitespace): one or two digits per field, at most
+    /// one `@`. Not strict (loading a project) also takes what older builds stored: a sign or more digits (`Int`), empty
+    /// fields, more `@`s (only the first two parts read) and the raw rate value ("fps2997df"). Field ranges are not checked
+    /// here: `validateCue` refuses an out-of-range trigger (`Timecode.isValid`), while a stored project keeps its trigger armed.
+    static func parseTimecode(_ text: String, strict: Bool = false) -> Timecode? {
+        let parts = text.split(separator: "@", omittingEmptySubsequences: !strict)
+        guard let time = parts.first, !strict || parts.count <= 2 else { return nil }
+        func key(_ s: some StringProtocol) -> String { s.lowercased().replacingOccurrences(of: " ", with: "") }
+        let rate = parts.count > 1 ? TimecodeRate.allCases.first { ([key($0.label)] + (strict ? [] : [$0.rawValue.lowercased()])).contains(key(parts[1])) } : .fps25
+        let fields = time.split(separator: ":", omittingEmptySubsequences: !strict).map { field in
+            !strict || ((1...2).contains(field.count) && field.allSatisfy { ("0"..."9").contains($0) }) ? Int(field) : nil
+        }
         guard fields.count == 4, let h = fields[0], let m = fields[1], let s = fields[2], let f = fields[3], let rate else { return nil }
         return Timecode(hours: h, minutes: m, seconds: s, frames: f, rate: rate)
     }
@@ -77,7 +82,7 @@ public enum ShowCommands {
             throw CommandError.invalidArgs("every value needs fixture (\"Layer n\" / \"Master\" / \"Output n\" / \"Keystone n\"), a parameter key and raw")
         }
         if let trigger = value["trigger"], trigger != .null {
-            guard let text = trigger.string, let timecode = parseTimecode(text) else {
+            guard let text = trigger.string, let timecode = parseTimecode(text, strict: true) else {
                 throw CommandError.invalidArgs("trigger is hh:mm:ss:ff@rate, the rate 24, 25, 29.97df, 29.97ndf or 30")
             }
             guard timecode.isValid else {

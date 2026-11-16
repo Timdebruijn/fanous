@@ -64,8 +64,9 @@ export function swapSteps(cues: readonly CueDoc[], id: string, direction: -1 | 1
 }
 
 /**
- * Why a move cannot start, '' when it can: a cue of the swap holds a stored trigger (from an older build, B189) that the
- * engine refuses in cue.set, which would leave the picked cue parked at the end of the list.
+ * Why a move cannot start, '' when it can: a cue of the swap holds a stored trigger (from an older build: out of range,
+ * B189, or in a spelling parseTrigger refuses, B192) that the engine refuses in cue.set, which would leave the picked
+ * cue parked at the end of the list.
  */
 export function moveProblem(cues: readonly CueDoc[], id: string, direction: -1 | 1): string {
   const list = sortedCues(cues);

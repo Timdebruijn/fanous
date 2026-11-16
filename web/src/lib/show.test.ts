@@ -110,6 +110,34 @@ describe('swapSteps', () => {
   });
 });
 
+// B192: one table of trigger spellings with the verdict of both sides: "accept" the engine's cue.add and parseTrigger both
+// take as is, "refuse" both refuse, "web" only parseTrigger takes and normalizes before sending (`;`, spaces before `@`,
+// surrounding whitespace, empty for none). This table and triggerSpellings in
+// Tests/FanousEngineTests/ShowControlTests.swift must stay identical, row for row.
+const TRIGGER_SPELLINGS: [string, string][] = [
+  ["00:01:30:00", "accept"], ["1:2:3:4", "accept"], ["00:01:30:00@24", "accept"], ["00:01:30:00@25", "accept"],
+  ["00:01:30:00@29.97df", "accept"], ["00:01:30:00@29.97ndf", "accept"], ["00:01:30:00@29.97 DF", "accept"],
+  ["00:01:30:00@29.97 NDF", "accept"], ["00:01:30:00@29.97DF", "accept"], ["00:01:30:00@29.97 Ndf", "accept"],
+  ["00:01:30:00@30", "accept"], ["00:01:30:00@ 25", "accept"], ["00:01:30:00@25 ", "accept"],
+  ["23:59:59:24@25", "accept"], ["00:00:00:23@24", "accept"], ["00:00:00:29@29.97df", "accept"], ["00:01:00:02@29.97df", "accept"],
+  ["00:10:00:00@29.97df", "accept"], ["00:01:00:00@29.97ndf", "accept"], ["23:59:59:29@30", "accept"],
+  ["+1:00:00:00", "refuse"], ["+1:00:00:00@25", "refuse"], ["-0:00:00:00@25", "refuse"], ["000:00:00:000@25", "refuse"],
+  ["00:00:00:000@25", "refuse"], ["00::00:00:00", "refuse"], ["00:00:00:00@25@junk", "refuse"], ["00:00:00:00@@25", "refuse"],
+  ["00:00:00:00@", "refuse"], ["00:00:00:00@fps2997df", "refuse"], ["00:00:00:00@fps25", "refuse"], ["00:01:30:00@29.97", "refuse"],
+  ["00:00:10:00@50", "refuse"], ["10", "refuse"], ["00:00:10", "refuse"], ["01:30:00", "refuse"], ["a:b:c:d", "refuse"],
+  ["00:00:00:99@25", "refuse"], ["25:00:00:00@25", "refuse"], ["24:00:00:00", "refuse"], ["00:60:00:00", "refuse"],
+  ["00:00:60:00", "refuse"], ["00:00:00:25@25", "refuse"], ["00:00:00:24@24", "refuse"], ["00:00:00:30@30", "refuse"],
+  ["00:01:00:00@29.97df", "refuse"], ["00:01:00:01@29.97df", "refuse"],
+  ["", "web"], ["00:01:00;02@29.97df", "web"], ["00:00:10:29 @ 29.97 NDF", "web"], ["00:00:10:00 @25", "web"],
+  [" 00:00:10:00@25 ", "web"], ["00:00:10:00@29.97\tdf", "web"],
+];
+
+describe('trigger spellings shared with the engine (B192)', () => {
+  it.each(TRIGGER_SPELLINGS)('%j: %s', (text, verdict) => {
+    expect(parseTrigger(text).ok).toBe(verdict !== 'refuse');
+  });
+});
+
 describe('parseTrigger', () => {
   it('treats empty text as no trigger', () => {
     expect(parseTrigger('')).toEqual({ ok: true, value: null });

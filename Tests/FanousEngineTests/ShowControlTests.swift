@@ -361,6 +361,70 @@ struct ShowControlTests {
         #expect(loaded.first?.timecodeTrigger == Timecode(hours: 0, minutes: 0, seconds: 0, frames: 99, rate: .fps25))
     }
 
+    /// B192: one table of trigger spellings with the verdict of both sides: "accept" the engine's cue.add and the web's
+    /// parseTrigger both take as is, "refuse" both refuse, "web" only the web takes and normalizes before sending (`;`,
+    /// spaces before `@`, surrounding whitespace, empty for none). This table and TRIGGER_SPELLINGS in
+    /// web/src/lib/show.test.ts must stay identical, row for row.
+    static let triggerSpellings: [[String]] = [
+        ["00:01:30:00", "accept"], ["1:2:3:4", "accept"], ["00:01:30:00@24", "accept"], ["00:01:30:00@25", "accept"],
+        ["00:01:30:00@29.97df", "accept"], ["00:01:30:00@29.97ndf", "accept"], ["00:01:30:00@29.97 DF", "accept"],
+        ["00:01:30:00@29.97 NDF", "accept"], ["00:01:30:00@29.97DF", "accept"], ["00:01:30:00@29.97 Ndf", "accept"],
+        ["00:01:30:00@30", "accept"], ["00:01:30:00@ 25", "accept"], ["00:01:30:00@25 ", "accept"],
+        ["23:59:59:24@25", "accept"], ["00:00:00:23@24", "accept"], ["00:00:00:29@29.97df", "accept"], ["00:01:00:02@29.97df", "accept"],
+        ["00:10:00:00@29.97df", "accept"], ["00:01:00:00@29.97ndf", "accept"], ["23:59:59:29@30", "accept"],
+        ["+1:00:00:00", "refuse"], ["+1:00:00:00@25", "refuse"], ["-0:00:00:00@25", "refuse"], ["000:00:00:000@25", "refuse"],
+        ["00:00:00:000@25", "refuse"], ["00::00:00:00", "refuse"], ["00:00:00:00@25@junk", "refuse"], ["00:00:00:00@@25", "refuse"],
+        ["00:00:00:00@", "refuse"], ["00:00:00:00@fps2997df", "refuse"], ["00:00:00:00@fps25", "refuse"], ["00:01:30:00@29.97", "refuse"],
+        ["00:00:10:00@50", "refuse"], ["10", "refuse"], ["00:00:10", "refuse"], ["01:30:00", "refuse"], ["a:b:c:d", "refuse"],
+        ["00:00:00:99@25", "refuse"], ["25:00:00:00@25", "refuse"], ["24:00:00:00", "refuse"], ["00:60:00:00", "refuse"],
+        ["00:00:60:00", "refuse"], ["00:00:00:25@25", "refuse"], ["00:00:00:24@24", "refuse"], ["00:00:00:30@30", "refuse"],
+        ["00:01:00:00@29.97df", "refuse"], ["00:01:00:01@29.97df", "refuse"],
+        ["", "web"], ["00:01:00;02@29.97df", "web"], ["00:00:10:29 @ 29.97 NDF", "web"], ["00:00:10:00 @25", "web"],
+        [" 00:00:10:00@25 ", "web"], ["00:00:10:00@29.97\tdf", "web"],
+    ]
+
+    @Test func cueTriggerSpellingsMatchTheWeb() throws {
+        let (store, _) = testStore(outputs: 0)
+        ShowCommands.register(
+            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {}))
+        for (i, row) in Self.triggerSpellings.enumerated() {
+            let result = store.execute("cue.add", args: ["number": .number(Double(i + 1)), "name": "t", "trigger": .string(row[0])], role: .programmer)
+            #expect((result.failureCode == nil) == (row[1] == "accept"), "\(row[0].debugDescription) \(row[1])")
+        }
+        #expect(
+            store.execute("cue.add", args: ["number": 999, "name": "t", "trigger": "+1:00:00:00"], role: .programmer).failureMessage
+                == "trigger is hh:mm:ss:ff@rate, the rate 24, 25, 29.97df, 29.97ndf or 30")
+    }
+
+    /// B192: a project an older build stored with an engine-only spelling loads every cue with its trigger armed; such a cue
+    /// takes no other change until its trigger is corrected, as with an out-of-range trigger (B189).
+    @Test func storedEngineOnlyTriggerSpellingsStillLoad() throws {
+        let old: [(String, Timecode)] = [
+            ("+1:00:00:00", Timecode(hours: 1, minutes: 0, seconds: 0, frames: 0, rate: .fps25)),
+            ("000:00:00:010@25", Timecode(hours: 0, minutes: 0, seconds: 0, frames: 10, rate: .fps25)),
+            ("00:00:00:05@24@junk", Timecode(hours: 0, minutes: 0, seconds: 0, frames: 5, rate: .fps24)),
+            ("00:01:00:02@fps2997df", Timecode(hours: 0, minutes: 1, seconds: 0, frames: 2, rate: .fps2997df)),
+        ]
+        let cues: JSONValue = .array(
+            old.enumerated().map { ShowCommands.normalizedCue(["number": .number(Double($0.offset + 1)), "name": "old", "trigger": .string($0.element.0)], id: UUID().uuidString) })
+        var project = testProject(layers: 2, outputs: 0)
+        try project.set(cues, at: "/cues")
+        #expect(ShowCommands.cueList(from: project).cues.map(\.timecodeTrigger) == old.map(\.1))
+
+        let (store, _) = testStore(outputs: 0, project: project)
+        ShowCommands.register(
+            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {}))
+        let first = try #require(store.project["cues"]?.array?.first)
+        var renamed = first
+        try renamed.set("new name", at: "/name")
+        #expect(
+            store.execute("cue.set", args: ["id": first["id"] ?? .null, "cue": renamed], role: .programmer).failureMessage
+                == "trigger is hh:mm:ss:ff@rate, the rate 24, 25, 29.97df, 29.97ndf or 30")
+        try renamed.set("01:00:00:00@25", at: "/trigger")
+        _ = try store.execute("cue.set", args: ["id": first["id"] ?? .null, "cue": renamed], role: .programmer).get()
+        #expect(ShowCommands.cueList(from: store.project).cues.map(\.name) == ["new name", "old", "old", "old"])
+    }
+
     /// B163: an acknowledgement holds for this failure in this show: taken back it blocks again, leaving show mode drops
     /// it, outside show mode a pass (ok or warn, not manual) drops it, and a run is flagged by the set as it is when it lands.
     @Test func anAcknowledgementHoldsForOneFailureInOneShow() {
