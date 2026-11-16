@@ -14,8 +14,7 @@ Back to the [index](../README.md).
 Types: Fails blocks show mode until it is fixed or a programmer
 acknowledges it; Warns never blocks; Manual cannot be read and is yours to
 check; Blocking cannot be acknowledged. The "What to do" column is the
-row's fix hint, shortened; the on-screen hint for Spotlight also names
-Spotlight Privacy, which does not count, and the one for the hardware item
+row's fix hint, shortened; the on-screen hint for the hardware item
 says "M1 Pro or newer", while every chip but the base M1 passes. The checks run when
 show mode turns on, every 30 seconds while it is on, once after a resumed
 show mode, after a display mode switch in show mode, and on **Run checks**;
@@ -43,7 +42,7 @@ the id the API's `readiness.acknowledge` takes and the yellow banner names
 | No decoder errors | A layer shows an error: a missing file, a decoder error, a live input that is not running | "none", "Layer 3: no file 4 in folder 2" | Fix or replace the failing media | Fails | `decoders` |
 | Image masks found | An image mask, in the edited mapping or a stored preset, points at a file that is not a still in the library | "found, or none in use", "missing, covering nothing: Output 2 slice 1: folder 3 file 5" | Put the greyscale file in the library under that folder and file number, or change the mask (Outputs › Warp & Slices › Mask) | Warns | `maskimages` |
 | Library on a local volume | The library's volume is a network or removable one | "local", "network or removable volume" | Copy the library to the internal disk | Fails | `library` |
-| Spotlight indexing off for the library volume | `mdutil -s` says indexing is enabled on the library's volume. The on-screen hint also names Spotlight Privacy; an exclusion there does not change what the item reads | "off", "indexing enabled", "unknown" | `sudo mdutil -i off <volume>` (`/` for the internal disk), or acknowledge | Fails; manual when unreadable | `spotlight` |
+| Spotlight indexing off for the library volume | `mdutil -s` says indexing is enabled on the library's volume. It reads the volume's switch only: macOS lets only an administrator read Spotlight Privacy, so a library folder excluded there still fails | "off", "indexing enabled", "unknown" | `sudo mdutil -i off <volume>` (`/` for the internal disk), or acknowledge | Fails; manual when unreadable | `spotlight` |
 | Automatic macOS updates off | macOS is set to install updates by itself; the other update switches are not read | "off", "automatic install enabled", "unknown" | System Settings › General › Software Update › Automatic updates | Fails; manual when unreadable | `updates` |
 | Time Machine not backing up | A backup is running now | "idle", "backup running", "unknown" | Stop the backup or disable Time Machine for the show | Fails; manual when unreadable | `timemachine` |
 | Focus / Do Not Disturb on | Always manual: macOS does not tell | "cannot be read; check the menu bar" | Turn on a Focus so notifications stay off the outputs | Manual | `focus` |
