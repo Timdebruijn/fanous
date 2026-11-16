@@ -4568,7 +4568,9 @@ messages are applied on the DMX queue; cue, show and timecode commands are
 handed from there to the engine's command queue (B198, `Engine.handOver`), the
 same serial queue as MIDI's cue actions, and run there one at a time in arrival
 order, so the DMX queue never waits on the control queue or the readiness
-checks. OSC feedback
+checks; a repeated `show.mode true` is dropped while one is queued or running (a
+stale clear lets at most one more through). A command still waits behind a running
+show-mode entry on the control queue (B200). OSC feedback
 (query/notify) is later; the design keeps every OSC-settable value in `live`
 so a feedback sender is a subscriber like any client.
 

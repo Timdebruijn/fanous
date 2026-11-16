@@ -103,8 +103,10 @@ timecode messages run as the operator and show lock as the programmer, so
 all of them work while the show is locked; a refusal (show mode blocked by
 the readiness list, project load under the lock) is logged, not sent back.
 Cue, show and timecode messages run one at a time in the order they arrive
-(MIDI cue actions in the same line), but parameter messages do not wait for
-them: a parameter sent after a command can take effect before it.
+(together with MIDI cue actions), but parameter messages do not wait for
+them: a parameter sent after a command can take effect before it. A
+`/fanous/show/mode 1` that arrives while an earlier one is still waiting or
+checking is dropped (that one answers for it); "Last received" still lists it.
 Leave about 50 ms between messages sent back to back from one socket
 ([known limitations](reference/known-limitations.md#consoles-and-protocols));
 bundles, timetags and the other details are in
