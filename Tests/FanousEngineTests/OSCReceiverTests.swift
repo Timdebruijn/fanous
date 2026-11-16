@@ -15,7 +15,7 @@ struct OSCReceiverTests {
     @Test func udpBurstFromOneSocketArrivesComplete() async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let seen = Mutex<Set<Double>>([])
-        store.onCommand = { if case .cueGoto(let n) = $0 { seen.withLock { _ = $0.insert(n) } }; return true }
+        store.onCommand = { if case .cueGoto(let n) = $0 { seen.withLock { _ = $0.insert(n) } } }
         let receiver = OSCReceiver(store: store, logger: testLogger, port: 0)
         try receiver.start()
         defer { receiver.stop() }
@@ -42,7 +42,7 @@ struct OSCReceiverTests {
     @Test func layerParameterBurstResolvesEveryLayer() async throws {
         let store = DMXStore(patch: .standard(layers: 4, outputs: 1), logger: testLogger)
         let listening = Mutex(false)
-        store.onCommand = { _ in listening.withLock { $0 = true }; return true }
+        store.onCommand = { _ in listening.withLock { $0 = true } }
         let receiver = OSCReceiver(store: store, logger: testLogger, port: 0)
         try receiver.start()
         defer { receiver.stop() }
@@ -86,11 +86,12 @@ struct OSCReceiverTests {
         #expect(actual == expected)
     }
 
-    /// B176: every accepted message lands in `live.osc.recent` as it was sent; refused, unknown and malformed ones and
-    /// the feedback requests do not, and a run on one address holds one row with its last value.
-    @Test func recentListsAcceptedMessagesInTheirOSCSpelling() async throws {
+    /// B176: every message the address map takes lands in `live.osc.recent` as it was sent, a command also when the
+    /// engine then refuses it; unknown and malformed ones, a missing layer and the feedback requests do not, and a fader
+    /// sweep on one address holds one row with its last value.
+    @Test func recentListsReceivedMessagesInTheirOSCSpelling() async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
-        store.onCommand = { if case .cueGoto(99) = $0 { return false }; return true }  // the engine has no cue 99
+        store.onCommand = { _ in }
         let receiver = OSCReceiver(store: store, logger: testLogger, port: 0)
         try receiver.start()
         defer { receiver.stop() }
@@ -104,7 +105,7 @@ struct OSCReceiverTests {
         let messages =
             [
                 OSCMessage("/fanous/cue/goto", [.int32(3)]),
-                OSCMessage("/fanous/cue/goto", [.int32(99)]),  // refused by the engine
+                OSCMessage("/fanous/cue/goto", [.int32(99)]),  // handed over; whether a cue 99 exists is the engine's call
                 OSCMessage("/fanous/nothing", [.int32(1)]),  // not an address
                 OSCMessage("/fanous/layer/9/intensity", [.float32(1)]),  // no layer 9
                 OSCMessage("/fanous/layer/1/intensity", [.string("x")]),  // no value
@@ -112,9 +113,10 @@ struct OSCReceiverTests {
             ] + sweep + [OSCMessage("/fanous/layer/1/media", [.int32(2), .int32(7)]), OSCMessage("/fanous/project/load", [.string("Show A")])]
         sendUDP(messages.map { $0.encoded() }, to: port)
         await waitUntil { store.recentOSC().last?.text == "/fanous/project/load \"Show A\"" }
+        // the probe's cue/go rows (one per probe sent) come first
         #expect(
-            store.recentOSC().map(\.text) == [
-                "/fanous/cue/go", "/fanous/cue/goto 3", "/fanous/layer/1/intensity 1.0", "/fanous/layer/1/media 2 7", "/fanous/project/load \"Show A\"",
+            Array(store.recentOSC().map(\.text).drop { $0 == "/fanous/cue/go" }) == [
+                "/fanous/cue/goto 3", "/fanous/cue/goto 99", "/fanous/layer/1/intensity 1.0", "/fanous/layer/1/media 2 7", "/fanous/project/load \"Show A\"",
             ])
     }
 
@@ -145,5 +147,62 @@ struct OSCReceiverTests {
             print("OSC receive path, 500 parameter messages on \(name): \(without) allocations without the log, \(with) with it")
             #expect(with == without, "\(name): \(with) allocations with the log, \(without) without")
         }
+    }
+
+    /// Feeds a message the way `OSCReceiver.dispatch` does, on the store's queue.
+    private func feed(_ store: DMXStore, _ messages: [OSCMessage]) throws {
+        for message in messages {
+            let command = try #require(OSCAddressMap.command(for: message))
+            store.queue.sync { store.apply(command, from: message) }
+        }
+    }
+
+    /// B176: only a parameter on the address of the newest row replaces it (a fader sweep); interleaved faders, and every
+    /// cue, show, media and retrigger message, keep a row each, so a double Go or lock-then-unlock stays visible.
+    @Test func recentCollapsesOnlyAParameterSweep() throws {
+        let store = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: testLogger)
+        store.onCommand = { _ in }
+        let a = { (v: Float) in OSCMessage("/fanous/layer/1/intensity", [.float32(v)]) }
+        let b = { (v: Float) in OSCMessage("/fanous/layer/2/intensity", [.float32(v)]) }
+        try feed(store, [a(0.25), b(0.25), a(0.5), b(0.5), b(0.75), b(1)])
+        try feed(store, [OSCMessage("/fanous/cue/go"), OSCMessage("/fanous/cue/go")])
+        try feed(store, [OSCMessage("/fanous/show/lock", [.int32(1)]), OSCMessage("/fanous/show/lock", [.int32(0)])])
+        try feed(store, [OSCMessage("/fanous/cue/goto", [.int32(3)]), OSCMessage("/fanous/cue/goto", [.int32(5)])])
+        try feed(store, [OSCMessage("/fanous/layer/1/media", [.int32(1), .int32(2)]), OSCMessage("/fanous/layer/1/media", [.int32(1), .int32(3)])])
+        try feed(store, [OSCMessage("/fanous/layer/1/retrigger"), OSCMessage("/fanous/layer/1/retrigger")])
+        #expect(
+            store.recentOSC().map(\.text) == [
+                "/fanous/layer/1/intensity 0.25", "/fanous/layer/2/intensity 0.25", "/fanous/layer/1/intensity 0.5", "/fanous/layer/2/intensity 1.0",
+                "/fanous/cue/go", "/fanous/cue/go", "/fanous/show/lock 1", "/fanous/show/lock 0", "/fanous/cue/goto 3", "/fanous/cue/goto 5",
+                "/fanous/layer/1/media 1 2", "/fanous/layer/1/media 1 3", "/fanous/layer/1/retrigger", "/fanous/layer/1/retrigger",
+            ])
+    }
+
+    /// B176: the ring keeps the newest 50 rows, oldest first, after it has wrapped; times are Unix seconds of now.
+    @Test func recentKeepsTheNewestFiftyInOrder() throws {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
+        store.onCommand = { _ in }
+        let before = Date().timeIntervalSince1970
+        try feed(store, (1...120).map { OSCMessage("/fanous/cue/goto", [.int32(Int32($0))]) })
+        let recent = store.recentOSC()
+        #expect(recent.map(\.text) == (71...120).map { "/fanous/cue/goto \($0)" })
+        #expect(recent.allSatisfy { $0.at >= before - 0.1 && $0.at <= Date().timeIntervalSince1970 + 0.1 })
+    }
+
+    /// B176: a row has a small fixed upper bound however large the datagram: at most 8 arguments, strings and the
+    /// address cut to 64 characters.
+    @Test func recentRowTextIsBounded() throws {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
+        store.onCommand = { _ in }
+        let long = String(repeating: "x", count: 60_000)
+        try feed(store, [
+            OSCMessage("/fanous/cue/go", (0..<13_000).map { .int32(Int32($0)) }),
+            OSCMessage("/fanous/project/load", [.string(long)]),
+        ])
+        #expect(
+            store.recentOSC().map(\.text) == [
+                "/fanous/cue/go 0 1 2 3 4 5 6 7 … (+12992)", "/fanous/project/load \"" + String(repeating: "x", count: 64) + "…\"",
+            ])
+        #expect(DMXStore.text(OSCMessage("/" + long)).count == 65)
     }
 }

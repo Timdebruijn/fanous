@@ -84,9 +84,10 @@ public final class DMXStore: @unchecked Sendable {
     /// (Output ch 7, DESIGN.md §9.10 item 3): `publish` records one when either changes.
     private var shown = [(preset: UInt8, compare: Bool)](repeating: (0, false), count: ParameterSnapshotSlot.maxOutputs)
     private var morphs = [PresetMorph](repeating: PresetMorph(), count: ParameterSnapshotSlot.maxOutputs)
-    /// `live.osc.recent` (B176): the last accepted OSC messages as received, in a fixed ring written on the queue. Storing
-    /// a parsed message only retains its storage; the text is made when the live document asks (`recentOSC`).
-    private var oscRing = [(at: Double, message: OSCMessage)](repeating: (0, OSCMessage("")), count: DMXStore.oscRecentCount)
+    /// `live.osc.recent` (B176): the last OSC messages the address map took, as received, stamped with host time, in a
+    /// fixed ring written on the queue. Storing a parsed message only retains its storage; the text is made when the live
+    /// document asks (`recentOSC`).
+    private var oscRing = [(at: TimeInterval, message: OSCMessage)](repeating: (0, OSCMessage("")), count: DMXStore.oscRecentCount)
     private var oscNext = 0
     private var oscCount = 0
     static let oscRecentCount = 50
@@ -187,10 +188,10 @@ public final class DMXStore: @unchecked Sendable {
     }
 
     /// Cue, show and timecode commands from OSC go to the engine (Phase 7); set on the DMX queue's behalf by the engine.
-    /// Returns whether the engine took the command (false: refused, e.g. no such cue or the show locked).
-    nonisolated(unsafe) public var onCommand: (@Sendable (OSCCommand) -> Bool)?
+    nonisolated(unsafe) public var onCommand: (@Sendable (OSCCommand) -> Void)?
 
-    /// `message`: the OSC message the command came from; logged for `live.osc.recent` when the command is taken.
+    /// `message`: the OSC message the command came from, logged for `live.osc.recent` when the command reaches a
+    /// fixture or is handed to the engine (which may still refuse it, as before B176).
     func apply(_ command: OSCCommand, from message: OSCMessage? = nil) {
         let now = Self.now
         let accepted: Bool
@@ -214,23 +215,24 @@ public final class DMXStore: @unchecked Sendable {
                 publish(receivedAt: 0)
             }
         default:
-            if let onCommand { accepted = onCommand(command) } else {
-                accepted = false
-                logger.info("OSC command not wired", metadata: ["command": "\(command)"])
-            }
-        }
-        if accepted, let message { log(message) }
-    }
-
-    /// A message on the same address as the newest entry replaces it, so a fader sweep holds one row with its last value.
-    private func log(_ message: OSCMessage) {
-        let at = Date().timeIntervalSince1970
-        let newest = (oscNext + Self.oscRecentCount - 1) % Self.oscRecentCount
-        if oscCount > 0, oscRing[newest].message.address == message.address {
-            oscRing[newest] = (at, message)
+            if onCommand != nil, let message { log(message, at: now, sweeps: false) }
+            if let onCommand { onCommand(command) } else { logger.info("OSC command not wired", metadata: ["command": "\(command)"]) }
             return
         }
-        oscRing[oscNext] = (at, message)
+        // a parameter is a fader: a sweep on one address holds one row; media select and retrigger are single presses
+        if accepted, let message {
+            if case .setParameter = command { log(message, at: now, sweeps: true) } else { log(message, at: now, sweeps: false) }
+        }
+    }
+
+    /// `sweeps`: a message on the same address as the newest row replaces it (its last value and time).
+    private func log(_ message: OSCMessage, at now: TimeInterval, sweeps: Bool) {
+        let newest = (oscNext + Self.oscRecentCount - 1) % Self.oscRecentCount
+        if sweeps, oscCount > 0, oscRing[newest].message.address == message.address {
+            oscRing[newest] = (now, message)
+            return
+        }
+        oscRing[oscNext] = (now, message)
         oscNext = (oscNext + 1) % Self.oscRecentCount
         oscCount = min(oscCount + 1, Self.oscRecentCount)
     }
@@ -515,23 +517,30 @@ public final class DMXStore: @unchecked Sendable {
         let n = Self.oscRecentCount
         // copied out element by element, so the ring is never shared and the next write stays in place
         let entries = queue.sync { (0..<oscCount).map { oscRing[(oscNext - oscCount + $0 + n) % n] } }
-        return entries.map { ($0.at, Self.text($0.message)) }
+        let unix = Date().timeIntervalSince1970 - Self.now  // host time to Unix seconds
+        return entries.map { ($0.at + unix, Self.text($0.message)) }
     }
 
+    /// The row text, bounded: OSC arrives unauthenticated and the address map reads at most two arguments, so a 64 KiB
+    /// datagram must not become a 64 KiB row (sent to every client). At most 8 arguments, then "… (+n)"; the address
+    /// and each string cut to 64 characters with "…".
     static func text(_ message: OSCMessage) -> String {
-        let args = message.arguments.map { argument -> String in
+        func cut(_ s: String) -> String { s.count > 64 ? s.prefix(64) + "…" : s }
+        var parts = [cut(message.address)]
+        for argument in message.arguments.prefix(8) {
             switch argument {
-            case .int32(let v): "\(v)"
-            case .int64(let v): "\(v)"
-            case .float32(let v): "\(v)"
-            case .double(let v): "\(v)"
-            case .string(let s): "\"\(s)\""
-            case .blob(let b): "blob(\(b.count))"
-            case .timetag(let t): "\(t)"
-            case .bool, .null, .impulse: String(argument.typeTag)
+            case .int32(let v): parts.append("\(v)")
+            case .int64(let v): parts.append("\(v)")
+            case .float32(let v): parts.append("\(v)")
+            case .double(let v): parts.append("\(v)")
+            case .string(let s): parts.append("\"\(cut(s))\"")
+            case .blob(let b): parts.append("blob(\(b.count))")
+            case .timetag(let t): parts.append("\(t)")
+            case .bool, .null, .impulse: parts.append(String(argument.typeTag))
             }
         }
-        return ([message.address] + args).joined(separator: " ")
+        if message.arguments.count > 8 { parts.append("… (+\(message.arguments.count - 8))") }
+        return parts.joined(separator: " ")
     }
 
     func snapshot(at now: TimeInterval) -> LiveSnapshot {

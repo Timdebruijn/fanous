@@ -414,8 +414,8 @@ public final class Engine: @unchecked Sendable {
         self.midi = midi
         // OSC: cue, show and timecode commands (DESIGN.md §15.3); the parameter ones stay on the DMX queue
         dmx.onCommand = { [weak self] command in
-            guard let self, let store = self.store else { return false }
-            return self.runCommand(command, on: store)
+            guard let self, let store = self.store else { return }
+            self.runCommand(command, on: store)
         }
         showMode.onChange = { [weak self] on in
             guard let self else { return }
@@ -809,18 +809,14 @@ public final class Engine: @unchecked Sendable {
 
     /// Cue, show and timecode commands from OSC (DESIGN.md §15.3) and the MIDI map (B36); parameter values never get
     /// here, they go straight to the resolvers.
-    /// Whether the command was taken: a refused one (no such cue, show locked) is logged, not listed in `live.osc.recent`.
-    /// A project load counts as taken once handed to the version lookup; its refusal is only logged.
-    @discardableResult
-    private func runCommand(_ command: OSCCommand, on store: StateStore) -> Bool {
-        let result: Result<CommandResult, CommandError>
+    private func runCommand(_ command: OSCCommand, on store: StateStore) {
         switch command {
-        case .cueGo: result = store.execute("cue.go", role: .operator)
-        case .cueBack: result = store.execute("cue.back", role: .operator)
-        case .cueGoto(let number): result = store.execute("cue.goto", args: ["number": .number(number)], role: .operator)
-        case .showLock(let on): result = store.execute(on ? "show.lock" : "show.unlock", role: .programmer)
-        case .showMode(let on): result = store.execute("show.mode", args: ["on": .bool(on)], role: .operator)
-        case .timecodeEnable(let on): result = store.execute("timecode.enable", args: ["on": .bool(on)], role: .operator)
+        case .cueGo: _ = store.execute("cue.go", role: .operator)
+        case .cueBack: _ = store.execute("cue.back", role: .operator)
+        case .cueGoto(let number): _ = store.execute("cue.goto", args: ["number": .number(number)], role: .operator)
+        case .showLock(let on): _ = store.execute(on ? "show.lock" : "show.unlock", role: .programmer)
+        case .showMode(let on): _ = store.execute("show.mode", args: ["on": .bool(on)], role: .operator)
+        case .timecodeEnable(let on): _ = store.execute("timecode.enable", args: ["on": .bool(on)], role: .operator)
         case .projectLoad(let key):
             // B35: a named version (or a version id); off the DMX and feed queues, the lookup reads the versions directory
             let logger = logger
@@ -838,12 +834,8 @@ public final class Engine: @unchecked Sendable {
                     logger.warning("OSC project load refused", metadata: ["version": "\(key)", "code": "\(error.code)", "reason": "\(error.message)"])
                 }
             }
-            return true
-        default: return false
+        default: break
         }
-        guard case .failure(let error) = result else { return true }
-        logger.warning("OSC or MIDI command refused", metadata: ["command": "\(command)", "code": "\(error.code)", "reason": "\(error.message)"])
-        return false
     }
 
     /// A stable per-install UUID for CITP (MSEX 1.2 server UUID), kept next to the shell token.
