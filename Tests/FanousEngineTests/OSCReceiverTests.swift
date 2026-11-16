@@ -149,6 +149,36 @@ struct OSCReceiverTests {
         }
     }
 
+    /// B198: a command message costs the DMX queue the hand-over to the engine's command queue and nothing more; the
+    /// command itself (here a refused one: the store has none registered) runs on the command queue, not counted.
+    /// Measured in release: 3 per command; the synchronous `store.execute` before allocated 4 for the same refused
+    /// command (and 0 with a no-op `onCommand`, so `apply` itself adds nothing). A debug build allocates 4.
+    @Test(.mallocCounter)
+    func mallocCounterOSCCommandHandOver() throws {
+        try requireMallocCounter()
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
+        let state = StateStore(project: [:], logger: testLogger)
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
+        store.onCommand = { [weak engine] in engine?.handOver($0, to: state) }
+        let message = OSCMessage("/fanous/cue/go", [])
+        let command = try #require(OSCAddressMap.command(for: message))
+        func burst() -> Int {
+            store.queue.sync {
+                MallocCounter.count {
+                    var i = 0
+                    while i < 100 {
+                        store.apply(command, from: message)
+                        i += 1
+                    }
+                }
+            }
+        }
+        _ = burst()  // warm-up: the ring holds messages
+        let allocations = burst()
+        print("OSC receive path, 100 cue go messages: \(allocations) allocations on the DMX queue")
+        #expect(allocations <= (MaskTests.release ? 300 : 400), "\(allocations) allocations for 100 commands")  // debug: 4
+    }
+
     /// Feeds a message the way `OSCReceiver.dispatch` does, on the store's queue.
     private func feed(_ store: DMXStore, _ messages: [OSCMessage]) throws {
         for message in messages {

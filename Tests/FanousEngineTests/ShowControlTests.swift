@@ -469,6 +469,46 @@ struct ShowControlTests {
         #expect(seenByThirdRun.withLock { $0 } == ["new"], "the older run stored its items over the show-mode entry's")
     }
 
+    /// B198: an OSC command reaches the engine on the DMX queue; a show-mode entry whose readiness checks hang must not
+    /// hold that queue (Art-Net, sACN, OSC parameters), and commands still run one after another in arrival order.
+    /// Wires `onCommand` to the hand-over the way `Engine.start` does; the UDP receive and `start` itself are not run.
+    @Test func anOSCCommandDoesNotHoldTheDMXQueue() async throws {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
+        let release = DispatchSemaphore(value: 0)
+        let checking = Atomic<Bool>(false)
+        engine.readinessCheck = { _, _ in
+            checking.store(true, ordering: .relaxed)
+            _ = release.wait(timeout: .now() + 10)
+            return [ReadinessItem(id: "hung", title: "", state: .hard, detail: "", fix: "")]
+        }
+        defer { release.signal() }
+        let ran = Mutex<[String]>([])
+        let store = StateStore(project: [:], logger: testLogger)
+        store.register(CommandSpec(name: "show.mode", role: .operator, mutatesConfig: false, undoable: false, summary: "") { [weak engine] _, _ in
+            _ = engine?.setShowMode(true)
+            ran.withLock { $0.append("show.mode") }
+            return nil
+        })
+        for name in ["cue.go", "cue.goto"] {
+            store.register(CommandSpec(name: name, role: .operator, mutatesConfig: false, undoable: false, summary: "") { _, args in
+                ran.withLock { $0.append(name + (args["number"]?.double.map { " \($0)" } ?? "")) }
+                return nil
+            })
+        }
+        let dmx = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
+        dmx.onCommand = { [weak engine] in engine?.handOver($0, to: store) }
+        dmx.queue.async {
+            for command in [OSCCommand.showMode(true), .cueGo, .cueGoto(2), .cueGo] { dmx.apply(command) }
+        }
+        #expect(await waitUntil { checking.load(ordering: .relaxed) }, "the readiness check started")
+        let free = DispatchGroup()
+        dmx.queue.async(group: free) {}
+        #expect(try await offPool { free.wait(timeout: .now() + 1) } == .success, "the DMX queue waited for the readiness check")
+        release.signal()
+        #expect(await waitUntil { ran.withLock { $0.count } == 4 })
+        #expect(ran.withLock { $0 } == ["show.mode", "cue.go", "cue.goto 2.0", "cue.go"])
+    }
+
     @Test func readinessReflectsTheContextAndRunsEveryProbe() {
         var context = ReadinessContext()
         context.universesSilent = ["artnet:0.0.1"]

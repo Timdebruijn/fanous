@@ -142,6 +142,11 @@ public final class Engine: @unchecked Sendable {
     private var lastOSCLoad: (id: String, at: TimeInterval)?
     static let oscLoadRepeatWindow: TimeInterval = 2
     let feedQueue = DispatchQueue(label: "org.fanous.feed", qos: .utility)
+    /// B198: OSC (from the DMX queue) and MIDI (from the MIDI queue) commands run here one at a time, in the order they
+    /// were handed over, so neither queue waits on the control queue or the readiness checks.
+    private let commandQueue = DispatchQueue(label: "org.fanous.commands", qos: .userInitiated)
+    /// Set first in `stop()`: a command still queued does nothing.
+    private let commandsStopped = Atomic<Bool>(false)
     public let metrics = MetricsRing()
 
     /// The command registry as `fanousd protocol-dts` sees it: no engine needed.
@@ -403,7 +408,7 @@ public final class Engine: @unchecked Sendable {
                 runReadiness: { [weak self] in self?.runReadiness() }))
         // MIDI control (B36): cue actions run as commands like OSC's; parameter values go straight to the resolvers
         let midi = MIDIInput(dmx: dmx, logger: logger)
-        midi.onCue = { [weak self] in self?.runCommand($0, on: store) }
+        midi.onCue = { [weak self] in self?.handOver($0, to: store) }
         midi.onLearn = { mapping in
             guard let args = try? JSONValue(encoding: mapping) else { return "cannot encode" }
             if case .failure(let error) = store.execute("midi.map.set", args: args, role: .programmer) { return error.message }
@@ -418,7 +423,7 @@ public final class Engine: @unchecked Sendable {
         // OSC: cue, show and timecode commands (DESIGN.md §15.3); the parameter ones stay on the DMX queue
         dmx.onCommand = { [weak self] command in
             guard let self, let store = self.store else { return }
-            self.runCommand(command, on: store)
+            self.handOver(command, to: store)
         }
         showMode.onChange = { [weak self] on in
             guard let self else { return }
@@ -809,6 +814,16 @@ public final class Engine: @unchecked Sendable {
     }
 
     // MARK: Show control
+
+    /// B198: the DMX and MIDI queues hand a command over and go on; it runs on `commandQueue` after the ones before it.
+    /// Three allocations per command in a release build (the block and its captures), at operator rate; the synchronous
+    /// `store.execute` before allocated at least four. Parameter values never get here.
+    func handOver(_ command: OSCCommand, to store: StateStore) {
+        commandQueue.async { [weak self] in
+            guard let self, !self.commandsStopped.load(ordering: .relaxed) else { return }
+            self.runCommand(command, on: store)
+        }
+    }
 
     /// Cue, show and timecode commands from OSC (DESIGN.md §15.3) and the MIDI map (B36); parameter values never get
     /// here, they go straight to the resolvers.
@@ -1798,6 +1813,10 @@ public final class Engine: @unchecked Sendable {
     }
 
     public func stop() {
+        // B198: no command runs against what is torn down below; the one running finishes first (a show-mode entry
+        // waits for its readiness checks, at most the probe timeout)
+        commandsStopped.store(true, ordering: .relaxed)
+        commandQueue.sync {}
         liveTimer?.cancel()
         feedQueue.sync {
             dmxTimer?.cancel()
