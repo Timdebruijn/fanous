@@ -41,8 +41,8 @@ Fanous Library/
 |---|---|
 | The number | The first one to three digits of the folder or file name, 1 to 255. Anything may follow: `001_Name`, `12-Show`, `7 intro.mov` |
 | Invalid names | No digits in front, 0, above 255, four or more digits, or a duplicate number in the same folder (the name that sorts first keeps the number). Such items are listed with a red **invalid name** badge and the reason, and cannot be reached from the console: rename them in Finder. Every file in a folder with an invalid number is invalid with it |
-| Unreadable | A file macOS cannot open at all (a `.webm`, `.mkv`, `.mxf`, `.wmv` or `.flv`, whose reason reads "AVFoundation cannot open .webm files"; a damaged file; a sub-folder that is no image sequence) shows a red **unreadable** badge with the reason and no Transcode button: convert it on another machine |
-| Ignored | Folders and files whose names start with `_` or `.`, and files that are not media: a file is media when it is a still, a `.mov`, `.mp4`, `.m4v`, `.avi`, `.mkv` or `.mxf`, or any other file macOS knows as a movie (`.webm`, `.mpg`, `.m2ts`, `.wmv`, `.flv`, `.3gp`, …) |
+| Unreadable | A file macOS cannot open at all (a `.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`, `.f4v` or `.divx`, whose reason reads "AVFoundation cannot open .webm files", or "Cannot Open" for an `.mkv` or `.mxf` an older Fanous version read and that has not changed since; a damaged file; a sub-folder that is no image sequence) shows a red **unreadable** badge with the reason and no Transcode button: convert it on another machine |
+| Ignored | Folders and files whose names start with `_` or `.`, and files that are not media: a file is media when it is a still or has one of these extensions: `.mov`, `.mp4`, `.m4v`, `.avi`, `.mkv`, `.mxf`, `.webm`, `.mpg`, `.mpeg`, `.m2ts`, `.mts`, `.ts`, `.wmv`, `.flv`, `.3gp`, `.3g2`, `.ogv`, `.vob`, `.dv`, `.qt`, `.m2v`, `.f4v`, `.asf`, `.divx` (a TypeScript `.ts` file therefore shows as unreadable). The list is the same on every Mac |
 | Watched | A change in Finder shows up within a moment; **Rescan** on the Media screen forces it |
 | Folder 0 | Not on disk: built-in content and live inputs ([Built-in content](reference/built-in-content.md)) |
 
@@ -101,15 +101,18 @@ stored whole, so the player can jump, scrub, reverse and chase timecode):
 Everything else macOS can open shows a yellow **needs transcode** badge and
 cannot be put on a layer until it is transcoded: H.264, HEVC and every other
 codec, also in a `.mov`; a ProRes or HAP file in another container (`.mp4`,
-`.m4v`, `.3gp`, …); phone footage with a rotation flag; and image sequences.
-Long-GOP codecs such as H.264 are refused on purpose: they cannot scrub, run
-in reverse or chase timecode reliably. Every file macOS knows as a movie is
-listed, also a container macOS cannot open (`.webm`, `.mkv`, `.mxf`, `.wmv`,
-`.flv`): it reads red **unreadable**, "AVFoundation cannot open .webm files".
-Convert it on another machine. A newly listed container never takes a number
-from a `.mov`, `.mp4`, `.m4v`, `.avi`, `.mkv` or `.mxf` file, a still or a
-sequence in the same folder: on a shared number it is the duplicate. A file
-that needs a transcode has no thumbnail: its tile is black.
+`.m4v`, `.qt`, `.3gp`, `.3g2`, …); phone footage with a rotation flag; and
+image sequences. Long-GOP codecs such as H.264 are refused on purpose: they
+cannot scrub, run in reverse or chase timecode reliably. A container macOS
+cannot open (`.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`,
+`.f4v`, `.divx`) is listed too and reads red **unreadable**, "AVFoundation
+cannot open .webm files" (an `.mkv` or `.mxf` read by an older Fanous
+version keeps "Cannot Open" until the file changes). Convert it on another
+machine. A file with an extension after `.mxf` in the list above never takes
+a number from a `.mov`, `.mp4`, `.m4v`, `.avi`, `.mkv` or `.mxf` file, a
+still or a sequence folder in the same folder: on a shared number it is the
+duplicate. A file that needs a transcode has no thumbnail: its tile is
+black.
 
 <img src="images/media-needs-transcode.png" width="218" alt="A tile with the yellow needs transcode badge, the line H.264 · 720p25, the codec list reading HAP Q and the Transcode button">
 
@@ -121,7 +124,7 @@ flowchart TD
   kind -- "a still" --> still["Plays as it is"]
   kind -- "a .mov in ProRes or HAP, not rotated" --> native["Plays as it is"]
   kind -- "a folder of frames" --> seq["Yellow: needs transcode.<br>Pick a codec, press Transcode"]
-  kind -- "any other movie" --> other{"Does macOS open it?<br>(not .webm, .mkv, .mxf, .wmv, .flv)"}
+  kind -- "any other movie" --> other{"Does macOS open it?<br>(not .webm, .mkv, .mxf, .wmv, .flv,<br>.ogv, .asf, .f4v, .divx)"}
   other -- no --> skipped["Red unreadable, with the reason:<br>convert it on another machine"]
   other -- yes --> hap{"HAP inside?"}
   hap -- yes --> haphand["Cannot be transcoded: remux it<br>to a .mov on another machine"]

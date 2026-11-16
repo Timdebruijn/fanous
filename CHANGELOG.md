@@ -10,8 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Library: a `.webm`, `.mpg`, `.m2ts`, `.wmv`, `.flv` or other movie file is listed instead of skipped: needs transcode
-  when AVFoundation opens it, unreadable "AVFoundation cannot open .webm files" when not (B161, PR #342).
+- Library: 18 more video containers (`.webm`, `.mpg`, `.m2ts`, `.ts`, `.wmv`, `.flv`, `.3gp`, …) are listed instead of
+  skipped: needs transcode when AVFoundation opens the file, unreadable "AVFoundation cannot open .webm files" when not.
+  A numbered one is a CITP/MSEX media element too: its folder's element count changes and later elements shift by one
+  (DMX folder/file numbers do not change; an MSEX 1.0/1.1 console keeps its cached list until refreshed) (B161, PR #342).
 - Release: 1.0.0-rc.6 is on GitHub as a pre-release with the signed, notarized dmg, built from main 6adbc5c
   (PR #334).
 
