@@ -11,7 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Ingest: a file macOS cannot open fails with the library's reason ("AVFoundation cannot open .webm files") instead of
-  "Cannot Open", and a transcode of a file the library already found unreadable is refused at once, B194 (PR #N).
+  "Cannot Open", and a transcode of a file the library already found unreadable is refused at once, B194 (PR #357).
 - Release: 1.0.0-rc.9 is on GitHub as a pre-release with the signed, notarized dmg, built from main e99c648
   (PR #353).
 
