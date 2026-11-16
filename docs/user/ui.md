@@ -209,7 +209,7 @@ the projection ([Warp, slices and masks](warp-and-masks.md#remote-aligning-from-
 |---|---|
 | monitor | Look. The only command is the list of project versions |
 | operator | Cues (Go, Back, Go to), show mode on or off, run the readiness list, the timecode on/off switch. All of these also while the show is locked |
-| programmer | Everything: patch, media, outputs, cue editing, acknowledging a readiness item, passwords, show lock |
+| programmer | Everything: patch, media, outputs, cue editing, acknowledging a readiness item and taking it back, passwords, show lock |
 
 The status bar and the login dialog write the roles with a capital
 (**Programmer**); the guide writes the concept in lowercase. DMX from the
@@ -257,8 +257,8 @@ Outputs screen stay enabled under the show lock and the engine refuses the
 change with the yellow banner instead. The outcome is the same.
 
 **What keeps working while the show is locked:** Go, Back and Go to, show
-mode on and off, the timecode switch, Run checks and Acknowledge on the
-System screen, Save version…, logging in and out, and everything the console
+mode on and off, the timecode switch, Run checks, Acknowledge and Take back
+on the System screen, Save version…, logging in and out, and everything the console
 sends. Everything that changes the setup is
 refused: patch, media, outputs, warp, cues, timecode settings, MIDI maps,
 Control and Keep in the layer panel (Release is greyed in the UI, though the

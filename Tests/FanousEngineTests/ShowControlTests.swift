@@ -239,7 +239,7 @@ struct ShowControlTests {
     @Test func numberlessCueAddIsCueZeroOnce() throws {
         let (store, _) = testStore(outputs: 0)
         ShowCommands.register(
-            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _ in }, runReadiness: {}))
+            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {}))
         _ = try store.execute("cue.add", args: ["name": "first"], role: .programmer).get()
         #expect(store.execute("cue.add", args: ["name": "second"], role: .programmer).failureCode == "invalidArgs")
         #expect(store.execute("cue.add", args: ["number": 0, "name": "zero"], role: .programmer).failureCode == "invalidArgs")
@@ -258,7 +258,7 @@ struct ShowControlTests {
             on: store,
             hooks: ShowCommands.Hooks(
                 go: { fired.withLock { $0.append("go") } }, back: { fired.withLock { $0.append("back") } }, goto: { number in fired.withLock { $0.append("goto \(number)") } },
-                showMode: { _ in ["power"] }, acknowledge: { id in fired.withLock { $0.append("ack \(id)") } }, runReadiness: { fired.withLock { $0.append("run") } }))
+                showMode: { _ in ["power"] }, acknowledge: { id, on in fired.withLock { $0.append("\(on ? "ack" : "unack") \(id)") } }, runReadiness: { fired.withLock { $0.append("run") } }))
         let id = try store.execute(
             "cue.add",
             args: [
@@ -286,6 +286,8 @@ struct ShowControlTests {
         #expect(ShowCommands.cueList(from: store.project).cues.count == 1)
         #expect(store.execute("show.mode", args: ["on": true], role: .operator).failureCode == "notReady")
         _ = try store.execute("readiness.acknowledge", args: ["id": "power"], role: .programmer).get()
+        #expect(store.execute("readiness.unacknowledge", args: ["id": "power"], role: .operator).failureCode == "forbidden")
+        _ = try store.execute("readiness.unacknowledge", args: ["id": "power"], role: .programmer).get()
         _ = try store.execute("timecode.set", args: ["path": "/source", "value": "mtc"], role: .programmer).get()
         _ = try store.execute("timecode.set", args: ["path": "/layerOffsets/3", "value": 12], role: .programmer).get()
         let settings = ShowCommands.timecodeSettings(from: store.project)
@@ -298,7 +300,7 @@ struct ShowControlTests {
         #expect(ltc.source == .ltc && ltc.device == "UMC404HD" && ltc.channel == 2 && ltc.enabled == nil && ltc.layerOffsets["3"] == 12)
         _ = try store.execute("undo", role: .programmer).get()
         #expect(ShowCommands.timecodeSettings(from: store.project).source == .mtc)
-        #expect(fired.withLock { $0 } == ["go", "goto 1.5", "ack power"])
+        #expect(fired.withLock { $0 } == ["go", "goto 1.5", "ack power", "unack power"])
     }
 
     /// B159: every rate spelling the guide and the cue editor use parses, and cue.add refuses a trigger that does not.
@@ -313,7 +315,7 @@ struct ShowControlTests {
         #expect(ShowCommands.parseTimecode("00:01:30:00@29.97") == nil)
         let (store, _) = testStore(outputs: 0)
         ShowCommands.register(
-            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _ in }, runReadiness: {}))
+            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {}))
         #expect(store.execute("cue.add", args: ["number": 1, "name": "typo", "trigger": "00:01:30:00@29.97"], role: .programmer).failureCode == "invalidArgs")
         #expect(store.execute("cue.add", args: ["number": 2, "name": "short", "trigger": "01:30:00"], role: .programmer).failureCode == "invalidArgs")
         _ = try store.execute("cue.add", args: ["number": 3, "name": "ndf", "trigger": "00:01:30:00@29.97ndf"], role: .programmer).get()
@@ -327,7 +329,7 @@ struct ShowControlTests {
     @Test func cueTriggerFieldRanges() throws {
         let (store, _) = testStore(outputs: 0)
         ShowCommands.register(
-            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _ in }, runReadiness: {}))
+            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {}))
         let bad = [
             "00:00:00:99@25", "25:00:00:00@25", "00:60:00:00", "00:00:60:00", "00:00:00:25@25", "00:00:00:24@24", "00:00:00:30@30",
             "00:01:00:00@29.97df", "00:01:00:01@29.97df",
@@ -357,6 +359,52 @@ struct ShowControlTests {
         #expect(loaded.count == bad.count)
         #expect(loaded.allSatisfy { $0.timecodeTrigger != nil })
         #expect(loaded.first?.timecodeTrigger == Timecode(hours: 0, minutes: 0, seconds: 0, frames: 99, rate: .fps25))
+    }
+
+    /// B163: an acknowledgement holds for this failure in this show: taken back it blocks again, leaving show mode drops
+    /// it, outside show mode a pass (ok or warn, not manual) drops it, and a run is flagged by the set as it is when it lands.
+    @Test func anAcknowledgementHoldsForOneFailureInOneShow() {
+        /// `acknowledged`: what the run read from the set when it started (Readiness.check flags it).
+        func run(_ state: ReadinessItem.State, detail: String = "lost: [1]", acknowledged: Bool = true) -> [ReadinessItem] {
+            [ReadinessItem(id: "outputs", title: "All outputs bound to their displays", state: state, detail: detail, fix: "", acknowledged: acknowledged)]
+        }
+        var ledger = ReadinessLedger()
+        ledger.store(run(.fail, acknowledged: false), at: 1, showMode: false)
+        #expect(ledger.items[0].blocks)
+        ledger.acknowledge("outputs", true)
+        #expect(!ledger.items[0].blocks && ledger.acknowledged == ["outputs"])
+        // another failure detail keeps it: no detail tracking
+        ledger.store(run(.fail, detail: "unassigned: [2]"), at: 2, showMode: false)
+        #expect(!ledger.items[0].blocks)
+        ledger.acknowledge("outputs", false)
+        #expect(ledger.items[0].blocks && ledger.acknowledged.isEmpty)
+        // a run that read the old set (acknowledged when it started) lands after the take-back: it blocks
+        ledger.store(run(.fail), at: 3, showMode: false)
+        #expect(ledger.items[0].blocks)
+        // in show mode a pass keeps it (the camera passes while no cue uses it): the next failure is still accepted
+        ledger.acknowledge("outputs", true)
+        ledger.store(run(.ok), at: 4, showMode: true)
+        ledger.store(run(.fail), at: 5, showMode: true)
+        #expect(!ledger.items[0].blocks && ledger.checkedAt == 5)
+        // outside show mode manual (unreadable) keeps it; ok and warn drop it, so fail → pass → fail needs a new one
+        ledger.store(run(.manual), at: 6, showMode: false)
+        #expect(ledger.acknowledged == ["outputs"])
+        ledger.store(run(.ok), at: 7, showMode: false)
+        #expect(ledger.acknowledged.isEmpty)
+        ledger.acknowledge("outputs", true)
+        ledger.store(run(.warn), at: 8, showMode: false)
+        #expect(ledger.acknowledged.isEmpty && !ledger.items[0].acknowledged)
+        ledger.store(run(.fail, acknowledged: false), at: 9, showMode: false)
+        #expect(ledger.items[0].blocks)
+        // a run in flight that sampled ok before the programmer acknowledged the red row drops nothing
+        ledger.acknowledge("outputs", true)
+        ledger.store(run(.ok, acknowledged: false), at: 10, showMode: false)
+        #expect(ledger.acknowledged == ["outputs"])
+        // leaving show mode drops every acknowledgement, also one for an item the last run did not show
+        ledger.acknowledge("spotlight", true)
+        ledger.store(run(.fail), at: 11, showMode: true)
+        ledger.leaveShow()
+        #expect(ledger.items[0].blocks && ledger.acknowledged.isEmpty)
     }
 
     /// B144: a Mac without a ProRes engine fails the "Supported hardware" item hard; acknowledging does not unblock it.

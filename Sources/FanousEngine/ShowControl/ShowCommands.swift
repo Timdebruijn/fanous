@@ -108,7 +108,8 @@ public enum ShowCommands {
         public var goto: @Sendable (Double) -> Void
         /// Enter (true) or leave show mode; returns the ids of the readiness items that block, or nil when it happened.
         public var showMode: @Sendable (Bool) -> [String]?
-        public var acknowledge: @Sendable (String) -> Void
+        /// Acknowledge (true) or take back (false) a readiness item's acknowledgement.
+        public var acknowledge: @Sendable (_ id: String, _ on: Bool) -> Void
         public var runReadiness: @Sendable () -> Void
     }
 
@@ -189,7 +190,12 @@ public enum ShowCommands {
         })
         store.register(CommandSpec(name: "readiness.acknowledge", role: .programmer, mutatesConfig: false, undoable: false, summary: "Acknowledge a failed readiness item so show mode can be entered.", argsType: "{ id: string }") { _, args in
             guard let id = args["id"]?.string else { throw CommandError.invalidArgs("args: { id }") }
-            hooks.acknowledge(id)
+            hooks.acknowledge(id, true)
+            return nil
+        })
+        store.register(CommandSpec(name: "readiness.unacknowledge", role: .programmer, mutatesConfig: false, undoable: false, summary: "Take back a readiness item's acknowledgement; a failed item blocks show mode again.", argsType: "{ id: string }") { _, args in
+            guard let id = args["id"]?.string else { throw CommandError.invalidArgs("args: { id }") }
+            hooks.acknowledge(id, false)
             return nil
         })
     }

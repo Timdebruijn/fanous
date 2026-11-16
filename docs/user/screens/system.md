@@ -54,12 +54,14 @@ a planned Restart, Shut Down or Log Out leaves show mode.
 | Header pill | **ready** (green), **not ready** (red), **not checked** (yellow); "checked hh:mm:ss" or "checked never" |
 | **Run checks** | Runs the list now (operator); show mode runs it when it turns on and every 30 s while on |
 | Banners (show mode on) | Yellow "Show mode resumed after the engine restarted at HH:MM. The engine stopped uncleanly during the show; check the outputs and the log." (after a deliberate Restart Engine the second sentence reads "Engine › Restart Engine kept show mode on; check the outputs."); red "Show mode is on with blocking items: …" |
-| Item row | A dot, the title, what it found in monospace, a fix hint when it is not ok, and **Acknowledge** (programmer) for a failed item, or a badge. Acknowledging accepts the risk: show mode can then start although the item still fails. Do it only for something you decided on purpose, such as a spare display that is not connected |
+| Item row | A dot, the title, what it found in monospace, a fix hint when it is not ok, and **Acknowledge** (programmer) for a failed item, or a badge. Acknowledging accepts the risk: show mode can then start although the item still fails. Do it only for something you decided on purpose, such as a spare display that is not connected. On an acknowledged row the same button reads **Take back** (programmer): the item blocks again |
 | Badges | **warning** (yellow, never blocks), **blocking** (red, cannot be acknowledged: Supported hardware), **acknowledged** (yellow), **manual** (grey outline: Fanous cannot read it, check by hand). A **failed** item (red dot) shows the Acknowledge button instead of a badge |
 
 The 24 items with their thresholds and fixes:
 [Readiness items](../reference/readiness.md). An
-acknowledgement holds until the engine restarts. Empty: "No checks have run
+acknowledgement ends when it is taken back, show mode is left, the engine
+restarts, or (only outside show mode) the item passes a check: green or
+warning; a manual (unreadable) result keeps it. Empty: "No checks have run
 yet. Run the checks, or enter show mode, which runs them."
 
 ## Live metrics

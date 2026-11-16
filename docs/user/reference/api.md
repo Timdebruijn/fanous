@@ -233,9 +233,10 @@ while the show is locked. A fixture is written `Layer n`, `Master`,
 | `project.deleteVersion` | `id` | Deletes a named version | programmer | refused | no |
 | `readiness.run` | none | Runs the readiness checks | operator | allowed | no |
 | `readiness.acknowledge` | `id` | Acknowledges a failed item so show mode can start | programmer | allowed | no |
+| `readiness.unacknowledge` | `id` | Takes an acknowledgement back; a failed item blocks again | programmer | allowed | no |
 | `roles.setPassword` | `role, password or null` | Sets or clears a role's password | programmer | refused | no |
 | `show.lock`, `show.unlock` | none | The show lock | programmer | allowed | no |
-| `show.mode` | `on` | Enters or leaves show mode; refused with the blocking items | operator | allowed | no |
+| `show.mode` | `on` | Enters or leaves show mode; refused with the blocking items. `on: true` while show mode is on does nothing | operator | allowed | no |
 | `sync.set` | `interface?, port?, target?` | The sync settings; refused in show mode | programmer | refused | no |
 | `syphon.forget` | `file?` | Frees a Syphon number (150–169) | programmer | refused | yes |
 | `syphon.renumber` | `file, to` | Moves a Syphon server to another number; refused in show mode | programmer | refused | yes |

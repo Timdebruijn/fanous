@@ -186,6 +186,42 @@ public struct ReadinessItem: Sendable, Equatable, Identifiable {
     public var blocks: Bool { (state == .fail && !acknowledged) || state == .hard }
 }
 
+/// The last readiness run and the operator's acknowledgements, kept in memory only (B163): an acknowledgement holds
+/// for this failure in this show. It ends when taken back, when show mode is left, and outside show mode when its item
+/// passes a run; in show mode a pass keeps it, since items such as the camera pass only while no cue uses what they check.
+struct ReadinessLedger {
+    private(set) var items: [ReadinessItem] = []
+    private(set) var acknowledged: Set<String> = []
+    private(set) var checkedAt: Double = 0
+
+    /// A run's items flagged by the acknowledgements as they are now, not as they were when the run started. Outside
+    /// show mode a pass (ok or warn; manual is unreadable, not a pass) drops an acknowledgement, but only one the run
+    /// read when it started (`checked` carries it as `acknowledged`): one made while the run was in flight stays.
+    mutating func store(_ checked: [ReadinessItem], at time: Double, showMode: Bool) {
+        if !showMode {
+            for item in checked where item.acknowledged && (item.state == .ok || item.state == .warn) { acknowledged.remove(item.id) }
+        }
+        items = checked
+        checkedAt = time
+        reflag()
+    }
+
+    /// The stored items too, so the UI sees it now and not at the next 30 s run.
+    mutating func acknowledge(_ id: String, _ on: Bool) {
+        if on { acknowledged.insert(id) } else { acknowledged.remove(id) }
+        reflag()
+    }
+
+    mutating func leaveShow() {
+        acknowledged = []
+        reflag()
+    }
+
+    private mutating func reflag() {
+        for i in items.indices { items[i].acknowledged = acknowledged.contains(items[i].id) }
+    }
+}
+
 /// What the checks look at; filled by the engine so the checks stay testable.
 public struct ReadinessContext: Sendable {
     public var universesSilent: [String] = []

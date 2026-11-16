@@ -94,7 +94,7 @@ public final class Engine: @unchecked Sendable {
     private var cues: CueRunner?
     private var lastCues = CueList()
     private let showMode: ShowModeController
-    private let readiness = Mutex<(items: [ReadinessItem], acknowledged: Set<String>, checkedAt: Double)>(([], [], 0))
+    private let readiness = Mutex(ReadinessLedger())
     private var readinessTimer: DispatchSourceTimer?
     /// When show mode came back by itself at start (live `show.resumedAt`) and whether that was a kept-for-restart one
     /// rather than an unclean stop (live `show.resumedRestart`, B181); cleared when show mode is left.
@@ -143,7 +143,7 @@ public final class Engine: @unchecked Sendable {
         let logger = Logger(label: "protocol")
         let store = StateStore(project: [:], logger: logger)
         ProjectDocument.registerCommands(on: store, auth: RoleAuth(settingsURL: nil, shellTokenURL: nil, logger: logger))
-        ShowCommands.register(on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in nil }, acknowledge: { _ in }, runReadiness: {}))
+        ShowCommands.register(on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in nil }, acknowledge: { _, _ in }, runReadiness: {}))
         ControlCommands.register(on: store, hooks: ControlCommands.Hooks(set: { _, _, _ in }, release: { _ in }, keep: { _ in }))
         MIDICommands.register(on: store, learn: { _, _ in })
         ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger).registerCommands(on: store)
@@ -390,12 +390,8 @@ public final class Engine: @unchecked Sendable {
                 go: { cues.go(); oscFeedback?.invalidate(prefix: "/fanous/cue") }, back: { cues.back(); oscFeedback?.invalidate(prefix: "/fanous/cue") },
                 goto: { cues.goto($0); oscFeedback?.invalidate(prefix: "/fanous/cue") },
                 showMode: { [weak self] on in self?.setShowMode(on) ?? nil },
-                acknowledge: { [weak self] id in
-                    // flag the stored items too, so the UI sees it now and not at the next 30 s run
-                    self?.readiness.withLock { r in
-                        r.acknowledged.insert(id)
-                        for i in r.items.indices where r.items[i].id == id { r.items[i].acknowledged = true }
-                    }
+                acknowledge: { [weak self] id, on in
+                    self?.readiness.withLock { $0.acknowledge(id, on) }
                     self?.publishReadiness()
                 },
                 runReadiness: { [weak self] in self?.runReadiness() }))
@@ -1132,7 +1128,7 @@ public final class Engine: @unchecked Sendable {
         feedQueue.async { [self] in
             let acknowledged = readiness.withLock { $0.acknowledged }
             let items = Readiness.check(context, acknowledged: acknowledged)
-            readiness.withLock { $0.items = items; $0.checkedAt = Date().timeIntervalSince1970 }
+            readiness.withLock { $0.store(items, at: Date().timeIntervalSince1970, showMode: showMode.isOn) }
             publishReadiness()
         }
     }
@@ -1144,13 +1140,20 @@ public final class Engine: @unchecked Sendable {
     /// `show.mode`: entering runs the checks synchronously and refuses with the blocking item ids.
     private func setShowMode(_ on: Bool) -> [String]? {
         if !on {
+            if showMode.isOn { readiness.withLock { $0.leaveShow() } }  // B163: an acknowledgement holds for one show
             showMode.leave()
+            publishReadiness()
             return nil
         }
+        // already on: a console that repeats /fanous/show/mode 1 must not run the entry checks again, which drop an
+        // acknowledgement on a pass as if show mode were off
+        if showMode.isOn { return nil }
         if librarySwitches.load(ordering: .relaxed) > 0 { return ["libraryRootChanging"] }  // B51: a moment, not a readiness item
         let acknowledged = readiness.withLock { $0.acknowledged }
-        let items = Readiness.check(readinessContext(), acknowledged: acknowledged)
-        readiness.withLock { $0.items = items; $0.checkedAt = Date().timeIntervalSince1970 }
+        let checked = Readiness.check(readinessContext(), acknowledged: acknowledged)
+        // decided on the set as it is under the lock (a feed-queue run may have stored meanwhile); show mode is still
+        // off here, so an item that passes now drops its acknowledgement: it needs none to enter
+        let items = readiness.withLock { $0.store(checked, at: Date().timeIntervalSince1970, showMode: false); return $0.items }
         let blocking = items.filter(\.blocks).map(\.id)
         if !blocking.isEmpty { return blocking }
         showMode.enter()

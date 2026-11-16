@@ -20,6 +20,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   29.97df numbers), and Move up/down names the cue to correct instead of parking a cue at the end when one of the
   two holds such a trigger (PR #336).
 - OSC panel: "Last received" lists every message received on a known address, as sent (`/fanous/cue/goto 3`), parameter, media and retrigger messages included; a fader sweep on one address is one row (PR #338)
+- Readiness: an acknowledgement drops when show mode is left or, outside show mode, when its item passes a check,
+  and Take back (`readiness.unacknowledge`, programmer) withdraws it (B163) (PR #341).
 - Release: 1.0.0-rc.6 is on GitHub as a pre-release with the signed, notarized dmg, built from main 6adbc5c
   (PR #334).
 - The System screen's resume banner tells a deliberate Engine › Restart Engine from an unclean stop; the live document carries `show.resumedRestart` (B181) (PR #340)

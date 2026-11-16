@@ -56,6 +56,7 @@ export type CommandName =
   | 'project.versions'
   | 'readiness.acknowledge'
   | 'readiness.run'
+  | 'readiness.unacknowledge'
   | 'redo'
   | 'roles.setPassword'
   | 'show.lock'
@@ -155,6 +156,8 @@ export interface CommandArgs {
   'readiness.acknowledge': { id: string };
   /** Run the readiness checks now. Role: operator. */
   'readiness.run': Record<string, never>;
+  /** Take back a readiness item's acknowledgement; a failed item blocks show mode again. Role: programmer. */
+  'readiness.unacknowledge': { id: string };
   /** Redo the last undone command. Role: programmer, refused under show lock. */
   'redo': Record<string, never>;
   /** Set or clear (null) the password of a role; machine setting, not part of the project. Role: programmer, refused under show lock. */

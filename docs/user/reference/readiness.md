@@ -19,7 +19,7 @@ says "M1 Pro or newer", while every chip but the base M1 passes. The checks run 
 show mode turns on, every 30 seconds while it is on, once after a resumed
 show mode, after a display mode switch in show mode, and on **Run checks**;
 nothing alerts you when an item turns red meanwhile. The last column is
-the id the API's `readiness.acknowledge` takes and the yellow banner names
+the id the API's `readiness.acknowledge` and `readiness.unacknowledge` take and the yellow banner names
 ("readiness: dmx, spotlight").
 
 | Item | Fails or warns when | The row reads | What to do | Type | Id |
@@ -59,7 +59,8 @@ change is in progress.
 | **ready** (green) | Every check ran and none blocks; warnings do not change it |
 | **not ready** (red) | A failed item is not acknowledged, or the blocking item fails |
 | **not checked** (yellow), "checked never" | No check has run since the engine started |
-| **Acknowledge** | On a failed row, for the programmer: accepts it until the engine restarts |
+| **Acknowledge** | On a failed row, for the programmer: accepts it until it is taken back, show mode is left, the engine restarts, or (only outside show mode) the item passes a check: green or warning; a manual (unreadable) result keeps it; a different detail while it keeps failing keeps it |
+| **Take back** | The same button on an acknowledged row, for the programmer: the item blocks again |
 | **warning**, **acknowledged**, **manual**, **blocking** | The badges of the other states; a green row has none |
 | Yellow banner "Show mode resumed after the engine restarted at HH:MM" | The engine came back in show mode; the second sentence says whether it stopped uncleanly or was restarted with Engine › Restart Engine |
 | Red banner "Show mode is on with blocking items: …" | Show mode is on and an item fails unacknowledged: after a resume (acknowledgements are lost), or an item that turned red during the show |
