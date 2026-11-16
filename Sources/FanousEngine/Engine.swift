@@ -1130,7 +1130,7 @@ public final class Engine: @unchecked Sendable {
         feedQueue.async { [self] in
             let acknowledged = readiness.withLock { $0.acknowledged }
             let items = Readiness.check(context, acknowledged: acknowledged)
-            readiness.withLock { $0.store(items, at: Date().timeIntervalSince1970) }
+            readiness.withLock { $0.store(items, at: Date().timeIntervalSince1970, showMode: showMode.isOn) }
             publishReadiness()
         }
     }
@@ -1150,8 +1150,9 @@ public final class Engine: @unchecked Sendable {
         if librarySwitches.load(ordering: .relaxed) > 0 { return ["libraryRootChanging"] }  // B51: a moment, not a readiness item
         let acknowledged = readiness.withLock { $0.acknowledged }
         let checked = Readiness.check(readinessContext(), acknowledged: acknowledged)
-        // decided on the acknowledgements under the lock: one taken back during the checks blocks
-        let items = readiness.withLock { $0.store(checked, at: Date().timeIntervalSince1970); return $0.items }
+        // decided on the set as it is under the lock (a feed-queue run may have stored meanwhile); show mode is still
+        // off here, so an item that passes now drops its acknowledgement: it needs none to enter
+        let items = readiness.withLock { $0.store(checked, at: Date().timeIntervalSince1970, showMode: false); return $0.items }
         let blocking = items.filter(\.blocks).map(\.id)
         if !blocking.isEmpty { return blocking }
         showMode.enter()

@@ -200,15 +200,20 @@ public struct ReadinessItem: Sendable, Equatable, Identifiable {
 }
 
 /// The last readiness run and the operator's acknowledgements, kept in memory only (B163): an acknowledgement holds
-/// for this failure in this show. It drops when its item passes a run or show mode is left, and can be taken back.
+/// for this failure in this show. It ends when taken back, when show mode is left, and outside show mode when its item
+/// passes a run; in show mode a pass keeps it, since items such as the camera pass only while no cue uses what they check.
 struct ReadinessLedger {
     private(set) var items: [ReadinessItem] = []
     private(set) var acknowledged: Set<String> = []
     private(set) var checkedAt: Double = 0
 
-    /// A run's items flagged by the acknowledgements as they are now, not as they were when the run started.
-    mutating func store(_ checked: [ReadinessItem], at time: Double) {
-        for item in checked where item.state == .ok { acknowledged.remove(item.id) }
+    /// A run's items flagged by the acknowledgements as they are now, not as they were when the run started. Outside
+    /// show mode a pass (ok or warn; manual is unreadable, not a pass) drops an acknowledgement, but only one the run
+    /// read when it started (`checked` carries it as `acknowledged`): one made while the run was in flight stays.
+    mutating func store(_ checked: [ReadinessItem], at time: Double, showMode: Bool) {
+        if !showMode {
+            for item in checked where item.acknowledged && (item.state == .ok || item.state == .warn) { acknowledged.remove(item.id) }
+        }
         items = checked
         checkedAt = time
         reflag()

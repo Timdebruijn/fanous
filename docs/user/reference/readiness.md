@@ -60,11 +60,11 @@ change is in progress.
 | **ready** (green) | Every check ran and none blocks; warnings do not change it |
 | **not ready** (red) | A failed item is not acknowledged, or the blocking item fails |
 | **not checked** (yellow), "checked never" | No check has run since the engine started |
-| **Acknowledge** | On a failed row, for the programmer: accepts it until the item passes a check, show mode is left or the engine restarts; a different detail while it keeps failing keeps it |
-| **Take back** | On an acknowledged row, for the programmer: the item blocks again |
+| **Acknowledge** | On a failed row, for the programmer: accepts it until it is taken back, show mode is left, the engine restarts, or (only outside show mode) the item passes a check: green or warning; a manual (unreadable) result keeps it; a different detail while it keeps failing keeps it |
+| **Take back** | The same button on an acknowledged row, for the programmer: the item blocks again |
 | **warning**, **acknowledged**, **manual**, **blocking** | The badges of the other states; a green row has none |
 | Yellow banner "Show mode resumed after the engine restarted at HH:MM" | The engine came back in show mode; the second sentence about an unclean stop also appears after a deliberate Engine › Restart Engine |
-| Red banner "Show mode is on with blocking items: …" | Show mode is on and an item fails unacknowledged: after a resume (acknowledgements are lost), or an item that turned red during the show, also one acknowledged before it passed a check |
+| Red banner "Show mode is on with blocking items: …" | Show mode is on and an item fails unacknowledged: after a resume (acknowledgements are lost), or an item that turned red during the show |
 
 The status bar's **Show mode** tag shows "Cannot enter show mode" with the
 blocking items and their fix hints when it refuses, with **Open System**;

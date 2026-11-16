@@ -126,15 +126,18 @@ System screen shows it.
 |---|---|---|
 | Green dot | OK | Nothing |
 | Yellow dot, **warning** | Noted, never blocks | Read the detail; decide |
-| Red dot, **Acknowledge** | Failed: blocks show mode | Fix it, or press Acknowledge (programmer; an operator sees no button) to accept the risk on purpose |
-| Yellow dot, **acknowledged**, **Take back** | Failed, accepted | Nothing; it no longer blocks. Take back (programmer) makes it block again |
+| Red dot, **Acknowledge** | Failed: blocks show mode | Fix it, or press Acknowledge (programmer; an operator sees it greyed out, "Locked: programmer only") to accept the risk on purpose |
+| Yellow dot, **acknowledged**, **Take back** | Failed, accepted | Nothing; it no longer blocks. Take back (programmer, the same button) makes it block again |
 | Grey ring, **manual** | Fanous cannot read it | Check it yourself |
 | Red dot, **blocking** | Cannot be accepted | Only Supported hardware: use a Mac with a ProRes engine |
 
-An acknowledgement holds for this failure, for this show. It is dropped
-when the item passes a check (an item that recovers and fails again needs a
-new one), when show mode is left, and at an engine restart. An item that
-keeps failing for another reason, such as another silent universe, stays
+An acknowledgement holds for this failure, for this show. It ends when
+it is taken back, when show mode is left, at an engine restart, or, only
+outside show mode, when the item passes a check (green or warning; a manual,
+unreadable result keeps it), so an item that recovers before the show and
+fails again needs a new one. In show mode a pass keeps it: items such as
+the camera pass only while no cue uses what they check. An item that keeps
+failing for another reason, such as another silent universe, stays
 acknowledged.
 
 <img src="images/readiness-acknowledged.png" width="1396" alt="The row All outputs bound to their displays with a yellow dot and the badge acknowledged">

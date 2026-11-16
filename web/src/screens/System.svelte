@@ -95,13 +95,12 @@
           {#if item.detail}<div class="mono muted wrap">{item.detail}</div>{/if}
           {#if item.fix && item.state !== 'ok'}<div class="caption">{item.fix}</div>{/if}
         </div>
-        {#if item.state === 'fail' && !item.acknowledged}
-          <button type="button" class="btn" disabled={lockedProgrammer} title={lockedProgrammer ? LOCKED_TITLE : undefined} onclick={() => void cmd('readiness.acknowledge', { id: item.id })}>Acknowledge</button>
+        {#if item.state === 'fail'}
+          <!-- one button that changes label and command, so keyboard focus stays on it after a click -->
+          {#if item.acknowledged}<span class="badge {BADGE[badge.tone]}">{badge.label}</span>{/if}
+          <button type="button" class="btn" disabled={lockedProgrammer} title={lockedProgrammer ? LOCKED_TITLE : undefined} onclick={() => void cmd(item.acknowledged ? 'readiness.unacknowledge' : 'readiness.acknowledge', { id: item.id })}>{item.acknowledged ? 'Take back' : 'Acknowledge'}</button>
         {:else if item.state !== 'ok'}
           <span class="badge {BADGE[badge.tone]}">{badge.label}</span>
-          {#if item.state === 'fail'}
-            <button type="button" class="btn" disabled={lockedProgrammer} title={lockedProgrammer ? LOCKED_TITLE : undefined} onclick={() => void cmd('readiness.unacknowledge', { id: item.id })}>Take back</button>
-          {/if}
         {/if}
       </li>
     {:else}

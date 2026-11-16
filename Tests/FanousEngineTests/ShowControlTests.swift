@@ -308,34 +308,48 @@ struct ShowControlTests {
         _ = try store.execute("cue.add", args: ["number": 4, "name": "none", "trigger": .null], role: .programmer).get()
     }
 
-    /// B163: an acknowledgement holds for this failure in this show: taken back it blocks again, a pass or leaving
-    /// show mode drops it, and a run that started before a change is flagged by the set as it is when it lands.
+    /// B163: an acknowledgement holds for this failure in this show: taken back it blocks again, leaving show mode drops
+    /// it, outside show mode a pass (ok or warn, not manual) drops it, and a run is flagged by the set as it is when it lands.
     @Test func anAcknowledgementHoldsForOneFailureInOneShow() {
-        func run(_ state: ReadinessItem.State, detail: String = "lost: [1]", acknowledged: Bool = false) -> [ReadinessItem] {
+        /// `acknowledged`: what the run read from the set when it started (Readiness.check flags it).
+        func run(_ state: ReadinessItem.State, detail: String = "lost: [1]", acknowledged: Bool = true) -> [ReadinessItem] {
             [ReadinessItem(id: "outputs", title: "All outputs bound to their displays", state: state, detail: detail, fix: "", acknowledged: acknowledged)]
         }
         var ledger = ReadinessLedger()
-        ledger.store(run(.fail), at: 1)
+        ledger.store(run(.fail, acknowledged: false), at: 1, showMode: false)
         #expect(ledger.items[0].blocks)
         ledger.acknowledge("outputs", true)
         #expect(!ledger.items[0].blocks && ledger.acknowledged == ["outputs"])
         // another failure detail keeps it: no detail tracking
-        ledger.store(run(.fail, detail: "unassigned: [2]"), at: 2)
+        ledger.store(run(.fail, detail: "unassigned: [2]"), at: 2, showMode: false)
         #expect(!ledger.items[0].blocks)
         ledger.acknowledge("outputs", false)
         #expect(ledger.items[0].blocks && ledger.acknowledged.isEmpty)
-        // a run checked against the old set (acknowledged when it started) lands after the take-back: it blocks
-        ledger.store(run(.fail, acknowledged: true), at: 3)
+        // a run that read the old set (acknowledged when it started) lands after the take-back: it blocks
+        ledger.store(run(.fail), at: 3, showMode: false)
         #expect(ledger.items[0].blocks)
-        // fail → ok → fail needs a new acknowledgement
+        // in show mode a pass keeps it (the camera passes while no cue uses it): the next failure is still accepted
         ledger.acknowledge("outputs", true)
-        ledger.store(run(.ok), at: 4)
+        ledger.store(run(.ok), at: 4, showMode: true)
+        ledger.store(run(.fail), at: 5, showMode: true)
+        #expect(!ledger.items[0].blocks && ledger.checkedAt == 5)
+        // outside show mode manual (unreadable) keeps it; ok and warn drop it, so fail → pass → fail needs a new one
+        ledger.store(run(.manual), at: 6, showMode: false)
+        #expect(ledger.acknowledged == ["outputs"])
+        ledger.store(run(.ok), at: 7, showMode: false)
         #expect(ledger.acknowledged.isEmpty)
-        ledger.store(run(.fail), at: 5)
-        #expect(ledger.items[0].blocks && ledger.checkedAt == 5)
-        // leaving show mode drops every acknowledgement, also one for an item the last run did not show
         ledger.acknowledge("outputs", true)
+        ledger.store(run(.warn), at: 8, showMode: false)
+        #expect(ledger.acknowledged.isEmpty && !ledger.items[0].acknowledged)
+        ledger.store(run(.fail, acknowledged: false), at: 9, showMode: false)
+        #expect(ledger.items[0].blocks)
+        // a run in flight that sampled ok before the programmer acknowledged the red row drops nothing
+        ledger.acknowledge("outputs", true)
+        ledger.store(run(.ok, acknowledged: false), at: 10, showMode: false)
+        #expect(ledger.acknowledged == ["outputs"])
+        // leaving show mode drops every acknowledgement, also one for an item the last run did not show
         ledger.acknowledge("spotlight", true)
+        ledger.store(run(.fail), at: 11, showMode: true)
         ledger.leaveShow()
         #expect(ledger.items[0].blocks && ledger.acknowledged.isEmpty)
     }
