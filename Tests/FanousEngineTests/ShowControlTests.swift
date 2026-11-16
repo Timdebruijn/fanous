@@ -413,41 +413,59 @@ struct ShowControlTests {
         #expect(ledger.checkedAt == 12 && ledger.items[0].state == .fail && ledger.acknowledged == ["outputs"])
     }
 
-    /// B185: in show mode the engine logs a change in the blocking items, not every run: the change is computed over
-    /// the stored items before and after a store or an acknowledgement.
-    @Test func aChangeInTheBlockingItemsIsReportedOnce() {
+    /// B185: in show mode the engine logs what a stored run changed: items that start failing (acknowledged or not),
+    /// items that pass again, and the blocking set; nothing when a run changes nothing or the ledger discards it.
+    @Test func aStoredRunReportsWhatItChanged() {
         func item(_ id: String, _ state: ReadinessItem.State, acknowledged: Bool = false) -> ReadinessItem {
             ReadinessItem(id: id, title: id, state: state, detail: "", fix: "", acknowledged: acknowledged)
         }
         func change(_ old: [ReadinessItem], _ new: [ReadinessItem]) -> [[String]]? {
-            ReadinessLedger.blockingChange(from: old, to: new).map { [$0.started, $0.cleared, $0.blocking] }
+            ReadinessChange(from: old, to: new).map { [$0.failing, $0.acknowledged, $0.passing, $0.blocking, $0.blockingGained ? ["gained"] : []] }
         }
         let ok = [item("dmx", .ok), item("outputs", .ok)]
+        // nothing changes, nothing reported: also the same failure on the next run
         #expect(change(ok, ok) == nil)
-        // starts blocking; the same failure next run says nothing
-        #expect(change(ok, [item("dmx", .fail), item("outputs", .ok)]) == [["dmx"], [], ["dmx"]])
         #expect(change([item("dmx", .fail)], [item("dmx", .fail)]) == nil)
-        // more start blocking: only the new one is named
-        #expect(change([item("dmx", .fail), item("outputs", .ok)], [item("dmx", .fail), item("outputs", .hard)]) == [["outputs"], [], ["dmx", "outputs"]])
+        // starts blocking
+        #expect(change(ok, [item("dmx", .fail), item("outputs", .ok)]) == [["dmx"], [], [], ["dmx"], ["gained"]])
+        // more start blocking: only the new one fails anew, the blocking set has both
+        #expect(change([item("dmx", .fail), item("outputs", .ok)], [item("dmx", .fail), item("outputs", .hard)]) == [["outputs"], [], [], ["dmx", "outputs"], ["gained"]])
         // one clears while another stays, then the last clears
-        #expect(change([item("dmx", .fail), item("outputs", .fail)], [item("dmx", .ok), item("outputs", .fail)]) == [[], ["dmx"], ["outputs"]])
-        #expect(change([item("dmx", .ok), item("outputs", .fail)], ok) == [[], ["outputs"], []])
-        // an acknowledged failing item is not blocking: entering show mode with it is no transition
-        #expect(change(ok, [item("dmx", .fail, acknowledged: true), item("outputs", .ok)]) == nil)
+        #expect(change([item("dmx", .fail), item("outputs", .fail)], [item("dmx", .ok), item("outputs", .fail)]) == [[], [], ["dmx"], ["outputs"], []])
+        #expect(change([item("dmx", .ok), item("outputs", .fail)], ok) == [[], [], ["outputs"], [], []])
+        // one clears and another starts in the same run: both are in it
+        #expect(change([item("dmx", .fail), item("outputs", .ok)], [item("dmx", .ok), item("outputs", .fail)]) == [["outputs"], [], ["dmx"], ["outputs"], ["gained"]])
+        // an acknowledged item that passes, then fails again: reported as failing and acknowledged, not blocking
+        let acknowledgedFail = [item("dmx", .fail, acknowledged: true), item("outputs", .ok)]
+        let acknowledgedPass = [item("dmx", .ok, acknowledged: true), item("outputs", .ok)]
+        #expect(change(acknowledgedFail, acknowledgedPass) == [[], [], ["dmx"], [], []])
+        #expect(change(acknowledgedPass, acknowledgedFail) == [["dmx"], ["dmx"], [], [], []])
+        // an acknowledged failing item that turns hard blocks: no state starts failing, the blocking set gains it
+        #expect(change(acknowledgedFail, [item("dmx", .hard, acknowledged: true), item("outputs", .ok)]) == [[], [], [], ["dmx"], ["gained"]])
+        // after a resume the ledger is empty: every failing item is new
+        #expect(change([], [item("dmx", .fail), item("outputs", .ok)]) == [["dmx"], [], [], ["dmx"], ["gained"]])
 
+        // a discarded older run leaves the stored items, so it reports nothing
         var ledger = ReadinessLedger()
-        ledger.store([item("dmx", .fail)], run: ledger.begin().run, at: 1, showMode: false)
-        ledger.acknowledge("dmx", true)
-        // taken back in show mode it blocks again
-        var before = ledger.items
-        ledger.acknowledge("dmx", false)
-        #expect(change(before, ledger.items) == [["dmx"], [], ["dmx"]])
-        // a discarded older run produces nothing
         let older = ledger.begin().run
-        ledger.store([item("dmx", .fail)], run: ledger.begin().run, at: 2, showMode: true)
-        before = ledger.items
-        ledger.store([item("dmx", .ok)], run: older, at: 3, showMode: true)
+        ledger.store([item("dmx", .fail)], run: ledger.begin().run, at: 1, showMode: true)
+        let before = ledger.items
+        ledger.store([item("dmx", .ok)], run: older, at: 2, showMode: true)
         #expect(change(before, ledger.items) == nil)
+    }
+
+    /// B185: outside show mode the engine logs no readiness line: not for the entry run (refused here, so show mode
+    /// stays off and no show-state file is written) and not for an acknowledgement.
+    @Test func readinessLogsNothingOutsideShowMode() async throws {
+        let lines = HTTPSServerLogTests.Lines()
+        let logger = Logger(label: "test") { _ in HTTPSServerLogTests.Capture(lines: lines) }
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: logger)
+        engine.readinessCheck = { _, _ in [ReadinessItem(id: "outputs", title: "", state: .hard, detail: "", fix: "")] }
+        #expect(try await offPool { engine.setShowMode(true) } == ["outputs"])
+        engine.acknowledgeReadiness("outputs", true)
+        engine.acknowledgeReadiness("outputs", false)
+        #expect(try await offPool { engine.setShowMode(true) } == ["outputs"])
+        #expect(!lines.all.withLock { $0 }.contains { $0.hasPrefix("readiness") })
     }
 
     /// B144: a Mac without a ProRes engine fails the "Supported hardware" item hard; acknowledging does not unblock it.

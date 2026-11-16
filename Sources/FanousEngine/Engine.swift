@@ -1144,31 +1144,28 @@ public final class Engine: @unchecked Sendable {
         let (flagged, change) = readiness.withLock { ledger in
             let before = ledger.items
             let flagged = ledger.store(checked, run: run, at: Date().timeIntervalSince1970, showMode: inShow)
-            return (flagged, ReadinessLedger.blockingChange(from: before, to: ledger.items))
+            return (flagged, ReadinessChange(from: before, to: ledger.items))
         }
-        if inShow { logBlockingChange(change) }
+        // show mode read again: a run in flight when show mode was left logs nothing
+        if inShow, showMode.isOn, let change {
+            let none = { (ids: [String]) in Logger.MetadataValue.string(ids.isEmpty ? "none" : ids.joined(separator: ", ")) }
+            let metadata: Logger.Metadata = ["failing": none(change.failing), "acknowledged": none(change.acknowledged), "passing": none(change.passing), "blocking": none(change.blocking)]
+            if change.blockingGained { logger.warning("readiness changed in show mode", metadata: metadata) } else { logger.info("readiness changed in show mode", metadata: metadata) }
+        }
         return flagged
     }
 
-    /// `readiness.acknowledge` and `.unacknowledge`: an item taken back in show mode blocks again and is logged.
-    private func acknowledgeReadiness(_ id: String, _ on: Bool) {
-        let change = readiness.withLock { ledger in
-            let before = ledger.items
+    /// `readiness.acknowledge` and `.unacknowledge`: in show mode their own line (B185), with the blocking set after it.
+    func acknowledgeReadiness(_ id: String, _ on: Bool) {
+        let blocking = readiness.withLock { ledger in
             ledger.acknowledge(id, on)
-            return ReadinessLedger.blockingChange(from: before, to: ledger.items)
+            return ledger.items.filter(\.blocks).map(\.id)
         }
-        if showMode.isOn { logBlockingChange(change) }
+        if showMode.isOn {
+            let metadata: Logger.Metadata = ["item": "\(id)", "blocking": "\(blocking.isEmpty ? "none" : blocking.joined(separator: ", "))"]
+            if on { logger.info("readiness acknowledged in show mode", metadata: metadata) } else { logger.warning("readiness acknowledgement taken back in show mode", metadata: metadata) }
+        }
         publishReadiness()
-    }
-
-    /// B185: one line when the blocking items change in show mode, not one per 30 s run.
-    private func logBlockingChange(_ change: (started: [String], cleared: [String], blocking: [String])?) {
-        guard let change else { return }
-        if !change.started.isEmpty {
-            logger.warning("readiness: now blocking in show mode", metadata: ["items": "\(change.started.joined(separator: ", "))"])
-        } else {
-            logger.info("readiness: no longer blocking", metadata: ["items": "\(change.cleared.joined(separator: ", "))", "still": "\(change.blocking.isEmpty ? "none" : change.blocking.joined(separator: ", "))"])
-        }
     }
 
     private func publishReadiness() {
