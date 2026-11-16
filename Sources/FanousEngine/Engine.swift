@@ -1147,6 +1147,9 @@ public final class Engine: @unchecked Sendable {
             publishReadiness()
             return nil
         }
+        // already on: a console that repeats /fanous/show/mode 1 must not run the entry checks again, which drop an
+        // acknowledgement on a pass as if show mode were off
+        if showMode.isOn { return nil }
         if librarySwitches.load(ordering: .relaxed) > 0 { return ["libraryRootChanging"] }  // B51: a moment, not a readiness item
         let acknowledged = readiness.withLock { $0.acknowledged }
         let checked = Readiness.check(readinessContext(), acknowledged: acknowledged)
