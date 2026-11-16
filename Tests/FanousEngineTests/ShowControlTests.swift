@@ -369,7 +369,7 @@ struct ShowControlTests {
         #expect(changes.withLock { $0 } == [true, false])
     }
 
-    /// Enter writes the state (with the boot and write time), leave removes it; a run that ends without leaving keeps
+    /// Enter writes the state (with the write time), leave removes it; a run that ends without leaving keeps
     /// it for the next start.
     @Test func showModeStateSurvivesOnlyAnUncleanEnd() throws {
         let directory = try tempDir("fanous-show")
@@ -379,10 +379,9 @@ struct ShowControlTests {
         let since = Date(timeIntervalSince1970: 1_800_000_000)
         let crashed = ShowModeController(logger: testLogger, stateURL: url)
         crashed.enter(since: since)
-        // a kill -9 here: nothing more runs, so the next start sees show mode on, written in this boot
+        // a kill -9 here: nothing more runs, so the next start sees show mode on, just written
         let saved = try #require(ShowModeState.load(from: url))
         #expect(saved.since == since.timeIntervalSince1970 && saved.restart == nil)
-        #expect(saved.boot == ShowModeState.bootTime && saved.boot > 0)
         #expect(abs(saved.written - Date().timeIntervalSince1970) < 5)
 
         let restarted = ShowModeController(logger: testLogger, stateURL: url)
@@ -395,26 +394,55 @@ struct ShowControlTests {
 
         try Data(#"{"on":false,"since":0,"boot":0,"written":0}"#.utf8).write(to: url)
         #expect(ShowModeState.load(from: url) == nil)
-        try Data(#"{"on":true,"since":0}"#.utf8).write(to: url)  // the first format: no boot time, start normally
+        try Data(#"{"on":true,"since":0}"#.utf8).write(to: url)  // the first format: no write time, start normally
         #expect(ShowModeState.load(from: url) == nil)
         try Data("garbage".utf8).write(to: url)
         #expect(ShowModeState.load(from: url) == nil)  // unreadable: start normally
     }
 
-    /// Same boot (engine crash or kill): resume however old. Other boot: resume only within 2 h (power loss, panic).
-    @Test func showModeStartDecision() {
-        let boot = 1_800_000_000.0, now = boot + 10 * 3600
-        let state = ShowModeState(since: boot + 60, boot: boot, written: boot + 120)
-        #expect(ShowModeState.decide(nil, boot: boot, now: now) == .none)
-        #expect(ShowModeState.decide(state, boot: boot, now: now) == .resume(state))  // 10 h old, same boot
-        #expect(ShowModeState.decide(state, boot: boot + 2, now: now) == .resume(state))  // clock stepped a little
-        var young = state
-        young.written = now - 3600
-        #expect(ShowModeState.decide(young, boot: now - 60, now: now) == .resume(young))  // rebooted mid-show
-        #expect(ShowModeState.decide(state, boot: now - 60, now: now) == .stale)  // rebooted, file from a show long ago
+    /// `touch()` refreshes the write time while on (the 30 s readiness timer), so a crash in a show longer than 2 h still
+    /// resumes (B186); while off it writes nothing.
+    @Test func showModeTouchRefreshesTheWriteTime() throws {
+        let directory = try tempDir("fanous-show")
+        let url = directory.appending(path: "show-state.json")
+        let show = ShowModeController(logger: testLogger, stateURL: url)
+        show.enter(since: Date(timeIntervalSince1970: 1_800_000_000))
+        var old = try #require(ShowModeState.load(from: url))
+        old.written -= 3 * 3600
+        try JSONEncoder().encode(old).write(to: url)
+        #expect(ShowModeState.decide(ShowModeState.load(from: url), now: Date().timeIntervalSince1970) == .stale)
+        show.touch()
+        let now = Date().timeIntervalSince1970  // after the write: a time before it would be a write in the future
+        let fresh = try #require(ShowModeState.load(from: url))
+        #expect(abs(fresh.written - now) < 5)
+        #expect(ShowModeState.decide(fresh, now: now) == .resume(fresh))
+        show.leave()
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        show.touch()  // off: no file
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+    /// Resume only within 2 h of the last write, whether the engine died or the Mac (B186): a crash nobody restarted
+    /// does not resume show mode days later. A file written in the future (clock stepped back) is stale.
+    @Test func showModeStartDecision() throws {
+        let now = 1_800_000_000.0
+        let state = ShowModeState(since: now - 3 * 3600, written: now - 600)
+        #expect(ShowModeState.decide(nil, now: now) == .none)
+        #expect(ShowModeState.decide(state, now: now) == .resume(state))  // 10 min old: crash, restart or reboot mid-show
+        var old = state
+        old.written = now - 3 * 3600
+        #expect(ShowModeState.decide(old, now: now) == .stale)  // 3 h old, also on the same boot
+        old.written = now - ShowModeState.maxAge
+        #expect(ShowModeState.decide(old, now: now) == .stale)
+        var future = state
+        future.written = now + 60
+        #expect(ShowModeState.decide(future, now: now) == .stale)
         var off = state
         off.on = false
-        #expect(ShowModeState.decide(off, boot: boot, now: now) == .none)
+        #expect(ShowModeState.decide(off, now: now) == .none)
+        // a file of the previous format (with `boot`) still decodes
+        let decoded = try JSONDecoder().decode(ShowModeState.self, from: Data(#"{"on":true,"since":1,"boot":2,"written":3}"#.utf8))
+        #expect(decoded == ShowModeState(since: 1, written: 3))
     }
 
     /// Engine.stop: a fresh restart marker keeps show mode on disk (marked as a restart); no marker, an old one, or
@@ -441,7 +469,7 @@ struct ShowControlTests {
         #expect(changes.withLock { $0 } == [true])  // no leave side effects: ingest, display restore, canvas
         let kept = try #require(ShowModeState.load(from: url))
         #expect(kept.restart == true && kept.since == since.timeIntervalSince1970)
-        #expect(ShowModeState.decide(kept, boot: ShowModeState.bootTime, now: Date().timeIntervalSince1970) == .resume(kept))
+        #expect(ShowModeState.decide(kept, now: Date().timeIntervalSince1970) == .resume(kept))
         restarting.enter()  // refused while stopping
         #expect(!restarting.isOn)
 

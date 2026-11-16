@@ -11,54 +11,41 @@ import Synchronization
 
 /// Show mode on disk (`show-state.json`): written on enter (and refreshed every 30 s), removed on leave — and every
 /// clean stop leaves show mode. A file still there at start means the last run ended uncleanly (crash, kill -9, power
-/// loss) or was an Engine › Restart Engine: show mode resumes.
+/// loss) or was an Engine › Restart Engine: show mode resumes when the file is young enough (`maxAge`).
 public struct ShowModeState: Codable, Equatable, Sendable {
     public var on: Bool
     /// When show mode was entered (seconds since 1970); kept across a resume.
     public var since: Double
-    /// `kern.boottime` when written: the same boot means the engine died, not the Mac.
-    public var boot: Double
     /// When written (seconds since 1970).
     public var written: Double
     /// Written by the stop for Engine › Restart Engine: show mode kept on purpose.
     public var restart: Bool?
 
-    public init(on: Bool = true, since: Double, boot: Double, written: Double, restart: Bool? = nil) {
+    public init(on: Bool = true, since: Double, written: Double, restart: Bool? = nil) {
         self.on = on
         self.since = since
-        self.boot = boot
         self.written = written
         self.restart = restart
     }
 
-    /// After a reboot (power loss, panic) a file this young still resumes the show; an older one is stale.
-    public static let maxAgeAfterReboot: Double = 2 * 3600
+    /// A file this young still resumes the show (engine crash, restart, or the Mac went down mid-show); an older one is
+    /// stale, so a crash nobody restarted does not resume show mode days later (B186).
+    public static let maxAge: Double = 2 * 3600
 
     public enum Decision: Equatable, Sendable { case none, resume(ShowModeState), stale }
 
-    /// The start decision: resume when the Mac has not rebooted since the write (engine crash, kill, restart), or when
-    /// the file is younger than `maxAgeAfterReboot` (the Mac went down mid-show); anything else is stale.
-    public static func decide(_ state: ShowModeState?, boot: Double, now: Double) -> Decision {
+    /// The start decision: resume when the file was written less than `maxAge` ago, whether or not the Mac rebooted;
+    /// anything else is stale, also a write time in the future (the clock was stepped back past it).
+    public static func decide(_ state: ShowModeState?, now: Double) -> Decision {
         guard let state, state.on else { return .none }
-        // kern.boottime moves a little when the wall clock is stepped
         let age = now - state.written
-        if abs(state.boot - boot) < 5 || (age >= 0 && age < maxAgeAfterReboot) { return .resume(state) }
-        return .stale
+        return age >= 0 && age < maxAge ? .resume(state) : .stale
     }
 
     /// nil: no file, unreadable (an older format too), or off.
     public static func load(from url: URL) -> ShowModeState? {
         guard let data = try? Data(contentsOf: url), let state = try? JSONDecoder().decode(Self.self, from: data), state.on else { return nil }
         return state
-    }
-
-    /// `sysctl kern.boottime` in seconds since 1970; 0 when it cannot be read.
-    public static var bootTime: Double {
-        var mib: [Int32] = [CTL_KERN, KERN_BOOTTIME]
-        var value = timeval()
-        var size = MemoryLayout<timeval>.size
-        guard sysctl(&mib, 2, &value, &size, nil, 0) == 0 else { return 0 }
-        return Double(value.tv_sec) + Double(value.tv_usec) / 1e6
     }
 
     /// The shell writes `restart-pending` right before Engine › Restart Engine; a stop that finds one under a minute old keeps
@@ -130,8 +117,8 @@ public final class ShowModeController: @unchecked Sendable {
         onChange?(false)
     }
 
-    /// Refreshes the write time while on (readiness timer), so a show longer than `maxAgeAfterReboot` still resumes
-    /// after a power loss.
+    /// Refreshes the write time while on (readiness timer), so a show longer than `maxAge` still resumes after
+    /// a crash or a power loss.
     public func touch() {
         state.withLock { s in if s.on { persist(s) } }
     }
@@ -174,7 +161,7 @@ public final class ShowModeController: @unchecked Sendable {
         guard let stateURL else { return }
         do {
             if s.on || restart {
-                let value = ShowModeState(since: s.since, boot: ShowModeState.bootTime, written: Date().timeIntervalSince1970, restart: restart ? true : nil)
+                let value = ShowModeState(since: s.since, written: Date().timeIntervalSince1970, restart: restart ? true : nil)
                 try JSONEncoder().encode(value).write(to: stateURL, options: .atomic)
             } else if FileManager.default.fileExists(atPath: stateURL.path) {
                 try FileManager.default.removeItem(at: stateURL)

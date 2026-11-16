@@ -40,8 +40,8 @@ to Readiness and the yellow banner names the items. The status bar's tag does
 the same with a popover. While show mode is on the Mac and the displays stay
 awake, the ingest queue is paused, the cursor is hidden on the outputs, each
 display runs the mode its output asks for, and the state is written to disk
-every 30 s so the engine resumes show mode after a crash, a restart, or a
-power cut within two hours
+every 30 s so the engine resumes show mode when it starts within two hours
+of the last write, after a crash, a restart or a power cut
 ([Show-day checklist](../show-day-checklist.md#what-comes-back-after-the-engine-stops));
 a planned Restart, Shut Down or Log Out leaves show mode.
 

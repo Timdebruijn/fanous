@@ -176,9 +176,9 @@ flowchart TD
   why -- "Engine › Restart Engine" --> auto
   why -- "Stop Engine, Stop Engine and Quit, a plain quit of fanousd, Log Out, Restart or Shut Down" --> normal["Show mode is left; the next start is normal"]
   why -- "power cut" --> login["After the Mac is up and the show user logged in, the engine starts"]
-  auto --> resume["Back in show mode: display modes kept, ingest paused, cursor hidden"]
-  login --> age{"Last write under 2 hours old?"}
-  age -- yes --> resume
+  auto --> age{"Last write under 2 hours old?"}
+  login --> age
+  age -- yes --> resume["Back in show mode: display modes kept, ingest paused, cursor hidden"]
   age -- no --> normal
   resume --> banner["Status bar: 'Show mode resumed after the engine restarted at HH:MM'"]
 ```
@@ -186,8 +186,8 @@ flowchart TD
 After a crash macOS restarts the engine at once, or after 10 seconds when
 it crashed within 10 seconds of starting. A locked show stays locked. A
 crash that nobody restarts keeps the show-mode file: an engine started
-days later on the same boot still resumes show mode; Engine › **Stop
-Engine…** clears it. The System screen's banner adds "The engine stopped uncleanly
+within two hours of the last write resumes show mode, a later one starts
+normally and removes the file. The System screen's banner adds "The engine stopped uncleanly
 during the show; check the outputs and the log." after every resume, also
 after a deliberate Restart Engine: when you pressed it yourself, ignore
 that sentence ([known limitations](reference/known-limitations.md#show-mode-and-the-machine)).

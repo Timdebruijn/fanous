@@ -329,7 +329,7 @@ log show --predicate 'subsystem == "org.fanous"' --last 1h
 | "CITP start failed", "CITP PLoc beacon failed (firewall?)" | The console will not list Fanous |
 | "media not found", "media open failed" | The layer's row says the same |
 | "project file not readable" | The section above |
-| "stale show state ignored" | The Mac was down for more than 2 hours: a normal start |
+| "stale show state ignored" | The engine or the Mac was down for more than 2 hours since show mode was last written: a normal start |
 | "show mode resumed after an unclean stop", "show mode kept across a restart" | Show mode came back; the second is a deliberate Restart Engine |
 | "autosave failed", "show mode state not saved" | The disk or the folder is not writable: the engine plays on and saves nothing |
 

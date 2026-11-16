@@ -4757,7 +4757,7 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   re-plug; previous modes persisted in `display-modes.json` and restored on
   the next start after a crash outside show mode; unavailable modes are a non-blocking `warn` readiness item).
   **Show mode survives a crash (as built 2026-10-26):** `show-state.json`
-  (`{on, since, boot, written, restart?}`, `boot` = `kern.boottime`) is written
+  (`{on, since, written, restart?}`; files with the earlier `boot` key still load) is written
   on entering (inside the controller's state lock, refreshed every 30 s) and
   removed on leaving. `Engine.stop` leaves show mode, so SIGTERM (launchd stop,
   Stop Engine, Stop Engine and Quit, logout, bootout) clears it; once the stop
@@ -4766,9 +4766,10 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   that finds it fresh (< 60 s, always removed) keeps the file marked `restart`
   and skips the display-mode restore, leaving the ledger. An unclean end (crash,
   kill -9, power loss, launchd's SIGKILL after a hung stop) leaves the file too.
-  At start the file resumes show mode when its boot time matches (engine died,
-  not the Mac) or it is younger than 2 h (Mac went down mid-show); otherwise
-  "stale show state ignored" and it is removed. Resuming pauses ingest before
+  At start the file resumes show mode when its last write is less than 2 h
+  old, whether the engine died or the Mac (B186: a crash nobody restarted no
+  longer resumes days later; a write time in the future is stale too);
+  otherwise "stale show state ignored" and it is removed. Resuming pauses ingest before
   it starts and re-enters show mode before the outputs and display modes come
   up, with every normal side effect and without the readiness refusal; readiness
   runs at the first display sync. The log says "show mode resumed after an

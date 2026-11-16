@@ -168,7 +168,7 @@ public final class Engine: @unchecked Sendable {
         // DESIGN.md §14: show mode left on by an unclean end or kept for Engine › Restart Engine resumes; decided
         // first so ingest never starts in a show.
         var resumeShow: ShowModeState?
-        switch ShowModeState.decide(ShowModeState.load(from: AppPaths.showStateFile), boot: ShowModeState.bootTime, now: Date().timeIntervalSince1970) {
+        switch ShowModeState.decide(ShowModeState.load(from: AppPaths.showStateFile), now: Date().timeIntervalSince1970) {
         case .resume(let state): resumeShow = state
         case .stale:
             logger.warning("stale show state ignored")
@@ -1227,7 +1227,7 @@ public final class Engine: @unchecked Sendable {
         stopReadinessTimer()
         readinessTimer = DispatchSource.repeating(every: 30, on: feedQueue) { [weak self] in
             self?.runReadiness()
-            self?.showMode.touch()  // a long show still resumes after a power loss (ShowModeState.maxAgeAfterReboot)
+            self?.showMode.touch()  // a long show still resumes after a crash or power loss (ShowModeState.maxAge)
         }
     }
 
