@@ -1122,6 +1122,27 @@ extension IngestQueueTests {
         #expect(FileManager.default.fileExists(atPath: notAMovie.path))
     }
 
+    /// B194: a container AVFoundation has no reader for fails with the library's reason, not AVFoundation's "Cannot Open",
+    /// and the source is still there byte for byte, with no output or temporary beside the destination.
+    @Test func unopenableContainerFailsWithTheLibrarysReasonAndKeepsTheSource() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        queue.start()
+        defer { queue.stop() }
+        let webm = directory.appending(path: "001_web.webm")
+        let bytes = Data((0..<4096).map { UInt8(truncatingIfNeeded: $0 &* 31) })
+        try bytes.write(to: webm)
+        let job = queue.enqueue(
+            IngestJob(source: webm, destination: directory.appending(path: "library/001_web.mov"), kind: .transcode(codec: .proRes422HQ),
+                originalsDirectory: directory.appending(path: "library/_originals")))
+        #expect(await Self.wait(for: job.id, in: queue) == .failed("AVFoundation cannot open .webm files"))
+        #expect(try Data(contentsOf: webm) == bytes)
+        // a source without an extension keeps AVFoundation's text, not "AVFoundation cannot open . files"
+        let unrecognized = AVError(.fileFormatNotRecognized)
+        #expect(LibraryIndex.openFailureText(unrecognized, directory.appending(path: "clip")) == unrecognized.localizedDescription)
+        #expect((try? FileManager.default.contentsOfDirectory(atPath: directory.appending(path: "library").path)) ?? [] == [])
+    }
+
     /// Two uploads into a folder number the index has not seen yet land in one folder, also with different names: the
     /// index is never rescanned here, like in the second before the debounced rescan or with a root missing at start behind a symlink (B140).
     @Test func uploadsIntoAnUnindexedFolderNumberShareOneFolder() throws {

@@ -13,6 +13,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Library: the needs-transcode reason names what is wrong, the codec ("avc1 is not ProRes or HAP") or the container
   ("apch in .qt: plays only in .mov, transcode re-encodes it"; HAP: "remux it to a .mov on another machine") (B195,
   PR #354).
+- Ingest: a job for a file macOS cannot open fails with the library's reason ("AVFoundation cannot open .webm files")
+  instead of "Cannot Open", B194 (PR #357).
 - Release: 1.0.0-rc.9 is on GitHub as a pre-release with the signed, notarized dmg, built from main e99c648
   (PR #353).
 

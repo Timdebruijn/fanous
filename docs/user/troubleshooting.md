@@ -16,6 +16,7 @@ the log is under [Logs](#logs).
 | The console moves nothing | [The console moves nothing](#the-console-moves-nothing) |
 | A universe pill is not green | [A DMX universe is silent](#a-dmx-universe-is-silent) |
 | A layer reads an error, or is black | [A layer shows an error, or the picture is black](#a-layer-shows-an-error-or-the-picture-is-black) |
+| An import or transcode ends "failed" | [An ingest job fails](#an-ingest-job-fails) |
 | The picture is frozen | [The picture is frozen](#the-picture-is-frozen) |
 | A projector is black | [Outputs stay black although the layers play](#outputs-stay-black-although-the-layers-play) |
 | Lines and a yellow cross on a projector | [Lines on the projector](#lines-and-a-yellow-cross-on-the-projector) |
@@ -178,6 +179,15 @@ picture appears:
 
 The Layer panel on the Layers screen shows every channel's value as the
 engine reads it.
+
+## An ingest job fails
+
+The Media screen's ingest queue shows the reason under the job.
+
+| The job reads | Do |
+|---|---|
+| "AVFoundation cannot open .webm files" (or `.mkv`, `.wmv`, …) | macOS has no reader for that container. Convert the file on another machine and import the result. An imported copy stays in `_incoming/` in the library root (as `name-2.ext` when that name was taken): **Remove** the job, then delete that copy in Finder |
+| "Cannot Open" | A damaged file in a container macOS reads (`.mov`, `.mp4`, `.m4v`): export it again |
 
 ## The picture is frozen
 
