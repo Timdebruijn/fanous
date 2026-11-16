@@ -35,6 +35,11 @@ export function resumedText(resumedAt: number | null | undefined): string | null
   return `Show mode resumed after the engine restarted at ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
+/** The banner's second sentence: a deliberate Restart Engine (B181) or an unclean stop; an engine without the field reads as unclean. */
+export function resumedDetail(restart: boolean | undefined): string {
+  return restart ? 'Show mode was kept across a deliberate Restart Engine; check the outputs.' : 'The engine stopped uncleanly during the show; check the outputs and the log.';
+}
+
 /** "h:mm:ss" */
 export function formatClock(seconds: number): string {
   const s = Math.max(0, Math.floor(finite(seconds)));

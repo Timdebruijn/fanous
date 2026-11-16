@@ -4773,7 +4773,8 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   up, with every normal side effect and without the readiness refusal; readiness
   runs at the first display sync. The log says "show mode resumed after an
   unclean stop" or "show mode kept across a restart", and live `show.resumedAt`
-  drives the status-bar and System notice until show mode is left. The first
+  (with `show.resumedRestart` telling a kept-for-restart resume from an unclean
+  stop, B181) drives the status-bar and System notice until show mode is left. The first
   display sync is then an apply, not a restore: displays already in their show
   mode are not switched and the ledger is kept for the restore on leaving (no
   flip-flop). The show lock lives in the project document; a lock change is

@@ -187,10 +187,10 @@ After a crash macOS restarts the engine at once, or after 10 seconds when
 it crashed within 10 seconds of starting. A locked show stays locked. A
 crash that nobody restarts keeps the show-mode file: an engine started
 days later on the same boot still resumes show mode; Engine › **Stop
-Engine…** clears it. The System screen's banner adds "The engine stopped uncleanly
-during the show; check the outputs and the log." after every resume, also
-after a deliberate Restart Engine: when you pressed it yourself, ignore
-that sentence ([known limitations](reference/known-limitations.md#show-mode-and-the-machine)).
+Engine…** clears it. After a crash the System screen's banner adds "The engine
+stopped uncleanly during the show; check the outputs and the log."; after a
+deliberate Restart Engine it adds "Show mode was kept across a deliberate
+Restart Engine; check the outputs." instead.
 
 ### The engine died during the show
 

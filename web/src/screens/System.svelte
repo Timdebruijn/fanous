@@ -11,7 +11,7 @@
   import { modeText } from '../lib/outputs';
   import { LOCKED_TITLE } from '../lib/patch-screen';
   import { app, can, cmd } from '../lib/state.svelte';
-  import { OPERATOR_TITLE, ageText, headerCaption, memoryText, outputTone, plural, readinessBadge, readinessSummary, resumedText, stampText, thermalTone } from '../lib/system';
+  import { OPERATOR_TITLE, ageText, headerCaption, memoryText, outputTone, plural, readinessBadge, readinessSummary, resumedDetail, resumedText, stampText, thermalTone } from '../lib/system';
 
   const show = $derived(app.live.show);
   const sys = $derived(app.live.system);
@@ -76,7 +76,7 @@
   {#if show.mode && resumed}
     <div class="banner banner-yellow inset" role="status">
       <span class="dot dot-yellow"></span>
-      <span><strong>{resumed}.</strong> The engine stopped uncleanly during the show; check the outputs and the log.</span>
+      <span><strong>{resumed}.</strong> {resumedDetail(show.resumedRestart)}</span>
     </div>
   {/if}
   {#if show.mode && summary.status === 'notReady'}
