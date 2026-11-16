@@ -6,7 +6,7 @@
   import { timecodeOn } from '../lib/show';
   import { describeJobState } from '../lib/media';
   import { universeName } from '../lib/patch-screen';
-  import { readinessSummary, resumedText } from '../lib/system';
+  import { blockingNote, readinessSummary, resumedText } from '../lib/system';
   import { lastVersionText } from '../lib/versions';
   import { app, can, cmd, shell, toggleLock } from '../lib/state.svelte';
 
@@ -43,6 +43,7 @@
   const syncLost = $derived(app.live.layers.filter((l) => l.sync?.state === 'lost').map((l) => `Layer ${l.index}`));
   const resumed = $derived(resumedText(app.live.show.resumedAt));
   const blocking = $derived(readinessSummary(app.live.show.readiness, app.live.show.checkedAt).blocking);
+  const blocked = $derived(blockingNote(showMode, blocking));
   /** set when entering show mode was refused: the popover under the button says why */
   let refused = $state<string | null>(null);
   async function toggleShowMode() {
@@ -115,7 +116,7 @@
       <span class="bar"><span style="width: {progress}%"></span></span>
     </div>
   {/if}
-  <a class="item col plain version" href="#/system" title="Project versions (System): the engine saves one at start, on show mode and every 10 minutes after a change">
+  <a class="item col plain version" class:yield={blocked} href="#/system" title="Project versions (System): the engine saves one at start, on show mode and every 10 minutes after a change">
     <span class="mono value">{lastVersionText(app.live.versions?.lastAutomatic)}</span>
     <span class="caption">auto version</span>
   </a>
@@ -129,6 +130,10 @@
   {#if app.live.security.webUIOpen}
     <div class="item yellow caption" title="Web UI open: the programmer role has no password (System › Roles)"><span class="dot dot-yellow"></span><span class="long"> web UI open</span><span class="short" aria-hidden="true">open</span></div>
   {/if}
+  <!-- B185: a polite live region, always there, so a blocking item is announced when it starts and not per 30 s run;
+       atomic so "A" becoming "A + 1 more" is read with its prefix. It grows from a basis of 0 into the spacer's room, so it
+       wraps the bar only when not even "not ready" fits; the auto version item (System has it) makes room while it shows. A phone shows "not ready" alone; the titles stay for screen readers and in the tooltip. -->
+  <span class="note" class:on={blocked} role="status" aria-atomic="true">{#if blocked}<a class="caption blocked" href="#/system" title="Show mode is on with blocking items: {blocking.map((i) => i.title).join(', ')} (System)">not ready<span class="long">: {blocked}</span><span class="sr">, open System</span></a>{/if}</span>
   <span class="spacer"></span>
   <div class="item right">
     <button class="btn btn-icon" aria-label="Undo" title="Undo (⌘Z)" disabled={!can('programmer')} onclick={() => cmd('undo')}>
@@ -167,6 +172,11 @@
   .popactions a { text-decoration: none; }
   .tag:disabled { opacity: 0.8; }
   .resumed { margin-left: 8px; color: var(--yellow); text-decoration: none; }
+  .note { flex: 1000 1 0; min-width: 0; max-width: 28ch; }
+  .note.on { min-width: 11ch; padding: 0 8px; }
+  .blocked { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--red); text-decoration: none; }
+  .version.yield { display: none; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .value { font-size: 15px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
   /* the pills wrap inside the item, so 3+ universes on a phone take a second row instead of widening the page */
   .dmx { gap: 4px 12px; flex-wrap: wrap; padding-block: 4px; }

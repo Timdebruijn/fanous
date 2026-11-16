@@ -406,10 +406,7 @@ public final class Engine: @unchecked Sendable {
                 go: { cues.go(); oscFeedback?.invalidate(prefix: "/fanous/cue") }, back: { cues.back(); oscFeedback?.invalidate(prefix: "/fanous/cue") },
                 goto: { cues.goto($0); oscFeedback?.invalidate(prefix: "/fanous/cue") },
                 showMode: { [weak self] on in self?.setShowMode(on) ?? nil },
-                acknowledge: { [weak self] id, on in
-                    self?.readiness.withLock { $0.acknowledge(id, on) }
-                    self?.publishReadiness()
-                },
+                acknowledge: { [weak self] id, on in self?.acknowledgeReadiness(id, on) },
                 runReadiness: { [weak self] in self?.runReadiness() }))
         // MIDI control (B36): cue actions run as commands like OSC's; parameter values go straight to the resolvers
         let midi = MIDIInput(dmx: dmx, logger: logger)
@@ -1198,7 +1195,32 @@ public final class Engine: @unchecked Sendable {
     private func checkReadiness(_ context: ReadinessContext, entering: Bool = false) -> [ReadinessItem] {
         let (run, acknowledged) = readiness.withLock { $0.begin() }
         let checked = readinessCheck(context, acknowledged)
-        return readiness.withLock { $0.store(checked, run: run, at: Date().timeIntervalSince1970, showMode: !entering && showMode.isOn) }
+        let inShow = !entering && showMode.isOn
+        let (flagged, change) = readiness.withLock { ledger in
+            let before = ledger.items
+            let flagged = ledger.store(checked, run: run, at: Date().timeIntervalSince1970, showMode: inShow)
+            return (flagged, ReadinessChange(from: before, to: ledger.items))
+        }
+        // show mode read again: a run in flight when show mode was left logs nothing
+        if inShow, showMode.isOn, let change {
+            let none = { (ids: [String]) in Logger.MetadataValue.string(ids.isEmpty ? "none" : ids.joined(separator: ", ")) }
+            let metadata: Logger.Metadata = ["failing": none(change.failing), "acknowledged": none(change.acknowledged), "passing": none(change.passing), "blocking": none(change.blocking)]
+            if change.blockingGained { logger.warning("readiness changed in show mode", metadata: metadata) } else { logger.info("readiness changed in show mode", metadata: metadata) }
+        }
+        return flagged
+    }
+
+    /// `readiness.acknowledge` and `.unacknowledge`: in show mode their own line (B185), with the blocking set after it.
+    func acknowledgeReadiness(_ id: String, _ on: Bool) {
+        let blocking = readiness.withLock { ledger in
+            ledger.acknowledge(id, on)
+            return ledger.items.filter(\.blocks).map(\.id)
+        }
+        if showMode.isOn {
+            let metadata: Logger.Metadata = ["item": "\(id)", "blocking": "\(blocking.isEmpty ? "none" : blocking.joined(separator: ", "))"]
+            if on { logger.info("readiness acknowledged in show mode", metadata: metadata) } else { logger.warning("readiness acknowledgement taken back in show mode", metadata: metadata) }
+        }
+        publishReadiness()
     }
 
     private func publishReadiness() {

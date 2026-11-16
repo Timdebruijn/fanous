@@ -336,6 +336,8 @@ log show --predicate 'subsystem == "org.fanous"' --last 1h
 | "project file not readable" | The section above |
 | "stale show state ignored" | The engine or the Mac was down for more than 2 hours since show mode was last written: a normal start |
 | "show mode resumed after an unclean stop", "show mode kept across a restart" | Show mode came back; the second is a deliberate Restart Engine |
+| "readiness changed in show mode" | A check during the show found an item that started failing or passes again: `failing`, `acknowledged` (of those failing), `passing` and `blocking` (what blocks now). A warning when an item started blocking. An acknowledged item that fails again is here only, not in the status bar |
+| "readiness acknowledged in show mode", "readiness acknowledgement taken back in show mode" | The programmer acknowledged or took back `item` on System during the show; `blocking` is what blocks now |
 | "autosave failed", "show mode state not saved" | The disk or the folder is not writable: the engine plays on and saves nothing |
 | "OSC/MIDI command refused" | A show-control command from OSC did nothing; in practice `/fanous/show/mode 1` while readiness blocks. `command` is the message in its plain form, `code` and `reason` say why (`notReady` names the blocking readiness items). One line per command and code every 3 s at most; `repeats` counts the refusals in the 3 s after the previous line, so after a burst that stopped, the rest of its count comes with the next refusal, whenever that is |
 

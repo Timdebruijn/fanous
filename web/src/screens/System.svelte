@@ -80,7 +80,8 @@
     </div>
   {/if}
   {#if show.mode && summary.status === 'notReady'}
-    <div class="banner banner-red inset" role="alert">
+    <!-- no alert role: the status bar's live region announces a blocking item on every screen, this one too (B185) -->
+    <div class="banner banner-red inset">
       <span class="dot dot-red"></span>
       <span><strong>Show mode is on with blocking items:</strong> {summary.blocking.map((i) => i.title).join(', ')}</span>
     </div>

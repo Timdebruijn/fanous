@@ -238,6 +238,34 @@ struct ReadinessLedger {
     private mutating func reflag() {
         for i in items.indices { items[i].acknowledged = acknowledged.contains(items[i].id) }
     }
+
+}
+
+/// B185: what a stored run changed, for the show-mode log line. Failing is fail or hard, acknowledged or not, so an
+/// acknowledged item that fails again mid-show is reported too; `blocking` is the set after the run.
+struct ReadinessChange: Equatable {
+    var failing: [String] = []
+    /// The items of `failing` that are acknowledged, so they do not block.
+    var acknowledged: [String] = []
+    var passing: [String] = []
+    var blocking: [String] = []
+    /// The blocking set has an item it did not have before: the line is a warning.
+    var blockingGained = false
+
+    /// Compares the stored items before and after a store, nil when nothing changed. A run the ledger discards leaves
+    /// the stored items as they were, so it reports nothing.
+    init?(from old: [ReadinessItem], to new: [ReadinessItem]) {
+        func fails(_ item: ReadinessItem) -> Bool { item.state == .fail || item.state == .hard }
+        let failedBefore = Set(old.filter(fails).map(\.id))
+        let blockedBefore = Set(old.filter(\.blocks).map(\.id))
+        let started = new.filter { fails($0) && !failedBefore.contains($0.id) }
+        failing = started.map(\.id)
+        acknowledged = started.filter(\.acknowledged).map(\.id)
+        passing = new.filter { !fails($0) && failedBefore.contains($0.id) }.map(\.id)
+        blocking = new.filter(\.blocks).map(\.id)
+        blockingGained = blocking.contains { !blockedBefore.contains($0) }
+        if failing.isEmpty, passing.isEmpty, Set(blocking) == blockedBefore { return nil }
+    }
 }
 
 /// What the checks look at; filled by the engine so the checks stay testable.
