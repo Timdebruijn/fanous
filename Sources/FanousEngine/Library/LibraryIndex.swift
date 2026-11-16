@@ -85,6 +85,15 @@ public struct LibrarySnapshot: Codable, Sendable, Equatable {
 /// Resolution for the media loader is a dictionary lookup under a mutex.
 public final class LibraryIndex: @unchecked Sendable {
     public static let movieExtensions: Set<String> = ["mov", "mp4", "m4v", "avi", "mkv", "mxf"]
+
+    /// Common video containers listed since B161, so none is skipped without a word; the probe then says needs transcode
+    /// or unreadable. Fixed, not the system's type list: that one grows with installed apps (VLC adds `.vob`), and a listed
+    /// numbered file is a CITP/MSEX element, so every Mac must list the same files. A TypeScript `.ts` shows as unreadable.
+    static let lateMovieExtensions: Set<String> = [
+        "webm", "mpg", "mpeg", "m2ts", "mts", "ts", "wmv", "flv", "3gp", "3g2", "ogv", "vob", "dv", "qt", "m2v", "f4v", "asf", "divx",
+    ]
+    /// The containers AVFoundation reads: a "Cannot Open" in one of these is a damaged file, not the container.
+    static let avFoundationContainers: Set<String> = ["mov", "mp4", "m4v"]
     /// The codecs `MovieSource` plays, as the fourCC strings of `Metadata.codec`.
     static let playableCodecs = Set(MovieSource.proResCodecs.union(MovieSource.hapCodecs.keys).map(fourCCString))
 
@@ -208,14 +217,22 @@ public final class LibraryIndex: @unchecked Sendable {
             }
             var items: [LibraryItem] = []
             var seenFiles: Set<Int> = []
-            let names = ((try? fm.contentsOfDirectory(atPath: folderURL.path)) ?? []).filter { !$0.hasPrefix(".") && !$0.hasPrefix("_") }.sorted()
-            for name in names {
+            // a late movie (B161, a regular file) claims its number after everything else: one that shares a number with an
+            // entry listed before B161 is the duplicate, so a show's folder/file numbers stay what they were
+            let entries = ((try? fm.contentsOfDirectory(atPath: folderURL.path)) ?? []).filter { !$0.hasPrefix(".") && !$0.hasPrefix("_") }
+                .compactMap { name -> (name: String, values: URLResourceValues, late: Bool)? in
+                    let url = folderURL.appending(path: name)
+                    guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey]) else { return nil }
+                    return (name, values, values.isDirectory != true && Self.lateMovieExtensions.contains(url.pathExtension.lowercased()))
+                }
+                .sorted { ($0.late ? 1 : 0, $0.name) < ($1.late ? 1 : 0, $1.name) }
+            for (name, values, late) in entries {
                 let url = folderURL.appending(path: name)
-                guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey]) else { continue }
                 let isDirectory = values.isDirectory == true
                 let ext = url.pathExtension.lowercased()
                 let kind: LibraryItem.Kind =
-                    isDirectory ? .sequence : StillSource.extensions.contains(ext) ? .still : Self.movieExtensions.contains(ext) ? .movie : .other
+                    isDirectory ? .sequence : StillSource.extensions.contains(ext) ? .still
+                    : Self.movieExtensions.contains(ext) || late ? .movie : .other
                 if kind == .other && !isDirectory { continue }  // sidecars, text files: not media
                 let modified = values.contentModificationDate?.timeIntervalSince1970 ?? 0
                 let size = values.fileSize ?? 0
@@ -304,6 +321,8 @@ public final class LibraryIndex: @unchecked Sendable {
                 if entry.status == .needsTranscode {
                     entry.reason = metadata.rotated == true ? "rotated or flipped (phone footage): transcode to make it upright" : "\(metadata.codec) is not ProRes/HAP in .mov"
                 }
+            } catch let error as AVError where error.code == .fileFormatNotRecognized && !Self.avFoundationContainers.contains(url.pathExtension.lowercased()) {
+                entry.reason = "AVFoundation cannot open .\(url.pathExtension.lowercased()) files"  // "Cannot Open" told nothing (B161)
             } catch {
                 entry.reason = error.clientText  // `/api/library` reaches monitors: no file path (B25)
             }

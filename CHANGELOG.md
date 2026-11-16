@@ -24,6 +24,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   and Take back (`readiness.unacknowledge`, programmer) withdraws it (B163) (PR #341).
 - Readiness: a probe tool (`mdutil`, `tmutil`, `pmset`) that has not exited within 3 s is killed and its row reads
   "unknown" (manual for Spotlight and Time Machine, passing for display sleep), and the 30 s runs no longer hold the live values, DMX monitor or autosave while the tools run (PR #343).
+- Library: 18 more video containers (`.webm`, `.mpg`, `.m2ts`, `.ts`, `.wmv`, `.flv`, `.3gp`, …) are listed instead of
+  skipped: needs transcode when AVFoundation opens the file, unreadable "AVFoundation cannot open .webm files" when not.
+  A numbered one is a CITP/MSEX media element too: its folder's element count changes and later elements shift by one
+  (DMX folder/file numbers do not change; an MSEX 1.0/1.1 console keeps its cached list until refreshed) (B161, PR #342).
 - Release: 1.0.0-rc.6 is on GitHub as a pre-release with the signed, notarized dmg, built from main 6adbc5c
   (PR #334).
 - The System screen's resume banner tells a deliberate Engine › Restart Engine from an unclean stop; the live document carries `show.resumedRestart` (B181) (PR #340)

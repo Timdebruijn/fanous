@@ -294,7 +294,7 @@ clients have been checked; a hardware console has not
 |---|---|
 | Fanous in its media server list | Announced every 5 seconds on the CITP multicast groups (224.0.0.180 and 239.224.0.180, UDP 4809), under the Mac's host name; MSEX over TCP on a port the system picks (System › Network, CITP line, with the connected consoles and open streams) |
 | One DMX source per layer and the layer status | Four times a second |
-| Libraries and elements | The numbered folders and files with name, size, frame rate and length, as indexes from 0 without gaps; the folder or file number is in the DMX range. Folder 0 and missing media report library and element 255 |
+| Libraries and elements | The numbered folders and files with name, size, frame rate and length, as indexes from 0 without gaps (every numbered file the Media screen lists, also one that needs a transcode or is unreadable); the folder or file number is in the DMX range. Folder 0 and missing media report library and element 255 |
 | Thumbnails | 320 pixels wide, as in the library |
 | A canvas stream, one stream per layer | Canvas 1 as JPEG, 640 wide in the canvas's aspect, at most 5 new pictures a second; each layer 160 wide, 4 a second; each only while a console asks. The size a console asks for is ignored |
 | MSEX 1.0 to 1.2 | Negotiated; a console that sends no client information within 2 seconds is taken as 1.0 |

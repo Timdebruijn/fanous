@@ -172,11 +172,74 @@ struct LibraryIndexTests {
         #expect(index.folderURL(number: 1, createAs: "One") == nil)
         #expect(!FileManager.default.fileExists(atPath: readOnly.appending(path: "001_One").path))
     }
+
+    /// B161: the common video containers are listed (they were skipped without a word); text and subtitles stay out.
+    @Test func otherVideoContainersAreListed() throws {
+        let root = try tempDir("fanous-library")
+        for name in ["001_a.webm", "002_b.mpg", "003_c.m2ts", "004_d.WMV", "005_e.flv", "006_f.3gp", "notes.txt", "007_g.srt"] {
+            try Self.touch(root.appending(path: "001_Show/\(name)"))
+        }
+        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
+        index.rescan()
+        let items = index.snapshot.folders[0].items
+        #expect(items.map(\.name) == ["001_a.webm", "002_b.mpg", "003_c.m2ts", "004_d.WMV", "005_e.flv", "006_f.3gp"])
+        #expect(items.allSatisfy { $0.kind == .movie && $0.status == .probing })
+        #expect(items.map(\.file) == [1, 2, 3, 4, 5, 6])
+    }
+
+    /// B161: a newly listed container never takes a number from an entry listed before, also when its name sorts first;
+    /// a sequence folder with a container's extension is no late file and keeps its number as before.
+    @Test func newlyListedContainersKeepExistingNumbers() throws {
+        let root = try tempDir("fanous-library")
+        for name in ["001_0early.webm", "001_clip.mov", "002_gap.webm", "003_clip.mp4", "003_a.flv", "004_x.png"] {
+            try Self.touch(root.appending(path: "001_Show/\(name)"))
+        }
+        try FileManager.default.createDirectory(at: root.appending(path: "001_Show/004_shots.mpg"), withIntermediateDirectories: true)
+        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
+        index.rescan()
+        let items = index.snapshot.folders[0].items
+        let numbered = Dictionary(uniqueKeysWithValues: items.compactMap { item in item.file.map { ($0, item.name) } })
+        #expect(numbered == [1: "001_clip.mov", 2: "002_gap.webm", 3: "003_clip.mp4", 4: "004_shots.mpg"])
+        let duplicates = items.filter { $0.status == .invalid }.map(\.name).sorted()
+        #expect(duplicates == ["001_0early.webm", "003_a.flv", "004_x.png"])
+        #expect(items.filter { $0.status == .invalid }.allSatisfy { $0.reason?.contains("duplicate file number") == true })
+    }
+
+    /// B161: a numbered file of a newly listed container is a CITP/MSEX media element like an `.mkv` (any probe status),
+    /// so the elements after it shift by one; the DMX range keeps the file number.
+    @Test func newlyListedContainersAreMSEXElements() throws {
+        let root = try tempDir("fanous-library")
+        for name in ["001_a.mov", "002_b.mkv", "003_c.webm", "004_d.mov"] { try Self.touch(root.appending(path: "001_Show/\(name)")) }
+        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
+        index.rescan()
+        let elements = try #require(index.snapshot.msexLibraries.first?.elements)
+        #expect(elements.map(\.name) == ["001_a.mov", "002_b.mkv", "003_c.webm", "004_d.mov"])
+        #expect(elements.map(\.file) == [1, 2, 3, 4])
+    }
 }
 
 /// The LibraryIndexTests that need the GPU or a decoder: local and self-hosted runs only (scripts/test.sh --hosted leaves them out).
 @Suite(.cleansTempFiles)
 struct LibraryIndexGPUTests {
+    /// B161: a newly listed container AVFoundation opens needs transcode; one it has no reader for is unreadable and says so.
+    @Test func newlyListedContainersProbeToTranscodeOrUnreadable() async throws {
+        let folder = try tempDir("fanous-library").appending(path: "001_Show")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try await writePatternMovie(to: folder.appending(path: "001_phone.3gp"), size: (64, 64), fps: 25, frames: 2)
+        try Data(repeating: 7, count: 4096).write(to: folder.appending(path: "002_web.webm"))
+        try Data(repeating: 7, count: 4096).write(to: folder.appending(path: "003_broken.mp4"))
+        let index = LibraryIndex(root: folder.deletingLastPathComponent(), cacheDirectory: folder.appending(path: "_cache"), logger: testLogger)
+        index.start()
+        defer { index.stop() }
+        #expect(await waitUntil(every: .milliseconds(50)) { index.snapshot.folders.first?.items.allSatisfy { $0.status != .probing } == true })
+        let items = try #require(index.snapshot.folders.first?.items)
+        #expect(items.map(\.status) == [.needsTranscode, .unreadable, .unreadable])
+        #expect(items[0].reason == "apch is not ProRes/HAP in .mov")
+        #expect(items[1].reason == "AVFoundation cannot open .webm files")
+        #expect(items[2].reason == "Cannot Open", "a damaged file in a container AVFoundation reads keeps AVFoundation's text")
+        #expect(index.resolve(MediaKey(folder: 1, file: 1)) == nil && index.resolve(MediaKey(folder: 1, file: 2)) == nil)
+    }
+
     /// A playable movie resolves after probing, its thumbnail is requested, and FSEvents picks up a new file.
     @Test func probeResolvesAndWatcherRescans() async throws {
         let root = try tempDir("fanous-library")

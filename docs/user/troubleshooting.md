@@ -155,7 +155,7 @@ The Layers screen shows the problem in the row's Media column.
 
 | The row reads | Do |
 |---|---|
-| "no file N in folder M" | The number does not exist or the file is not playable: Media screen, that folder: invalid name, needs transcode, unreadable ([Media library](media-library.md)) |
+| "no file N in folder M" | The number does not exist or the file is not playable: Media screen, that folder: invalid name, needs transcode, unreadable ("AVFoundation cannot open .webm files": a `.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`, `.f4v`, `.divx`, convert it on another machine) ([Media library](media-library.md)) |
 | A decoder error ("unsupported codec", "VideoToolbox error", "no video track") | Transcode the file again or replace it, then send Control 24–31 (Clear error) on layer channel 50 from the console and back to 0 |
 | "no capture device / display / Syphon server numbered N" | Nothing has that number in folder 0: Inputs screen, **Number** ([Live inputs](live-inputs.md)) |
 | "not running", "in use by another app", "no signal" | The live input: plugged in, not open in another app, a signal on the card |
