@@ -11,7 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Readiness: an acknowledgement drops when its item passes a check or show mode is left, and Take back
-  (`readiness.unacknowledge`, programmer) withdraws it (B163) (PR #N).
+  (`readiness.unacknowledge`, programmer) withdraws it (B163) (PR #341).
 - Release: 1.0.0-rc.6 is on GitHub as a pre-release with the signed, notarized dmg, built from main 6adbc5c
   (PR #334).
 
