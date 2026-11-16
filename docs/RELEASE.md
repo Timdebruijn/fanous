@@ -70,7 +70,9 @@ With Fanous and the console software on one subnet (Little Snitch: allow
 - [ ] `CODESIGN_IDENTITY="Developer ID Application: <name> (<team>)" scripts/bundle.sh`
       — hardened runtime, `scripts/entitlements.plist` (microphone for LTC,
       camera for capture devices), usage strings and `NSBonjourServices` in
-      `Info.plist`, timestamped. Done for 1.0.0-rc.1 on 2026-11-02 (B50); repeat per release
+      `Info.plist`, timestamped. Stop an engine that runs from `dist/Fanous.app` first
+      (`Engine › Stop Engine…`): the script removes that bundle before it assembles the new one.
+      Done for 1.0.0-rc.1 on 2026-11-02 (B50); repeat per release
 - [ ] `xcrun notarytool store-credentials fanous --apple-id … --team-id … --password <app-specific>` once, then
       `NOTARY_PROFILE=fanous scripts/notarize.sh` → `dist/Fanous-<version>.dmg`, signed with the app's Developer ID,
       notarized and stapled; the script ends with `spctl --assess --type execute` on the app and
@@ -103,9 +105,8 @@ With Fanous and the console software on one subnet (Little Snitch: allow
       Done again for 1.0.0-rc.9 on 2026-11-16 from main e99c648 (the built tree, d26c44e): app and signed dmg
       accepted, both stapled, both `spctl` checks `accepted`, `source=Notarized Developer ID`.
       Done again for 1.0.0-rc.10 on 2026-11-16 from main 8531e6c (the built tree, 5583eeb): app and signed dmg
-      accepted, both stapled, both `spctl` checks `accepted`, `source=Notarized Developer ID`. The engine was
-      running from `dist/Fanous.app` and was stopped first: `scripts/bundle.sh` removes that bundle before it
-      builds the new one.
+      accepted, both stapled, both `spctl` checks `accepted`, `source=Notarized Developer ID`; the engine ran
+      from `dist/Fanous.app` and was stopped for the bundle step.
 - [ ] `shasum -a 256 dist/Fanous-<version>.dmg` goes into the release notes
 - [ ] only on a developer Mac that ran ad-hoc builds: the first Developer ID open re-registers the agent (B50), and
       the old Screen Recording switch stays on while the engine reads `denied` after the signature change:
