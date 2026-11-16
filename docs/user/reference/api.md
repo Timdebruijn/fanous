@@ -150,7 +150,7 @@ viewer gets an existing stream or JPEG at 5 fps.
 what changes by itself: `displays`, `outputs` (state, mode note, preset and
 keystone badges), `cue` (`current`, `currentName`, `next`, `nextName`,
 `fading`, `count`), `show` (mode, readiness), `timecode`, `osc` (recent
-commands, MIDI sources), `midi`, `audio`, `capture`, `syphon`, `citp`,
+messages, MIDI sources), `midi`, `audio`, `capture`, `syphon`, `citp`,
 `sync`, `library`, `ingest`, `versions`, `system`, `engine`, `security`,
 `metrics`, `layers` and the DMX parts. It is rebuilt every 100 ms and sent
 every 50 ms, so a fixture value arrives about 10 times a second.

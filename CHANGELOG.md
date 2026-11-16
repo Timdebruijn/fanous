@@ -10,7 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- OSC panel: "Last received" lists every message the engine took, as sent (`/fanous/cue/goto 3`), parameter, media and retrigger messages included; a run on one address is one row (PR #338)
+- OSC panel: "Last received" lists every message received on a known address, as sent (`/fanous/cue/goto 3`), parameter, media and retrigger messages included; a fader sweep on one address is one row (PR #338)
 - Release: 1.0.0-rc.6 is on GitHub as a pre-release with the signed, notarized dmg, built from main 6adbc5c
   (PR #334).
 

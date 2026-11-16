@@ -250,9 +250,8 @@ layer's audio channels on the console (volume, mute); audio plays only at
   of 5 seconds or more fires nothing ([Show control](show-control.md#triggers-and-follows)).
   Fire a skipped cue with Go to.
 - From OSC or MSC: the OSC panel's "Last received" or the MIDI panel's last
-  message shows whether it arrived; OSC lists only what the engine took, so
-  a Go to a number with no cue is missing there and named in the engine
-  log; the MSC format and device id must match
+  message shows whether it arrived (a listed Go to a number with no cue
+  arrived and fired nothing); the MSC format and device id must match
   ([Remote control](remote-control.md#midi-show-control)).
 - After an engine restart no cue is current: Go to the right one.
 
