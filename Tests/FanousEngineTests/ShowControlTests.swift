@@ -343,6 +343,8 @@ struct ShowControlTests {
         let sync = items.first { $0.id == "syncpackets" }!
         #expect(sync.state == .warn && !sync.blocks && sync.detail.contains("Layer 2 (group 1)"))
         #expect(items.first { $0.id == "library" }!.state == .ok)
+        // B182: an exclusion under Spotlight Privacy is not readable without root, so the hint must not offer it
+        #expect(items.first { $0.id == "spotlight" }!.fix == "sudo mdutil -i off <volume>")
         #expect(items.allSatisfy { !$0.fix.isEmpty && !$0.detail.isEmpty })
     }
 

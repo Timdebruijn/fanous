@@ -12,6 +12,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Show mode: a `show-state.json` older than 2 hours no longer resumes show mode on the same boot either, so a crash nobody
   restarted does not bring show mode back days later (B186) (PR #335).
+- Readiness: the Spotlight item's fix hint no longer suggests Spotlight Privacy, which the item cannot read without
+  administrator rights (B182) (PR #337).
 - Release: 1.0.0-rc.6 is on GitHub as a pre-release with the signed, notarized dmg, built from main 6adbc5c
   (PR #334).
 
