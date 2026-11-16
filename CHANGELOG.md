@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+## 1.0.0-rc.7 — 2026-11-16
+
 - Show mode: a `show-state.json` older than 2 hours no longer resumes show mode on the same boot either, so a crash nobody
   restarted does not bring show mode back days later (B186) (PR #335).
 - Readiness: the Spotlight item's fix hint no longer suggests Spotlight Privacy, which the item cannot read without
