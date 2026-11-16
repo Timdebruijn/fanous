@@ -166,10 +166,16 @@ public final class Engine: @unchecked Sendable {
         return store.commandSpecs
     }
 
-    public init(options: EngineOptions, logger: Logger) {
+    public convenience init(options: EngineOptions, logger: Logger) {
+        self.init(options: options, logger: logger, showStateURL: AppPaths.showStateFile)
+    }
+
+    /// `showStateURL` nil: show mode is not persisted, so a test that enters it leaves no file for the installed engine
+    /// to resume. `start` still reads `AppPaths.showStateFile`.
+    init(options: EngineOptions, logger: Logger, showStateURL: URL?) {
         self.options = options
         self.logger = logger
-        showMode = ShowModeController(logger: logger, stateURL: AppPaths.showStateFile)
+        showMode = ShowModeController(logger: logger, stateURL: showStateURL)
     }
 
     public func start() throws {

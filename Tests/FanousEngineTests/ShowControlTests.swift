@@ -468,6 +468,27 @@ struct ShowControlTests {
         #expect(!lines.all.withLock { $0 }.contains { $0.hasPrefix("readiness") })
     }
 
+    /// PR #341: a console repeating `/fanous/show/mode 1` in a show runs no entry checks, which would drop the
+    /// acknowledgement of an item that passes at that moment, so it blocked again at its next failure. Show mode is
+    /// entered for real (power assertions for the test's duration), with no state file.
+    @Test func aRepeatedShowModeEntryKeepsTheAcknowledgements() async throws {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger, showStateURL: nil)
+        let calls = Atomic<Int>(0)
+        let state = Mutex(ReadinessItem.State.fail)
+        engine.readinessCheck = { _, acknowledged in  // flagged as `Readiness.check` does
+            calls.add(1, ordering: .relaxed)
+            return [ReadinessItem(id: "outputs", title: "", state: state.withLock { $0 }, detail: "", fix: "", acknowledged: acknowledged.contains("outputs"))]
+        }
+        engine.acknowledgeReadiness("outputs", true)
+        #expect(try await offPool { engine.setShowMode(true) } == nil)
+        defer { _ = engine.setShowMode(false) }
+        try #require(calls.load(ordering: .relaxed) == 1, "the entry ran the checks once")
+        state.withLock { $0 = .ok }  // the item passes at the moment the console repeats
+        #expect(try await offPool { engine.setShowMode(true) } == nil)
+        #expect(calls.load(ordering: .relaxed) == 1, "the repeat ran the entry checks")
+        #expect(engine.readiness.withLock { $0.acknowledged } == ["outputs"], "the repeat dropped the acknowledgement")
+    }
+
     /// B144: a Mac without a ProRes engine fails the "Supported hardware" item hard; acknowledging does not unblock it.
     @Test func aMacWithoutAProResEngineIsRefusedShowMode() throws {
         #expect(!SystemInfo.proResEngine(chip: "Apple M1") && SystemInfo.proResEngine(chip: "Apple M1 Pro") && SystemInfo.proResEngine(chip: "Apple M2"))
