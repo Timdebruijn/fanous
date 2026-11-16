@@ -140,7 +140,7 @@ the camera pass only while no cue uses what they check. An item that keeps
 failing for another reason, such as another silent universe, stays
 acknowledged.
 
-<img src="images/readiness-acknowledged.png" width="1396" alt="The row All outputs bound to their displays with a yellow dot and the badge acknowledged">
+<img src="images/readiness-acknowledged.png" width="1396" alt="The row All outputs bound to their displays with a yellow dot, the badge acknowledged and the Take back button">
 
 ```mermaid
 flowchart TD
