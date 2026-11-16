@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Release: 1.0.0-rc.9 is on GitHub as a pre-release with the signed, notarized dmg, built from main e99c648
+  (PR #353).
+
 ## 1.0.0-rc.9 — 2026-11-16
 
 - OSC and MIDI: a cue, show or timecode command no longer holds the DMX (or MIDI) queue while it runs; commands run on
