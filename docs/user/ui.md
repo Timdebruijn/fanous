@@ -257,8 +257,8 @@ Outputs screen stay enabled under the show lock and the engine refuses the
 change with the yellow banner instead. The outcome is the same.
 
 **What keeps working while the show is locked:** Go, Back and Go to, show
-mode on and off, the timecode switch, Run checks and Acknowledge on the
-System screen, Save version…, logging in and out, and everything the console
+mode on and off, the timecode switch, Run checks, Acknowledge and Take back
+on the System screen, Save version…, logging in and out, and everything the console
 sends. Everything that changes the setup is
 refused: patch, media, outputs, warp, cues, timecode settings, MIDI maps,
 Control and Keep in the layer panel (Release is greyed in the UI, though the

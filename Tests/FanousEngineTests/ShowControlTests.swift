@@ -242,7 +242,7 @@ struct ShowControlTests {
             on: store,
             hooks: ShowCommands.Hooks(
                 go: { fired.withLock { $0.append("go") } }, back: { fired.withLock { $0.append("back") } }, goto: { number in fired.withLock { $0.append("goto \(number)") } },
-                showMode: { _ in ["power"] }, acknowledge: { id in fired.withLock { $0.append("ack \(id)") } }, runReadiness: { fired.withLock { $0.append("run") } }))
+                showMode: { _ in ["power"] }, acknowledge: { id, on in fired.withLock { $0.append("\(on ? "ack" : "unack") \(id)") } }, runReadiness: { fired.withLock { $0.append("run") } }))
         let id = try store.execute(
             "cue.add",
             args: [
@@ -270,6 +270,8 @@ struct ShowControlTests {
         #expect(ShowCommands.cueList(from: store.project).cues.count == 1)
         #expect(store.execute("show.mode", args: ["on": true], role: .operator).failureCode == "notReady")
         _ = try store.execute("readiness.acknowledge", args: ["id": "power"], role: .programmer).get()
+        #expect(store.execute("readiness.unacknowledge", args: ["id": "power"], role: .operator).failureCode == "forbidden")
+        _ = try store.execute("readiness.unacknowledge", args: ["id": "power"], role: .programmer).get()
         _ = try store.execute("timecode.set", args: ["path": "/source", "value": "mtc"], role: .programmer).get()
         _ = try store.execute("timecode.set", args: ["path": "/layerOffsets/3", "value": 12], role: .programmer).get()
         let settings = ShowCommands.timecodeSettings(from: store.project)
@@ -282,7 +284,7 @@ struct ShowControlTests {
         #expect(ltc.source == .ltc && ltc.device == "UMC404HD" && ltc.channel == 2 && ltc.enabled == nil && ltc.layerOffsets["3"] == 12)
         _ = try store.execute("undo", role: .programmer).get()
         #expect(ShowCommands.timecodeSettings(from: store.project).source == .mtc)
-        #expect(fired.withLock { $0 } == ["go", "goto 1.5", "ack power"])
+        #expect(fired.withLock { $0 } == ["go", "goto 1.5", "ack power", "unack power"])
     }
 
     /// B159: every rate spelling the guide and the cue editor use parses, and cue.add refuses a trigger that does not.
@@ -297,13 +299,45 @@ struct ShowControlTests {
         #expect(ShowCommands.parseTimecode("00:01:30:00@29.97") == nil)
         let (store, _) = testStore(outputs: 0)
         ShowCommands.register(
-            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _ in }, runReadiness: {}))
+            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {}))
         #expect(store.execute("cue.add", args: ["number": 1, "name": "typo", "trigger": "00:01:30:00@29.97"], role: .programmer).failureCode == "invalidArgs")
         #expect(store.execute("cue.add", args: ["number": 2, "name": "short", "trigger": "01:30:00"], role: .programmer).failureCode == "invalidArgs")
         _ = try store.execute("cue.add", args: ["number": 3, "name": "ndf", "trigger": "00:01:30:00@29.97ndf"], role: .programmer).get()
         #expect(ShowCommands.cueList(from: store.project).cues.map(\.timecodeTrigger) == [Timecode(hours: 0, minutes: 1, seconds: 30, frames: 0, rate: .fps2997ndf)])
         // null clears the trigger and is not refused
         _ = try store.execute("cue.add", args: ["number": 4, "name": "none", "trigger": .null], role: .programmer).get()
+    }
+
+    /// B163: an acknowledgement holds for this failure in this show: taken back it blocks again, a pass or leaving
+    /// show mode drops it, and a run that started before a change is flagged by the set as it is when it lands.
+    @Test func anAcknowledgementHoldsForOneFailureInOneShow() {
+        func run(_ state: ReadinessItem.State, detail: String = "lost: [1]", acknowledged: Bool = false) -> [ReadinessItem] {
+            [ReadinessItem(id: "outputs", title: "All outputs bound to their displays", state: state, detail: detail, fix: "", acknowledged: acknowledged)]
+        }
+        var ledger = ReadinessLedger()
+        ledger.store(run(.fail), at: 1)
+        #expect(ledger.items[0].blocks)
+        ledger.acknowledge("outputs", true)
+        #expect(!ledger.items[0].blocks && ledger.acknowledged == ["outputs"])
+        // another failure detail keeps it: no detail tracking
+        ledger.store(run(.fail, detail: "unassigned: [2]"), at: 2)
+        #expect(!ledger.items[0].blocks)
+        ledger.acknowledge("outputs", false)
+        #expect(ledger.items[0].blocks && ledger.acknowledged.isEmpty)
+        // a run checked against the old set (acknowledged when it started) lands after the take-back: it blocks
+        ledger.store(run(.fail, acknowledged: true), at: 3)
+        #expect(ledger.items[0].blocks)
+        // fail → ok → fail needs a new acknowledgement
+        ledger.acknowledge("outputs", true)
+        ledger.store(run(.ok), at: 4)
+        #expect(ledger.acknowledged.isEmpty)
+        ledger.store(run(.fail), at: 5)
+        #expect(ledger.items[0].blocks && ledger.checkedAt == 5)
+        // leaving show mode drops every acknowledgement, also one for an item the last run did not show
+        ledger.acknowledge("outputs", true)
+        ledger.acknowledge("spotlight", true)
+        ledger.leaveShow()
+        #expect(ledger.items[0].blocks && ledger.acknowledged.isEmpty)
     }
 
     /// B144: a Mac without a ProRes engine fails the "Supported hardware" item hard; acknowledging does not unblock it.

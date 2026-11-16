@@ -127,13 +127,15 @@ System screen shows it.
 | Green dot | OK | Nothing |
 | Yellow dot, **warning** | Noted, never blocks | Read the detail; decide |
 | Red dot, **Acknowledge** | Failed: blocks show mode | Fix it, or press Acknowledge (programmer; an operator sees no button) to accept the risk on purpose |
-| Yellow dot, **acknowledged** | Failed, accepted | Nothing; it no longer blocks |
+| Yellow dot, **acknowledged**, **Take back** | Failed, accepted | Nothing; it no longer blocks. Take back (programmer) makes it block again |
 | Grey ring, **manual** | Fanous cannot read it | Check it yourself |
 | Red dot, **blocking** | Cannot be accepted | Only Supported hardware: use a Mac with a ProRes engine |
 
-An acknowledgement is kept in the engine's memory: it survives Run checks
-and leaving show mode, is lost at an engine restart, and sticks to the
-item, so an item that recovers and fails again later is still acknowledged.
+An acknowledgement holds for this failure, for this show. It is dropped
+when the item passes a check (an item that recovers and fails again needs a
+new one), when show mode is left, and at an engine restart. An item that
+keeps failing for another reason, such as another silent universe, stays
+acknowledged.
 
 <img src="images/readiness-acknowledged.png" width="1396" alt="The row All outputs bound to their displays with a yellow dot and the badge acknowledged">
 
