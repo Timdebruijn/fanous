@@ -78,7 +78,7 @@ are the programmer's and are refused while the show is locked
 6. **Duplicate** makes "name (copy)" numbered halfway to the next cue, with
    the fade and the values but not the trigger and follow. **Move up** and
    **Move down** swap numbers with the neighbour, unless one of the two
-   holds a trigger out of range (see
+   holds a trigger out of range or in a form Fanous refuses (see
    [Triggers and follows](#triggers-and-follows)). **Remove** shows a
    toast with Undo for 8 seconds.
 

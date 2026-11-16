@@ -10,8 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Show: `cue.add` and `cue.set` refuse the trigger spellings the cue editor refuses (a sign, three digits in a
-  field, text after a second `@`, the rate `fps2997df`); projects that hold one still load with the trigger armed (PR #356).
+- Show: `cue.add` and `cue.set` refuse the trigger spellings the cue editor refuses, for example a sign, three
+  digits in a field, text after a second `@` or the rate `fps2997df`; projects that hold one still load with the
+  trigger armed (PR #356).
 - Release: 1.0.0-rc.9 is on GitHub as a pre-release with the signed, notarized dmg, built from main e99c648
   (PR #353).
 
