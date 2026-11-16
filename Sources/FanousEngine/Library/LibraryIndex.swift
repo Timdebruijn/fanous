@@ -319,8 +319,9 @@ public final class LibraryIndex: @unchecked Sendable {
                 entry.metadata = metadata
                 entry.status = url.pathExtension.lowercased() == "mov" && Self.playableCodecs.contains(metadata.codec) && metadata.rotated != true ? .playable : .needsTranscode
                 if entry.status == .needsTranscode {
+                    // B195: say which it is, the rotation, the codec or the container
                     entry.reason = metadata.rotated == true ? "rotated or flipped (phone footage): transcode to make it upright"
-                        : !Self.playableCodecs.contains(metadata.codec) ? "\(metadata.codec) is not ProRes or HAP"  // B195: the codec or the container
+                        : !Self.playableCodecs.contains(metadata.codec) ? "\(metadata.codec) is not ProRes or HAP"
                         : "\(metadata.codec) in .\(url.pathExtension.lowercased()): plays only in .mov, "
                             + (MovieSource.proResCodecs.contains(makeFourCC(metadata.codec)) ? "transcode re-encodes it" : "remux it to a .mov on another machine")
                 }
