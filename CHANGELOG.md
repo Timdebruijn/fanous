@@ -12,6 +12,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Media screen: a tile shows Queued with its controls disabled while its own transcode runs; the lookup compared a
   plain path with the file URL the engine sends, so a second Transcode of the same file could be queued (B190, PR #330).
+- Show screen: the OSC panel lists `/fanous/project/load` and the read-back addresses (`/get`, subscribe, ack,
+  unsubscribe, ping) and says that Last received shows cue, show, timecode and project-load commands only (B176 web
+  half, PR #331).
 - Docs: `AGENTS.md` tells coding and review agents (Copilot, Claude) where things are, the hard rules, the checks
   before a PR and what a reviewer looks for (PR #329).
 

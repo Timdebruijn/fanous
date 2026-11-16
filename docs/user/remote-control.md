@@ -74,7 +74,8 @@ cannot be changed, and OSC is off with `--no-network`.
 
 The OSC panel on the Show screen shows the port, the last received cue,
 show, timecode and project-load commands (parameter messages are not
-listed) and the control addresses. Try `/fanous/cue/go` first.
+listed, the panel says so) and the control and read-back addresses. Try
+`/fanous/cue/go` first.
 
 <img src="images/show-osc.png" width="321" alt="The OSC panel: Port 8000, Last received with its empty text, and the address list with argument types">
 

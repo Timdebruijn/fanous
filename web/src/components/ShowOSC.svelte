@@ -20,6 +20,12 @@
     { address: '/fanous/show/lock', args: 'i', note: '1 locks the show, 0 unlocks' },
     { address: '/fanous/show/mode', args: 'i', note: '1 enters show mode, 0 leaves' },
     { address: '/fanous/timecode/enable', args: 'i', note: '1 switches timecode on, 0 off' },
+    { address: '/fanous/project/load', args: 's', note: 'Load the newest named project version with that name, else the version with that id; refused in show mode or while locked' },
+    { address: '/fanous/{path}/get', args: '[i]', note: 'Answers the sender with every value at or below path (/fanous/get: the summary); with a port, to that port of a confirmed subscription' },
+    { address: '/fanous/subscribe', args: 'si [s]', note: 'Your own IP address, a port and an optional prefix: changes go to that port once /fanous/subscribe/ack returns the cookie' },
+    { address: '/fanous/subscribe/ack', args: 's', note: 'The cookie from /fanous/subscribe/confirm, within 5 s' },
+    { address: '/fanous/unsubscribe', args: '[s i s]', note: 'Ends the sender\'s subscriptions; with host, port and prefix only that one' },
+    { address: '/fanous/ping', args: '', note: 'Renews the sender\'s subscriptions; answered with /fanous/pong' },
   ];
 
   const osc = $derived(app.live.osc);
@@ -34,6 +40,7 @@
   </header>
 
   <h3 id="osc-recent">Last received</h3>
+  <p class="caption">Cue, show, timecode and project-load commands; parameter, media and retrigger messages are not listed.</p>
   {#if recent.length === 0}
     <p class="caption">Nothing received yet. Send <span class="mono">/fanous/cue/go</span> to port {osc.port} to try it.</p>
   {:else}
