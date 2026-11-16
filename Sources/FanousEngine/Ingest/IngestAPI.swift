@@ -72,7 +72,6 @@ public final class IngestAPI: @unchecked Sendable {
             return .json(200, Array((try? encoder.encode(queue.jobs)) ?? Data()))
         case ("POST", "/api/ingest"):
             guard let job = try? JSONDecoder().decode(JobRequest.self, from: Data(request.body)) else { return .text(400, "bad job JSON") }
-            if let reason = knownUnreadable(URL(fileURLWithPath: job.source)) { return .text(400, reason) }  // the job could only fail (B194)
             return enqueue(
                 source: URL(fileURLWithPath: job.source), folder: job.folder, file: job.file, name: job.name, codec: job.codec, fps: job.fps,
                 keepOriginal: job.keepOriginal ?? true)
@@ -139,16 +138,6 @@ public final class IngestAPI: @unchecked Sendable {
         job = queue.enqueue(job)
         logger.info("ingest queued", metadata: ["source": "\(source.lastPathComponent)", "destination": "\(destination.lastPathComponent)", "id": "\(job.id)"])
         return .json(202, Array((try? encoder.encode(job)) ?? Data()))
-    }
-
-    /// The library's reason when its probe found `source` unreadable and the file on disk is still the one it probed (same
-    /// size and date); nil when the index has no word on it. An upload lands in `_incoming`, which the index never lists.
-    private func knownUnreadable(_ source: URL) -> String? {
-        guard let item = library.snapshot.folders.lazy.flatMap(\.items).first(where: { $0.path == source.path }), item.status == .unreadable,
-            let values = try? source.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),
-            values.fileSize == item.size, values.contentModificationDate?.timeIntervalSince1970 == item.modified
-        else { return nil }
-        return item.reason
     }
 
     /// `/api/upload/<folder>/<name>` → (folder, percent-decoded file name without path components). Everything ingest

@@ -99,7 +99,7 @@ public final class LibraryIndex: @unchecked Sendable {
     /// monitors: no file path (B25).
     static func openFailureText(_ error: Error, _ url: URL) -> String {
         let ext = url.pathExtension.lowercased()
-        if let error = error as? AVError, error.code == .fileFormatNotRecognized, !avFoundationContainers.contains(ext) {
+        if let error = error as? AVError, error.code == .fileFormatNotRecognized, !ext.isEmpty, !avFoundationContainers.contains(ext) {
             return "AVFoundation cannot open .\(ext) files"
         }
         return error.clientText

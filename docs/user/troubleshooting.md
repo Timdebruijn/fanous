@@ -186,7 +186,7 @@ The Media screen's ingest queue shows the reason under the job.
 
 | The job reads | Do |
 |---|---|
-| "AVFoundation cannot open .webm files" (or `.mkv`, `.wmv`, …) | macOS has no reader for that container. Convert the file on another machine and import the result. An imported copy stays in `_incoming/` in the library root: delete it in Finder, then **Remove** the job |
+| "AVFoundation cannot open .webm files" (or `.mkv`, `.wmv`, …) | macOS has no reader for that container. Convert the file on another machine and import the result. An imported copy stays in `_incoming/` in the library root (as `name-2.ext` when that name was taken): **Remove** the job, then delete that copy in Finder |
 | "Cannot Open" | A damaged file in a container macOS reads (`.mov`, `.mp4`, `.m4v`): export it again |
 
 ## The picture is frozen

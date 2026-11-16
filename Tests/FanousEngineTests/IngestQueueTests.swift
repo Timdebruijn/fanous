@@ -1137,6 +1137,9 @@ extension IngestQueueTests {
                 originalsDirectory: directory.appending(path: "library/_originals")))
         #expect(await Self.wait(for: job.id, in: queue) == .failed("AVFoundation cannot open .webm files"))
         #expect(try Data(contentsOf: webm) == bytes)
+        // a source without an extension keeps AVFoundation's text, not "AVFoundation cannot open . files"
+        let unrecognized = AVError(.fileFormatNotRecognized)
+        #expect(LibraryIndex.openFailureText(unrecognized, directory.appending(path: "clip")) == unrecognized.localizedDescription)
         #expect((try? FileManager.default.contentsOfDirectory(atPath: directory.appending(path: "library").path)) ?? [] == [])
     }
 

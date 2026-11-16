@@ -107,9 +107,8 @@ cannot scrub, run in reverse or chase timecode reliably. A container macOS
 cannot open (`.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`,
 `.f4v`, `.divx`) is listed too and reads red **unreadable**, "AVFoundation
 cannot open .webm files" (an `.mkv` or `.mxf` read by an older Fanous
-version keeps "Cannot Open" until the file changes). Its tile has no
-**Transcode**, and a transcode asked for over the REST API is refused with
-that reason. Convert it on another machine. A file with an extension after `.mxf` in the list above never takes
+version keeps "Cannot Open" until the file changes). Convert it on another
+machine. A file with an extension after `.mxf` in the list above never takes
 a number from a `.mov`, `.mp4`, `.m4v`, `.avi`, `.mkv` or `.mxf` file, a
 still or a sequence folder in the same folder: on a shared number it is the
 duplicate. A file that needs a transcode has no thumbnail: its tile is
@@ -154,9 +153,9 @@ cannot decode it). A container macOS cannot open at all (a `.webm`, `.mkv`,
 …) uploads, but its job in the ingest queue fails with the same reason the
 library gives, "AVFoundation cannot open .webm files". Nothing is lost and
 nothing is placed in the folder: the uploaded copy stays in `_incoming/` in
-the library root, which the Media screen does not list. Remove the job,
-delete that copy in Finder, convert the file on another machine and import
-the result.
+the library root, which the Media screen does not list (as `name-2.ext`
+when that name was taken). **Remove** the job, then delete that copy in
+Finder; convert the file on another machine and import the result.
 
 <img src="images/media-playbar-transcode.png" width="1130" alt="The selected-file bar for a file that needs a transcode: 1 · 001_phone.mp4 and the caption Transcode this file first to play it">
 
