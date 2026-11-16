@@ -8,6 +8,7 @@ import Foundation
 import FanousCore
 import Logging
 import Synchronization
+import UniformTypeIdentifiers
 
 /// One entry of the library (DESIGN.md §8.1): a numbered file, a sequence
 /// directory, or something invalid that the Media screen shows in red.
@@ -85,6 +86,13 @@ public struct LibrarySnapshot: Codable, Sendable, Equatable {
 /// Resolution for the media loader is a dictionary lookup under a mutex.
 public final class LibraryIndex: @unchecked Sendable {
     public static let movieExtensions: Set<String> = ["mov", "mp4", "m4v", "avi", "mkv", "mxf"]
+
+    /// Listed since B161: an extension the system's type database calls a movie (`.webm`, `.mpg`, `.m2ts`, `.wmv`, `.flv`,
+    /// …) beyond the six above, so no video file is skipped without a word; the probe then says needs transcode or
+    /// unreadable. The database also holds what installed apps declare (VLC's `.mkv`), hence the six stay listed by hand.
+    static func isLateMovie(_ ext: String) -> Bool {
+        !movieExtensions.contains(ext) && UTType(filenameExtension: ext)?.conforms(to: .movie) == true
+    }
     /// The codecs `MovieSource` plays, as the fourCC strings of `Metadata.codec`.
     static let playableCodecs = Set(MovieSource.proResCodecs.union(MovieSource.hapCodecs.keys).map(fourCCString))
 
@@ -208,14 +216,19 @@ public final class LibraryIndex: @unchecked Sendable {
             }
             var items: [LibraryItem] = []
             var seenFiles: Set<Int> = []
-            let names = ((try? fm.contentsOfDirectory(atPath: folderURL.path)) ?? []).filter { !$0.hasPrefix(".") && !$0.hasPrefix("_") }.sorted()
-            for name in names {
+            // a late movie (B161) claims its number after everything else: one that shares a number with a file listed
+            // before B161 is the duplicate, so a show's folder/file numbers stay what they were
+            let names = ((try? fm.contentsOfDirectory(atPath: folderURL.path)) ?? []).filter { !$0.hasPrefix(".") && !$0.hasPrefix("_") }
+                .map { ($0, Self.isLateMovie(($0 as NSString).pathExtension.lowercased())) }  // not URL(fileURLWithPath:): it stats
+                .sorted { ($0.1 ? 1 : 0, $0.0) < ($1.1 ? 1 : 0, $1.0) }
+            for (name, late) in names {
                 let url = folderURL.appending(path: name)
                 guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey]) else { continue }
                 let isDirectory = values.isDirectory == true
                 let ext = url.pathExtension.lowercased()
                 let kind: LibraryItem.Kind =
-                    isDirectory ? .sequence : StillSource.extensions.contains(ext) ? .still : Self.movieExtensions.contains(ext) ? .movie : .other
+                    isDirectory ? .sequence : StillSource.extensions.contains(ext) ? .still
+                    : Self.movieExtensions.contains(ext) || late ? .movie : .other
                 if kind == .other && !isDirectory { continue }  // sidecars, text files: not media
                 let modified = values.contentModificationDate?.timeIntervalSince1970 ?? 0
                 let size = values.fileSize ?? 0
@@ -304,6 +317,8 @@ public final class LibraryIndex: @unchecked Sendable {
                 if entry.status == .needsTranscode {
                     entry.reason = metadata.rotated == true ? "rotated or flipped (phone footage): transcode to make it upright" : "\(metadata.codec) is not ProRes/HAP in .mov"
                 }
+            } catch let error as AVError where error.code == .fileFormatNotRecognized {
+                entry.reason = "AVFoundation cannot open .\(url.pathExtension.lowercased()) files"  // "Cannot Open" told nothing (B161)
             } catch {
                 entry.reason = error.clientText  // `/api/library` reaches monitors: no file path (B25)
             }
