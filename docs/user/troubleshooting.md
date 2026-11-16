@@ -332,6 +332,7 @@ log show --predicate 'subsystem == "org.fanous"' --last 1h
 | "project file not readable" | The section above |
 | "stale show state ignored" | The engine or the Mac was down for more than 2 hours since show mode was last written: a normal start |
 | "show mode resumed after an unclean stop", "show mode kept across a restart" | Show mode came back; the second is a deliberate Restart Engine |
+| "readiness: now blocking in show mode", "readiness: no longer blocking" | A readiness item turned red during the show or cleared again; `items` names them. The status bar shows the first and System the rest |
 | "autosave failed", "show mode state not saved" | The disk or the folder is not writable: the engine plays on and saves nothing |
 
 ## Disk full, or the folder not writable

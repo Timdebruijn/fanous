@@ -117,8 +117,10 @@ on, once after a resumed show mode and after a display mode switch in show
 mode; **Run checks** runs them at any time, and nothing else does: after an
 engine start the list is empty until you run it. Each row shows the item,
 what it found, a fix hint when it is not green, and **Acknowledge** or a
-badge. Nothing alerts you when an item turns red during the show: only the
-System screen shows it.
+badge. An item that turns red during the show shows on every screen: the
+status bar reads "blocking: " and the item's title next to **Show mode: on**,
+as a link to System, and the log gets a "readiness: now blocking in show
+mode" line. Both appear at the next check, so within 30 seconds.
 
 <img src="images/readiness-failed.png" width="1396" alt="The Readiness panel reading not ready: green rows, red rows with Acknowledge for the silent universes, no output bound, Spotlight and automatic updates; Focus as a manual row; display sleep as a yellow warning row">
 

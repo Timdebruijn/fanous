@@ -77,7 +77,6 @@ link here. Back to the [index](../README.md).
 | **Spotlight indexing off for the library volume** reads the volume's indexing switch only: macOS lets only an administrator read Spotlight Privacy, so a library folder added there still fails the item. Turn indexing off for the volume, or acknowledge. | — |
 | A port held by another program (the web UI's 8443, OSC 8000) is only logged as "listener failed": the engine keeps running without that listener, and with 8443 taken nothing on screen can say so; Start Engine then restarts that healthy engine. A second engine started by hand refuses on the terminal only, not in the log. | B183 |
 | Logins do not survive an engine restart: every iPad logs in again, and a client that asked for a role it can no longer get drops to the highest open role without a word. | B184 |
-| Nothing alerts you when a readiness item turns red while show mode is on: only the System screen's red banner shows it; the status bar and the log stay quiet. | B185 |
 | A full home volume or an unwritable `Application Support/Fanous` folder is only logged ("autosave failed"): the engine plays on and saves nothing, and the readiness disk item checks the library's volume only. | B188 |
 | There is one project per machine: versions of it can be restored, but there are no project bundles to open or switch between, and no diff between two versions. | — |
 | The layer limit is 32 on every Mac: the engine's ceiling, not a measurement of this Mac. What a Mac plays without dropping frames can be far lower, at 4K for example. | B145 |

@@ -238,6 +238,16 @@ struct ReadinessLedger {
     private mutating func reflag() {
         for i in items.indices { items[i].acknowledged = acknowledged.contains(items[i].id) }
     }
+
+    /// B185: what changed in the blocking items between two stored states, nil when nothing did. The engine compares
+    /// the items before and after a store or an acknowledgement, so a run that stores nothing changes nothing.
+    static func blockingChange(from old: [ReadinessItem], to new: [ReadinessItem]) -> (started: [String], cleared: [String], blocking: [String])? {
+        let before = Set(old.filter(\.blocks).map(\.id))
+        let blocking = new.filter(\.blocks).map(\.id)
+        let started = blocking.filter { !before.contains($0) }
+        let cleared = old.filter(\.blocks).map(\.id).filter { !blocking.contains($0) }
+        return started.isEmpty && cleared.isEmpty ? nil : (started, cleared, blocking)
+    }
 }
 
 /// What the checks look at; filled by the engine so the checks stay testable.

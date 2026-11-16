@@ -6,7 +6,7 @@
   import { timecodeOn } from '../lib/show';
   import { describeJobState } from '../lib/media';
   import { universeName } from '../lib/patch-screen';
-  import { readinessSummary, resumedText } from '../lib/system';
+  import { blockingNote, readinessSummary, resumedText } from '../lib/system';
   import { lastVersionText } from '../lib/versions';
   import { app, can, cmd, shell, toggleLock } from '../lib/state.svelte';
 
@@ -43,6 +43,7 @@
   const syncLost = $derived(app.live.layers.filter((l) => l.sync?.state === 'lost').map((l) => `Layer ${l.index}`));
   const resumed = $derived(resumedText(app.live.show.resumedAt));
   const blocking = $derived(readinessSummary(app.live.show.readiness, app.live.show.checkedAt).blocking);
+  const blocked = $derived(blockingNote(showMode, blocking));
   /** set when entering show mode was refused: the popover under the button says why */
   let refused = $state<string | null>(null);
   async function toggleShowMode() {
@@ -66,7 +67,9 @@
       <button type="button" class="tag {showMode ? 'tag-mode' : 'tag-open'}" aria-pressed={showMode} aria-expanded={refused !== null} onclick={toggleShowMode} disabled={!can('operator')} title={can('operator') ? (showMode ? 'Leave show mode' : 'Enter show mode: runs the readiness checks first') : 'Operator or programmer only'}>
         Show mode: {showMode ? 'on' : 'off'}
       </button>
-      <span role="status">{#if showMode && resumed}<a class="caption resumed" href="#/system">{resumed}</a>{/if}</span>
+      <!-- one polite live region for both notes: a blocking item is announced when it starts, not per 30 s run (B185);
+           a phone shows "blocking" alone, the titles stay for screen readers -->
+      <span role="status">{#if showMode && resumed}<a class="caption resumed" href="#/system">{resumed}</a>{/if}{#if blocked}<a class="caption blocked" href="#/system" title="Show mode is on with blocking items: {blocking.map((i) => i.title).join(', ')} (System)">blocking<span class="long">: {blocked}</span></a>{/if}</span>
       {#if refused !== null}
         <div class="pop panel" role="alert">
           <strong>Cannot enter show mode</strong>
@@ -167,6 +170,7 @@
   .popactions a { text-decoration: none; }
   .tag:disabled { opacity: 0.8; }
   .resumed { margin-left: 8px; color: var(--yellow); text-decoration: none; }
+  .blocked { margin-left: 8px; color: var(--red); text-decoration: none; }
   .value { font-size: 15px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
   /* the pills wrap inside the item, so 3+ universes on a phone take a second row instead of widening the page */
   .dmx { gap: 4px 12px; flex-wrap: wrap; padding-block: 4px; }

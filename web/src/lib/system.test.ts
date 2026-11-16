@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ReadinessItemDoc } from './docs';
 import {
-  ageText, droppedTone, filterLines, formatClock, headerCaption, memoryText, metricTiles, outputTone, parseMetrics, parseOpenRoles, permissionRow,
+  ageText, blockingNote, droppedTone, filterLines, formatClock, headerCaption, memoryText, metricTiles, outputTone, parseMetrics, parseOpenRoles, permissionRow,
   plural, pushHistory, readinessBadge, readinessSummary, resumedDetail, resumedText, sparkline, stampText, thermalTone, typedNumber,
 } from './system';
 
@@ -85,6 +85,14 @@ describe('readiness', () => {
   it('is unchecked until the first run, but a known failure still blocks', () => {
     expect(readinessSummary([], 0).status).toBe('unchecked');
     expect(readinessSummary([item('fail')], 0).status).toBe('notReady');
+  });
+
+  it('names the blocking items in the status bar only while show mode is on (B185)', () => {
+    const blocking = readinessSummary([item('ok'), item('fail'), item('hard'), item('warn')], 100).blocking;
+    expect(blockingNote(true, blocking)).toBe('fail + 1 more');
+    expect(blockingNote(true, blocking.slice(1))).toBe('hard');
+    expect(blockingNote(false, blocking)).toBeNull();
+    expect(blockingNote(true, readinessSummary([item('fail', true)], 100).blocking)).toBeNull();
   });
 });
 

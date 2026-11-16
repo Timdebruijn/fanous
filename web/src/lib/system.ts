@@ -35,6 +35,12 @@ export function resumedText(resumedAt: number | null | undefined): string | null
   return `Show mode resumed after the engine restarted at ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
+/** What the status bar's red "blocking: …" names while show mode is on and an item blocks (B185): the first title and how many more. */
+export function blockingNote(showMode: boolean, blocking: readonly { title: string }[]): string | null {
+  if (!showMode || blocking.length === 0) return null;
+  return `${blocking[0].title}${blocking.length > 1 ? ` + ${blocking.length - 1} more` : ''}`;
+}
+
 /** The banner's second sentence: a deliberate Restart Engine (B181) or an unclean stop; an engine without the field reads as unclean. */
 export function resumedDetail(restart: boolean | undefined): string {
   return restart ? 'Engine › Restart Engine kept show mode on; check the outputs.' : 'The engine stopped uncleanly during the show; check the outputs and the log.';

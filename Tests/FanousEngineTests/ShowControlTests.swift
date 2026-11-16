@@ -413,6 +413,43 @@ struct ShowControlTests {
         #expect(ledger.checkedAt == 12 && ledger.items[0].state == .fail && ledger.acknowledged == ["outputs"])
     }
 
+    /// B185: in show mode the engine logs a change in the blocking items, not every run: the change is computed over
+    /// the stored items before and after a store or an acknowledgement.
+    @Test func aChangeInTheBlockingItemsIsReportedOnce() {
+        func item(_ id: String, _ state: ReadinessItem.State, acknowledged: Bool = false) -> ReadinessItem {
+            ReadinessItem(id: id, title: id, state: state, detail: "", fix: "", acknowledged: acknowledged)
+        }
+        func change(_ old: [ReadinessItem], _ new: [ReadinessItem]) -> [[String]]? {
+            ReadinessLedger.blockingChange(from: old, to: new).map { [$0.started, $0.cleared, $0.blocking] }
+        }
+        let ok = [item("dmx", .ok), item("outputs", .ok)]
+        #expect(change(ok, ok) == nil)
+        // starts blocking; the same failure next run says nothing
+        #expect(change(ok, [item("dmx", .fail), item("outputs", .ok)]) == [["dmx"], [], ["dmx"]])
+        #expect(change([item("dmx", .fail)], [item("dmx", .fail)]) == nil)
+        // more start blocking: only the new one is named
+        #expect(change([item("dmx", .fail), item("outputs", .ok)], [item("dmx", .fail), item("outputs", .hard)]) == [["outputs"], [], ["dmx", "outputs"]])
+        // one clears while another stays, then the last clears
+        #expect(change([item("dmx", .fail), item("outputs", .fail)], [item("dmx", .ok), item("outputs", .fail)]) == [[], ["dmx"], ["outputs"]])
+        #expect(change([item("dmx", .ok), item("outputs", .fail)], ok) == [[], ["outputs"], []])
+        // an acknowledged failing item is not blocking: entering show mode with it is no transition
+        #expect(change(ok, [item("dmx", .fail, acknowledged: true), item("outputs", .ok)]) == nil)
+
+        var ledger = ReadinessLedger()
+        ledger.store([item("dmx", .fail)], run: ledger.begin().run, at: 1, showMode: false)
+        ledger.acknowledge("dmx", true)
+        // taken back in show mode it blocks again
+        var before = ledger.items
+        ledger.acknowledge("dmx", false)
+        #expect(change(before, ledger.items) == [["dmx"], [], ["dmx"]])
+        // a discarded older run produces nothing
+        let older = ledger.begin().run
+        ledger.store([item("dmx", .fail)], run: ledger.begin().run, at: 2, showMode: true)
+        before = ledger.items
+        ledger.store([item("dmx", .ok)], run: older, at: 3, showMode: true)
+        #expect(change(before, ledger.items) == nil)
+    }
+
     /// B144: a Mac without a ProRes engine fails the "Supported hardware" item hard; acknowledging does not unblock it.
     @Test func aMacWithoutAProResEngineIsRefusedShowMode() throws {
         #expect(!SystemInfo.proResEngine(chip: "Apple M1") && SystemInfo.proResEngine(chip: "Apple M1 Pro") && SystemInfo.proResEngine(chip: "Apple M2"))

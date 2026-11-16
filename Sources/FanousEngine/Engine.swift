@@ -396,10 +396,7 @@ public final class Engine: @unchecked Sendable {
                 go: { cues.go(); oscFeedback?.invalidate(prefix: "/fanous/cue") }, back: { cues.back(); oscFeedback?.invalidate(prefix: "/fanous/cue") },
                 goto: { cues.goto($0); oscFeedback?.invalidate(prefix: "/fanous/cue") },
                 showMode: { [weak self] on in self?.setShowMode(on) ?? nil },
-                acknowledge: { [weak self] id, on in
-                    self?.readiness.withLock { $0.acknowledge(id, on) }
-                    self?.publishReadiness()
-                },
+                acknowledge: { [weak self] id, on in self?.acknowledgeReadiness(id, on) },
                 runReadiness: { [weak self] in self?.runReadiness() }))
         // MIDI control (B36): cue actions run as commands like OSC's; parameter values go straight to the resolvers
         let midi = MIDIInput(dmx: dmx, logger: logger)
@@ -1143,7 +1140,35 @@ public final class Engine: @unchecked Sendable {
     private func checkReadiness(_ context: ReadinessContext, entering: Bool = false) -> [ReadinessItem] {
         let (run, acknowledged) = readiness.withLock { $0.begin() }
         let checked = readinessCheck(context, acknowledged)
-        return readiness.withLock { $0.store(checked, run: run, at: Date().timeIntervalSince1970, showMode: !entering && showMode.isOn) }
+        let inShow = !entering && showMode.isOn
+        let (flagged, change) = readiness.withLock { ledger in
+            let before = ledger.items
+            let flagged = ledger.store(checked, run: run, at: Date().timeIntervalSince1970, showMode: inShow)
+            return (flagged, ReadinessLedger.blockingChange(from: before, to: ledger.items))
+        }
+        if inShow { logBlockingChange(change) }
+        return flagged
+    }
+
+    /// `show.acknowledge`: taken back in show mode, a failing item blocks again and is logged as one that turned red.
+    private func acknowledgeReadiness(_ id: String, _ on: Bool) {
+        let change = readiness.withLock { ledger in
+            let before = ledger.items
+            ledger.acknowledge(id, on)
+            return ReadinessLedger.blockingChange(from: before, to: ledger.items)
+        }
+        if showMode.isOn { logBlockingChange(change) }
+        publishReadiness()
+    }
+
+    /// B185: one line when the blocking items change in show mode, not one per 30 s run.
+    private func logBlockingChange(_ change: (started: [String], cleared: [String], blocking: [String])?) {
+        guard let change else { return }
+        if !change.started.isEmpty {
+            logger.warning("readiness: now blocking in show mode", metadata: ["items": "\(change.started.joined(separator: ", "))"])
+        } else {
+            logger.info("readiness: no longer blocking", metadata: ["items": "\(change.cleared.joined(separator: ", "))", "still": "\(change.blocking.isEmpty ? "none" : change.blocking.joined(separator: ", "))"])
+        }
     }
 
     private func publishReadiness() {
