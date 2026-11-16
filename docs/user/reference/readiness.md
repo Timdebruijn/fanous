@@ -76,8 +76,8 @@ blocking items and their fix hints when it refuses, with **Open System**;
 the yellow banner at the top names the items by id. While show mode is on
 and an item blocks, the status bar reads "blocking: " and the first item's
 title, "+ 2 more" when there are more, next to **Show mode: on**, in red, as a
-link to System; hover it for all titles. A phone shows "blocking" alone. The log says "readiness: now
-blocking in show mode" with the item ids when one starts blocking and
-"readiness: no longer blocking" when one clears.
+link to System; hover it for all titles. A phone shows "blocking" alone. The
+log says "readiness: now blocking in show mode" with the item ids when one
+starts blocking and "readiness: no longer blocking" when one clears.
 
 <img src="../images/banner-readiness.png" width="1396" alt="The yellow banner: readiness: dmx, spotlight, updates, with the line Show mode is blocked by failed readiness checks, and the buttons Recent messages and Dismiss">

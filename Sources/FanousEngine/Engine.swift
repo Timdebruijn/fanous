@@ -1150,7 +1150,7 @@ public final class Engine: @unchecked Sendable {
         return flagged
     }
 
-    /// `show.acknowledge`: taken back in show mode, a failing item blocks again and is logged as one that turned red.
+    /// `readiness.acknowledge` and `.unacknowledge`: an item taken back in show mode blocks again and is logged.
     private func acknowledgeReadiness(_ id: String, _ on: Bool) {
         let change = readiness.withLock { ledger in
             let before = ledger.items
