@@ -261,8 +261,9 @@ test('patch: the Layers block is laid from A 0.0.2 in one step, and one Undo put
   const layers = page.getByRole('region', { name: 'Layers' });
   const universes = page.getByRole('region', { name: 'Universes' });
   const start = layers.getByLabel('Layers block universe');
-  await expect(start).toHaveValue('artnet:0.0.0');
-  await start.selectOption('artnet:0.0.2');
+  await expect(start).toHaveValue('A 0.0.0');
+  await start.fill('A 0.0.2');
+  await start.press('Tab');
   await expect(universes.getByRole('button', { name: /^A 0\.0\.2, Layers 1–8,/ })).toBeVisible();
   await expect(layers.getByRole('button', { name: 'Layer 8, A 0.0.2 449–512, ok' })).toBeVisible();
   // no layer is left on A 0.0.0 (the row itself may stay for stored settings or a console)
@@ -270,7 +271,25 @@ test('patch: the Layers block is laid from A 0.0.2 in one step, and one Undo put
   await page.getByRole('status').getByRole('button', { name: /Undo$/ }).click();
   await expect(universes.getByRole('button', { name: /^A 0\.0\.0, Layers 1–8,/ })).toBeVisible();
   await expect(layers.getByRole('button', { name: 'Layer 1, A 0.0.0 1–64, ok' })).toBeVisible();
-  await expect(start).toHaveValue('artnet:0.0.0');
+  await expect(start).toHaveValue('A 0.0.0');
+});
+
+test('patch: a universe that no list offers is typed on the block line and in the editor (B191)', async ({ page }) => {
+  await openScreen(page, 'Patch');
+  const layers = page.getByRole('region', { name: 'Layers' });
+  const universes = page.getByRole('region', { name: 'Universes' });
+  const start = layers.getByLabel('Layers block universe');
+  await start.fill('a 0.1.0');
+  await start.press('Tab');
+  await expect(universes.getByRole('button', { name: /^A 0\.1\.0, Layers 1–8,/ })).toBeVisible();
+  await expect(start).toHaveValue('A 0.1.0');
+  // the editor takes the sACN form (a refused out-of-range universe is checked by hand: the fixture fails on any refusal)
+  await layers.getByRole('button', { name: 'Layer 1, A 0.1.0 1–64, ok' }).click();
+  const field = page.getByRole('group', { name: 'Patch of Layer 1' }).getByLabel('Universe');
+  await field.fill('S 17');
+  await field.press('Tab');
+  await expect(layers.getByRole('button', { name: 'Layer 1, S 17 1–64, ok' })).toBeVisible();
+  await expect(field).toHaveValue('S 17');
 });
 
 test('patch: a group with nothing patched says what it does, and Patch as block puts it at the standard position', async ({ page }) => {
@@ -283,7 +302,7 @@ test('patch: a group with nothing patched says what it does, and Patch as block 
   await master.getByRole('button', { name: 'Patch as block' }).click();
   await expect(master.getByRole('button', { name: 'Master, A 0.0.1 1–8, ok' })).toBeVisible();
   await expect(master.getByRole('group', { name: 'Master block' })).toBeFocused();
-  await expect(master.getByLabel('Master block universe')).toHaveValue('artnet:0.0.1');
+  await expect(master.getByLabel('Master block universe')).toHaveValue('A 0.0.1');
 });
 
 test('patch: the Patch sheet lists the layer block, prints alone, and counts Art-Net universes from 1 after a reload', async ({ page }) => {
@@ -318,7 +337,9 @@ test('status bar: the universe pills wrap on a phone instead of widening the pag
   await openScreen(page, 'Outputs');
   await page.getByLabel('Add output on').selectOption('none');
   await openScreen(page, 'Patch');
-  await page.getByRole('region', { name: 'Outputs' }).getByLabel('Outputs block universe').selectOption('artnet:0.0.2');
+  const outputs = page.getByRole('region', { name: 'Outputs' }).getByLabel('Outputs block universe');
+  await outputs.fill('A 0.0.2');
+  await outputs.press('Tab');
   const banner = page.getByRole('banner');
   for (const u of ['A 0.0.0', 'A 0.0.1', 'A 0.0.2']) await expect(banner.getByText(new RegExp(`^${u.replaceAll('.', '\\.')} ·`))).toBeVisible();
   await page.setViewportSize({ width: 375, height: 812 });

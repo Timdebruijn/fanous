@@ -7,7 +7,7 @@ import type { PatchEntry, UniverseInfo, UniverseSettingsDoc } from './docs';
 import {
   FALLBACK_FIXTURES, advanceUniverse, blockStart, buildCells, buildPatch, cellLabel, compareUniverse, defaultPair, fixturesText, frameValues,
   groupSlots, interfaceOptions, layEntries, moveAfterLayers, paramAt, paramName, parseUniverseName, parseChannelMap, patchTarget, rangeText, rowStatus, rowSummary,
-  sheetFaults, sheetRows, sheetTSV, sheetUniverse, slotOf, standardStart, summarize, universeHealth, universeName, universeOptions, universeRows, universeSettings,
+  sheetFaults, sheetRows, sheetTSV, sheetUniverse, slotOf, standardStart, summarize, universeHealth, universeName, universeOptions, universeRows, universeSettings, validUniverse,
   type ChannelMap, type FixtureRow, type Group, type UniverseRow,
 } from './patch-screen';
 
@@ -64,6 +64,8 @@ describe('universe naming and lists', () => {
     expect(parseUniverseName(' a 0.0.1 ')).toBe('artnet:0.0.1');
     expect(parseUniverseName('sacn:9')).toBe('sacn:9');
     expect(parseUniverseName('x')).toBe('x');
+    for (const ok of ['artnet:0.0.0', 'artnet:127.15.15', 'sacn:1', 'sacn:63999']) expect(validUniverse(ok), ok).toBe(true);
+    for (const bad of ['artnet:128.0.0', 'artnet:0.16.0', 'artnet:0.0.16', 'artnet:0.0', 'sacn:0', 'sacn:64000', 'x', '']) expect(validUniverse(bad), bad).toBe(false);
   });
 
   it('offers every interface by name and address and marks an absent current one', () => {

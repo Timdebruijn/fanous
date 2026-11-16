@@ -69,7 +69,7 @@ with sACN priority, which merges consoles.
 | Part | Does |
 |---|---|
 | Group header | **Layers** with **−** and **+** next to the count ("Remove layer N", "Add layer"; stops at the engine's limit, "of 32 · engine limit"); **Master**; **Outputs** with **Add output** (a new output without a display; its Output fixture's editor opens) |
-| Block line, **Block · A 0.0.0 from 1** | Every patched fixture sits on its place. The universe and the address are fields: change one to move the whole group; "· N unplaced" counts fixtures without an address |
+| Block line, **Block · A 0.0.0 from 1** | Every patched fixture sits on its place. The universe and the address are fields: type a universe (`A 0.1.0`, `S 17`; the field suggests the universes in use as you type) or change the address, and the whole group moves; "· N unplaced" counts fixtures without an address |
 | Block line, **Custom · N of M off the block** (yellow) | Some fixtures were placed by hand; **Re-lay as block** puts every one on its place |
 | Block line, **No address** | Nothing in the group is patched; **Patch as block** puts it where the standard patch does |
 | Block line, "Layer 9: no address · A 0.0.1 1–64 is taken by Master, Outputs 1–3" | Add layer found the new layer's place taken; **Move Master and outputs after the layers** moves those blocks (this changes the console patch too) |
@@ -100,7 +100,7 @@ Tap a chip to open it under the group; tap it again to close.
 | Control | Does |
 |---|---|
 | Header | The name, `64 ch · A 0.0.0 1–64` and the status word |
-| **Universe** | `A 0.0.0` to `A 0.0.3`, `S 1` to `S 4`, and every universe that is patched, heard or set up |
+| **Universe** | Type `A net.subnet.universe` (`A 0.0.0` to `A 127.15.15`) or `S n` (`S 1` to `S 63999`); as you type, the field suggests `A 0.0.0` to `A 0.0.3`, `S 1` to `S 4` and every universe that is patched, heard or set up |
 | **Address** | A stepper (Shift+click: steps of 10); 0 means unpatched |
 | **Unpatch** / **Patch at A 0.0.1 1** / **Patch** | Removes the address, or gives the fixture its place in the block |
 | **Remove output** | Output fixtures only: removes the output with its mapping (Undo brings it back) |

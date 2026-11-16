@@ -8,7 +8,7 @@
   import { app, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
   import { plural, typedNumber } from '../lib/system';
   import {
-    MAX_LAYERS, MAX_OUTPUTS, UNIVERSE_SIZE, groupSlots, layEntries, moveAfterLayers, patchTarget, rowStatus, rowSummary, slotText, standardStart, universeName,
+    MAX_LAYERS, MAX_OUTPUTS, UNIVERSE_SIZE, groupSlots, layEntries, moveAfterLayers, parseUniverseName, patchTarget, rowStatus, rowSummary, slotText, standardStart, universeName,
     type FixtureRow, type Group, type Slot,
   } from '../lib/patch-screen';
 
@@ -33,6 +33,7 @@
   // chips stay clickable when locked, so the editor can still be read
   const lock = $derived(programmerLock());
   const locked = $derived(!!lock);
+  const listId = $props.id();
   const policy = $derived(app.project.policy);
   const block = $derived(group.block);
   const first = $derived(group.modes[0]!);
@@ -91,16 +92,23 @@
     blockLine?.focus();
   }
 
-  /** Moves the block to a new start; a refused move puts the field back. */
-  async function moveTo(el: HTMLInputElement | HTMLSelectElement, start: Slot, to: Slot) {
-    if (!(await lay(to, 'moved to', block.handPlaced))) el.value = String(el instanceof HTMLSelectElement ? start.universe : start.address);
+  /** Moves the block to a new start; a refused move puts `shown` back in the field. */
+  async function moveTo(input: HTMLInputElement, to: Slot, shown: string) {
+    if (!(await lay(to, 'moved to', block.handPlaced))) input.value = shown;
+  }
+
+  /** A typed universe (`A 0.1.0`, `S 17`, or an id); the engine refuses one outside the protocol's range (B191). */
+  function moveUniverse(input: HTMLInputElement, start: Slot) {
+    const universe = parseUniverseName(input.value);
+    if (universe === '' || universe === start.universe) input.value = universeName(start.universe);
+    else void moveTo(input, { universe, address: start.address }, universeName(start.universe));
   }
 
   function moveAddress(input: HTMLInputElement, start: Slot) {
     const typed = typedNumber(input);
     const address = typed === null ? start.address : Math.min(UNIVERSE_SIZE + 1 - first.footprint, Math.max(1, Math.round(typed)));
     input.value = String(address);
-    if (address !== start.address) void moveTo(input, start, { universe: start.universe, address });
+    if (address !== start.address) void moveTo(input, { universe: start.universe, address }, String(start.address));
   }
 
   async function moveAfter(entries: PatchEntry[]) {
@@ -165,12 +173,14 @@
       {#if block.start}
         {@const start = block.start}
         <span>Block ·</span>
-        <select class="select" aria-label="{group.title} block universe" value={start.universe} disabled={locked} title={lock}
-          onchange={(e) => moveTo(e.currentTarget, start, { universe: e.currentTarget.value, address: start.address })}>
+        <input class="input mono universe" type="text" list={listId} autocomplete="off" spellcheck="false" aria-label="{group.title} block universe"
+          value={universeName(start.universe)} disabled={locked} title={lock ?? 'A net.subnet.universe or S n; suggestions as you type'}
+          onchange={(e) => moveUniverse(e.currentTarget, start)} />
+        <datalist id={listId}>
           {#each options as id (id)}
-            <option value={id}>{universeName(id)}</option>
+            <option value={universeName(id)}></option>
           {/each}
-        </select>
+        </datalist>
         <span>from</span>
         <input class="input mono address" type="number" inputmode="numeric" min="1" max={UNIVERSE_SIZE + 1 - first.footprint} aria-label="{group.title} block start address"
           value={start.address} disabled={locked} title={lock} onchange={(e) => moveAddress(e.currentTarget, start)} />
@@ -263,7 +273,7 @@
   .head h2 { margin-right: 4px; }
   .count { display: inline-flex; align-items: center; justify-content: center; min-width: 48px; border-left: 1px solid var(--line-strong); border-right: 1px solid var(--line-strong); font-size: 15px; }
   .stepper button:disabled { color: var(--text-3); cursor: default; }
-  .block .select { min-width: 110px; }
+  .block .universe { width: 160px; text-align: left; }  /* A 127.15.15 needs 148 px */
   .address { width: 84px; }
   .full { flex-basis: 100%; margin: 0; }
   .warn, .tone-warn { color: var(--yellow); }

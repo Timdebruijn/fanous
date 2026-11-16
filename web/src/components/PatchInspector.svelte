@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { app, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
-  import { UNIVERSE_SIZE, compareUniverse, rangeText, universeName, type FixtureRow, type Slot, type Status } from '../lib/patch-screen';
+  import { UNIVERSE_SIZE, compareUniverse, parseUniverseName, rangeText, universeName, validUniverse, type FixtureRow, type Slot, type Status } from '../lib/patch-screen';
 
   // The inline editor of one fixture, inside its group (DESIGN §6.6 item 2): universe, address, Patch or Unpatch.
   let { row, status, options, slot, defaultUniverse, onpatched }: {
@@ -20,6 +20,7 @@
 
   const lock = $derived(programmerLock());
   const locked = $derived(!!lock);
+  const listId = $props.id();
   const maxAddress = $derived(Math.max(0, UNIVERSE_SIZE - row.footprint + 1));
   // Drafts: they follow the patch (or the slot) until edited, so quick repeated taps add up before the engine answers.
   let universe = $derived(row.patched && row.universe ? row.universe : (slot?.universe ?? row.universe ?? defaultUniverse));
@@ -54,6 +55,15 @@
     if ((await cmd('output.remove', { id: output.id })) !== undefined) toastUndo(`${name} removed.`);
   }
 
+  /** A typed universe (`A 0.1.0`, `S 17`, or an id); the engine refuses one outside the protocol's range, and a draft
+   *  that the engine will not see yet (no address) is checked here (B191). */
+  async function commitUniverse(input: HTMLInputElement) {
+    const next = parseUniverseName(input.value);
+    const sent = row.patched || address > 0;
+    if (next !== universe && (sent ? next !== '' : validUniverse(next))) await apply(next, address);
+    input.value = universeName(universe);
+  }
+
   function commitAddress(input: HTMLInputElement) {
     const typed = input.value.trim();
     const next = typed === '' || Number.isNaN(Number(typed)) ? address : clamp(Number(typed));
@@ -71,11 +81,15 @@
   <div class="fields">
     <label class="field">
       <span class="label">Universe</span>
-      <select class="select" value={universe} disabled={locked} title={lock} onchange={(e) => apply(e.currentTarget.value, address)}>
+      <input
+        class="input mono universe" type="text" list={listId} autocomplete="off" spellcheck="false"
+        value={universeName(universe)} disabled={locked} title={lock ?? 'A net.subnet.universe or S n; suggestions as you type'}
+        onchange={(e) => commitUniverse(e.currentTarget)} />
+      <datalist id={listId}>
         {#each choices as id (id)}
-          <option value={id}>{universeName(id)}</option>
+          <option value={universeName(id)}></option>
         {/each}
-      </select>
+      </datalist>
     </label>
     <div class="field" role="group" aria-label="Address">
       <span class="label" aria-hidden="true">Address</span>
@@ -113,6 +127,6 @@
   .tone-warn { color: var(--yellow); }
   .tone-bad { color: var(--red); }
   .fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
-  .fields .select { min-width: 140px; }
+  .fields .universe { width: 160px; text-align: left; }  /* A 127.15.15 needs 148 px */
   .stepper button:disabled, .stepper input:disabled { color: var(--text-3); cursor: default; }
 </style>
