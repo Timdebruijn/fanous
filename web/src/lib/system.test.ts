@@ -27,7 +27,7 @@ describe('clocks and captions', () => {
   });
 
   it('words the resume banner per cause: a deliberate restart or an unclean stop (B181)', () => {
-    expect(resumedDetail(true)).toBe('Show mode was kept across a deliberate Restart Engine; check the outputs.');
+    expect(resumedDetail(true)).toBe('Engine › Restart Engine kept show mode on; check the outputs.');
     expect(resumedDetail(false)).toBe('The engine stopped uncleanly during the show; check the outputs and the log.');
     expect(resumedDetail(undefined)).toBe('The engine stopped uncleanly during the show; check the outputs and the log.');
   });

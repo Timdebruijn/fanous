@@ -189,8 +189,8 @@ crash that nobody restarts keeps the show-mode file: an engine started
 days later on the same boot still resumes show mode; Engine › **Stop
 Engine…** clears it. After a crash the System screen's banner adds "The engine
 stopped uncleanly during the show; check the outputs and the log."; after a
-deliberate Restart Engine it adds "Show mode was kept across a deliberate
-Restart Engine; check the outputs." instead.
+deliberate Restart Engine it adds "Engine › Restart Engine kept show mode
+on; check the outputs." instead.
 
 ### The engine died during the show
 

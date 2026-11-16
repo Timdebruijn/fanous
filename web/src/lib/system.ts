@@ -37,7 +37,7 @@ export function resumedText(resumedAt: number | null | undefined): string | null
 
 /** The banner's second sentence: a deliberate Restart Engine (B181) or an unclean stop; an engine without the field reads as unclean. */
 export function resumedDetail(restart: boolean | undefined): string {
-  return restart ? 'Show mode was kept across a deliberate Restart Engine; check the outputs.' : 'The engine stopped uncleanly during the show; check the outputs and the log.';
+  return restart ? 'Engine › Restart Engine kept show mode on; check the outputs.' : 'The engine stopped uncleanly during the show; check the outputs and the log.';
 }
 
 /** "h:mm:ss" */
