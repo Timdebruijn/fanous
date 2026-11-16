@@ -72,10 +72,14 @@ parameter messages are never refused by the show lock. Put the show
 network on its own VLAN or firewall port 8000. The port and the interface
 cannot be changed, and OSC is off with `--no-network`.
 
-The OSC panel on the Show screen shows the port, the last received cue,
-show, timecode and project-load commands (parameter messages are not
-listed, the panel says so) and the control and read-back addresses. Try
-`/fanous/cue/go` first.
+The OSC panel on the Show screen shows the port, every message received
+as it was sent (address and arguments, newest first) and the control and
+read-back addresses. Try `/fanous/cue/go` first. A fader sweep on one
+address is one row with its last value and time. A message that does not
+appear was not taken: a wrong address or argument, a layer the project
+does not have, or a read-back request (`/get`, subscribe, ping). A listed
+cue, show or timecode command can still be refused, for example show mode
+while readiness blocks it; the panel and the log do not say so.
 
 <img src="images/show-osc.png" width="321" alt="The OSC panel: Port 8000, Last received with its empty text, and the address list with argument types">
 

@@ -103,7 +103,6 @@ public final class Engine: @unchecked Sendable {
     private let savedShowLock = Mutex<Bool?>(nil)
     /// Main actor: after a resume the first display sync runs readiness at once instead of after 30 s.
     private var readinessOnNextSync = false
-    private let oscLog = Mutex<[JSONValue]>([])
     private var lastPolicy: SourcePolicy?
     private var lastUniverseSettings: [UniverseID: UniverseSettings] = [:]
     /// The fixtures that exist as the DMX store last got them (DESIGN.md §6.6).
@@ -417,10 +416,6 @@ public final class Engine: @unchecked Sendable {
         // OSC: cue, show and timecode commands (DESIGN.md §15.3); the parameter ones stay on the DMX queue
         dmx.onCommand = { [weak self] command in
             guard let self, let store = self.store else { return }
-            self.oscLog.withLock { log in
-                log.append(["at": .number(Date().timeIntervalSince1970), "command": .string("\(command)")])
-                if log.count > 50 { log.removeFirst(log.count - 50) }
-            }
             self.runCommand(command, on: store)
         }
         showMode.onChange = { [weak self] on in
@@ -1675,7 +1670,7 @@ public final class Engine: @unchecked Sendable {
             "cue": cueLive(),
             "show": showLive(),
             "system": systemLive(addresses: facts.addresses, interfaces: facts.interfaces),
-            "osc": ["port": 8000, "recent": .array(oscLog.withLock { $0 }), "midiSources": .array(facts.midiSources.map { .string($0) })],
+            "osc": ["port": 8000, "recent": .array(dmx.recentOSC().map { ["at": .number($0.at), "command": .string($0.text)] }), "midiSources": .array(facts.midiSources.map { .string($0) })],
             "audio": ["inputs": Self.audioInputsLive(facts.audioInputs)],
             "midi": midiLive(),
             "citp": citpLive(),
