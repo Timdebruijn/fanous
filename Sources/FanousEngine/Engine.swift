@@ -141,6 +141,9 @@ public final class Engine: @unchecked Sendable {
     /// Versions queue only: the last OSC project load, so a repeat of the same version within the window is ignored.
     private var lastOSCLoad: (id: String, at: TimeInterval)?
     static let oscLoadRepeatWindow: TimeInterval = 2
+    /// B193: refused OSC/MIDI commands, throttled; a Mutex because `runCommand` runs on whichever queue delivers
+    /// (DMX, MIDI, OSC), and it is taken only on a refusal.
+    private let refusals = Mutex(RefusalThrottle())
     let feedQueue = DispatchQueue(label: "org.fanous.feed", qos: .utility)
     public let metrics = MetricsRing()
 
@@ -812,14 +815,16 @@ public final class Engine: @unchecked Sendable {
 
     /// Cue, show and timecode commands from OSC (DESIGN.md §15.3) and the MIDI map (B36); parameter values never get
     /// here, they go straight to the resolvers.
-    private func runCommand(_ command: OSCCommand, on store: StateStore) {
+    func runCommand(_ command: OSCCommand, on store: StateStore) {
+        let name: String
+        let result: Result<CommandResult, CommandError>
         switch command {
-        case .cueGo: _ = store.execute("cue.go", role: .operator)
-        case .cueBack: _ = store.execute("cue.back", role: .operator)
-        case .cueGoto(let number): _ = store.execute("cue.goto", args: ["number": .number(number)], role: .operator)
-        case .showLock(let on): _ = store.execute(on ? "show.lock" : "show.unlock", role: .programmer)
-        case .showMode(let on): _ = store.execute("show.mode", args: ["on": .bool(on)], role: .operator)
-        case .timecodeEnable(let on): _ = store.execute("timecode.enable", args: ["on": .bool(on)], role: .operator)
+        case .cueGo: name = "cue.go"; result = store.execute(name, role: .operator)
+        case .cueBack: name = "cue.back"; result = store.execute(name, role: .operator)
+        case .cueGoto(let number): name = "cue.goto"; result = store.execute(name, args: ["number": .number(number)], role: .operator)
+        case .showLock(let on): name = on ? "show.lock" : "show.unlock"; result = store.execute(name, role: .programmer)
+        case .showMode(let on): name = "show.mode"; result = store.execute(name, args: ["on": .bool(on)], role: .operator)
+        case .timecodeEnable(let on): name = "timecode.enable"; result = store.execute(name, args: ["on": .bool(on)], role: .operator)
         case .projectLoad(let key):
             // B35: a named version (or a version id); off the DMX and feed queues, the lookup reads the versions directory
             let logger = logger
@@ -837,7 +842,29 @@ public final class Engine: @unchecked Sendable {
                     logger.warning("OSC project load refused", metadata: ["version": "\(key)", "code": "\(error.code)", "reason": "\(error.message)"])
                 }
             }
-        default: break
+            return
+        default: return
+        }
+        // B193: nothing else says why a listed command did nothing; the throttle keeps a 40 Hz repeat to a line per window
+        guard case .failure(let error) = result else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard let repeats = refusals.withLock({ $0.admit(name, code: error.code, now: now) }) else { return }
+        var metadata: Logger.Metadata = ["command": "\(Self.oscSpelling(command))", "code": "\(error.code)", "reason": "\(error.message)"]
+        if repeats > 0 { metadata["repeats"] = "\(repeats)" }
+        logger.warning("OSC/MIDI command refused", metadata: metadata)
+    }
+
+    /// A show-control command as its OSC message, for the log (MIDI cue actions map to the same commands).
+    static func oscSpelling(_ command: OSCCommand) -> String {
+        let p = OSCAddressMap.prefix
+        switch command {
+        case .cueGo: return "\(p)/cue/go"
+        case .cueBack: return "\(p)/cue/back"
+        case .cueGoto(let n): return "\(p)/cue/goto \(n)"
+        case .showLock(let on): return "\(p)/show/lock \(on ? 1 : 0)"
+        case .showMode(let on): return "\(p)/show/mode \(on ? 1 : 0)"
+        case .timecodeEnable(let on): return "\(p)/timecode/enable \(on ? 1 : 0)"
+        default: return "\(command)"
         }
     }
 
@@ -1866,5 +1893,31 @@ public enum WebRoot {
             directory = directory.deletingLastPathComponent()
         }
         return URL(fileURLWithPath: "web/dist")
+    }
+}
+
+/// B193: refused OSC/MIDI commands, one log line per (command, error code) per window. The first refusal logs at once;
+/// repeats of the same pair within `window` of that line are counted, and the count goes out with the pair's next line
+/// (no timer: a burst that stops is reported with that pair's next refusal). One entry per pair seen (seven command
+/// names, a handful of codes), so it allocates only on a pair's first refusal. Not thread-safe by itself: the engine
+/// keeps it in a Mutex.
+struct RefusalThrottle {
+    static let window: TimeInterval = 3
+    private var entries: [(command: String, code: String, at: TimeInterval, repeats: Int)] = []
+
+    /// nil: counted, not logged. Otherwise log now, with the repeats counted since the pair's previous line.
+    mutating func admit(_ command: String, code: String, now: TimeInterval) -> Int? {
+        guard let i = entries.firstIndex(where: { $0.command == command && $0.code == code }) else {
+            entries.append((command, code, now, 0))
+            return 0
+        }
+        if now - entries[i].at < Self.window {
+            entries[i].repeats += 1
+            return nil
+        }
+        let repeats = entries[i].repeats
+        entries[i].at = now
+        entries[i].repeats = 0
+        return repeats
     }
 }

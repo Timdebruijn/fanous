@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine: a cue, show or timecode command from OSC or MIDI that the engine refuses logs a warning with the command,
+  the code and the reason, at most once per command and code every 3 s with a count of the repeats (B193, PR #N).
 - Release: 1.0.0-rc.8 is on GitHub as a pre-release with the signed, notarized dmg, built from main 40400ef
   (PR #348).
 

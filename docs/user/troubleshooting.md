@@ -252,7 +252,9 @@ layer's audio channels on the console (volume, mute); audio plays only at
 - From OSC or MSC: the OSC panel's "Last received" or the MIDI panel's last
   message shows whether it arrived (a listed Go to a number with no cue
   arrived and fired nothing); the MSC format and device id must match
-  ([Remote control](remote-control.md#midi-show-control)).
+  ([Remote control](remote-control.md#midi-show-control)). A listed command
+  that the engine refused leaves "OSC/MIDI command refused" in the
+  [log](#logs) with the reason.
 - After an engine restart no cue is current: Go to the right one.
 
 ## LTC does not lock
@@ -333,6 +335,7 @@ log show --predicate 'subsystem == "org.fanous"' --last 1h
 | "stale show state ignored" | The engine or the Mac was down for more than 2 hours since show mode was last written: a normal start |
 | "show mode resumed after an unclean stop", "show mode kept across a restart" | Show mode came back; the second is a deliberate Restart Engine |
 | "autosave failed", "show mode state not saved" | The disk or the folder is not writable: the engine plays on and saves nothing |
+| "OSC/MIDI command refused" | A cue, show or timecode command from OSC or MIDI did nothing: `command` is the message, `code` and `reason` say why (`notReady` names the blocking readiness items). One line per command and code every 3 s at most; `repeats` counts the refusals not logged since the previous one |
 
 ## Disk full, or the folder not writable
 

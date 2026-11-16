@@ -23,7 +23,11 @@ struct HTTPSServerLogTests {
             get { metadata[key] }
             set { metadata[key] = newValue }
         }
-        func log(event: LogEvent) { lines.all.withLock { $0.append("\(event.message)") } }
+        /// The message, then the metadata as sorted `key=value` pairs.
+        func log(event: LogEvent) {
+            let pairs = (event.metadata ?? [:]).sorted { $0.key < $1.key }.map { " \($0.key)=\($0.value)" }.joined()
+            lines.all.withLock { $0.append("\(event.message)\(pairs)") }
+        }
     }
 
     /// The request line in the debug log carries the path only: the web UI takes a token as `?token=`.

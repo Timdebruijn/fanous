@@ -469,6 +469,38 @@ struct ShowControlTests {
         #expect(seenByThirdRun.withLock { $0 } == ["new"], "the older run stored its items over the show-mode entry's")
     }
 
+    /// B193: a refused command logs once per (command, code) and window; the repeats go out with the pair's next line.
+    @Test func refusalThrottleLogsTheFirstAndCountsTheRepeats() {
+        var throttle = RefusalThrottle()
+        #expect(throttle.admit("show.mode", code: "notReady", now: 100) == 0, "the first refusal logs")
+        #expect(throttle.admit("show.mode", code: "notReady", now: 101) == nil, "a repeat inside the window is counted")
+        #expect(throttle.admit("show.mode", code: "notReady", now: 102.9) == nil)
+        #expect(throttle.admit("show.lock", code: "notReady", now: 102.9) == 0, "another command logs at once")
+        #expect(throttle.admit("show.mode", code: "forbidden", now: 102.9) == 0, "another code logs at once")
+        #expect(throttle.admit("show.mode", code: "notReady", now: 103) == 2, "the window ended: logs with its count")
+        #expect(throttle.admit("show.mode", code: "notReady", now: 105.9) == nil, "a new window from that line")
+        #expect(throttle.admit("show.mode", code: "notReady", now: 200) == 1)
+        #expect(throttle.admit("show.mode", code: "notReady", now: 300) == 0, "nothing counted since the last line")
+    }
+
+    /// B193: `/fanous/show/mode 1` while readiness blocks, repeated as a console does, leaves one warning with the
+    /// command, the code and the reason; the old code left none.
+    @Test func aRefusedOSCCommandLeavesOneWarning() {
+        let lines = HTTPSServerLogTests.Lines()
+        let logger = Logger(label: "test") { _ in HTTPSServerLogTests.Capture(lines: lines) }
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: logger)
+        engine.readinessCheck = { _, _ in
+            [ReadinessItem(id: "outputs", title: "", state: .hard, detail: "", fix: ""), ReadinessItem(id: "spotlight", title: "", state: .hard, detail: "", fix: "")]
+        }
+        let store = StateStore(project: [:], logger: testLogger)
+        ShowCommands.register(on: store, hooks: ShowCommands.Hooks(
+            go: {}, back: {}, goto: { _ in }, showMode: { [weak engine] in engine?.setShowMode($0) }, acknowledge: { _, _ in }, runReadiness: {}))
+        for _ in 0..<40 { engine.runCommand(.showMode(true), on: store) }
+        engine.runCommand(.cueGo, on: store)  // accepted: no line
+        let refused = lines.all.withLock { $0 }.filter { $0.hasPrefix("OSC/MIDI command refused") }
+        #expect(refused == ["OSC/MIDI command refused code=notReady command=/fanous/show/mode 1 reason=readiness: outputs, spotlight"])
+    }
+
     @Test func readinessReflectsTheContextAndRunsEveryProbe() {
         var context = ReadinessContext()
         context.universesSilent = ["artnet:0.0.1"]
