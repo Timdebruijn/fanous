@@ -11,7 +11,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Show mode: a readiness item that starts blocking during the show turns up in the status bar on every screen
-  ("blocking: …", a link to System) and in the log ("readiness: now blocking in show mode"), once per change (PR #350).
+  ("not ready: …", a link to System); every check that changes an item, acknowledged or not, logs "readiness changed
+  in show mode", and acknowledging logs its own line (PR #350).
 - Release: 1.0.0-rc.8 is on GitHub as a pre-release with the signed, notarized dmg, built from main 40400ef
   (PR #348).
 

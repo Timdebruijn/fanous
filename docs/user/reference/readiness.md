@@ -18,8 +18,8 @@ row's fix hint, shortened; the on-screen hint for the hardware item
 says "M1 Pro or newer", while every chip but the base M1 passes. The checks run when
 show mode turns on, every 30 seconds while it is on, once after a resumed
 show mode, after a display mode switch in show mode, and on **Run checks**;
-an item that turns red in show mode shows in the status bar and the log
-(below). The Spotlight, Time
+an item that turns red in show mode shows in the log, and in the status bar
+when it is not acknowledged (below). The Spotlight, Time
 Machine and display sleep rows ask macOS tools (`mdutil`, `tmutil`,
 `pmset`); a tool that has not answered within 3 seconds is stopped: the
 Spotlight and Time Machine rows then read "unknown" and are yours to check,
@@ -74,10 +74,22 @@ change is in progress.
 The status bar's **Show mode** tag shows "Cannot enter show mode" with the
 blocking items and their fix hints when it refuses, with **Open System**;
 the yellow banner at the top names the items by id. While show mode is on
-and an item blocks, the status bar reads "blocking: " and the first item's
-title, "+ 2 more" when there are more, next to **Show mode: on**, in red, as a
-link to System; hover it for all titles. A phone shows "blocking" alone. The
-log says "readiness: now blocking in show mode" with the item ids when one
-starts blocking and "readiness: no longer blocking" when one clears.
+and an item blocks (it fails and is not acknowledged, or it is a hard
+failure), the status bar reads "not ready: " and the first item's title,
+"+ 2 more" when there are more, in red, as a link to System; hover it for all
+titles. A long title is cut off with an ellipsis, and the auto version item
+makes room while it shows. A phone shows "not ready" alone. An acknowledged
+item is not in the bar, also when it fails again during the show: that is in
+the log only.
+
+In show mode every check that changes something logs one line, "readiness
+changed in show mode": `failing` the items that started failing,
+`acknowledged` those of them that are acknowledged, `passing` the items that
+pass again, and `blocking` what blocks now (`none` for an empty list). It is
+a warning when an item started blocking, otherwise info. Acknowledging and
+taking back log their own line, "readiness acknowledged in show mode" and
+"readiness acknowledgement taken back in show mode", with `item` and
+`blocking`. After a resumed show the acknowledgements are gone, so the first
+check logs every failing item as blocking.
 
 <img src="../images/banner-readiness.png" width="1396" alt="The yellow banner: readiness: dmx, spotlight, updates, with the line Show mode is blocked by failed readiness checks, and the buttons Recent messages and Dismiss">
