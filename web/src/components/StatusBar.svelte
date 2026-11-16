@@ -131,9 +131,8 @@
     <div class="item yellow caption" title="Web UI open: the programmer role has no password (System › Roles)"><span class="dot dot-yellow"></span><span class="long"> web UI open</span><span class="short" aria-hidden="true">open</span></div>
   {/if}
   <!-- B185: a polite live region, always there, so a blocking item is announced when it starts and not per 30 s run;
-       atomic so "A" becoming "A + 1 more" is read with its prefix. It takes the spacer's room and no more: from a
-       basis of 0 it never wraps the bar, down to "not ready"; the auto version item (System has it) makes room while
-       it shows. A phone shows "not ready" alone; the titles stay for screen readers and in the tooltip. -->
+       atomic so "A" becoming "A + 1 more" is read with its prefix. It grows from a basis of 0 into the spacer's room, so it
+       wraps the bar only when not even "not ready" fits; the auto version item (System has it) makes room while it shows. A phone shows "not ready" alone; the titles stay for screen readers and in the tooltip. -->
   <span class="note" class:on={blocked} role="status" aria-atomic="true">{#if blocked}<a class="caption blocked" href="#/system" title="Show mode is on with blocking items: {blocking.map((i) => i.title).join(', ')} (System)">not ready<span class="long">: {blocked}</span><span class="sr">, open System</span></a>{/if}</span>
   <span class="spacer"></span>
   <div class="item right">
