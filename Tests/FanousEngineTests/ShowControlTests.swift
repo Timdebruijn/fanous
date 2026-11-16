@@ -363,8 +363,9 @@ struct ShowControlTests {
 
     /// B192: one table of trigger spellings with the verdict of both sides: "accept" the engine's cue.add and the web's
     /// parseTrigger both take as is, "refuse" both refuse, "web" only the web takes and normalizes before sending (`;`,
-    /// spaces before `@`, surrounding whitespace, empty for none). This table and TRIGGER_SPELLINGS in
-    /// web/src/lib/show.test.ts must stay identical, row for row.
+    /// spaces before `@`, surrounding whitespace, empty for none); a "web" row's third column is what parseTrigger sends
+    /// ("" = no trigger, null), which cue.add must take. This table and TRIGGER_SPELLINGS in web/src/lib/show.test.ts must
+    /// stay identical, row for row.
     static let triggerSpellings: [[String]] = [
         ["00:01:30:00", "accept"], ["1:2:3:4", "accept"], ["00:01:30:00@24", "accept"], ["00:01:30:00@25", "accept"],
         ["00:01:30:00@29.97df", "accept"], ["00:01:30:00@29.97ndf", "accept"], ["00:01:30:00@29.97 DF", "accept"],
@@ -379,8 +380,9 @@ struct ShowControlTests {
         ["00:00:00:99@25", "refuse"], ["25:00:00:00@25", "refuse"], ["24:00:00:00", "refuse"], ["00:60:00:00", "refuse"],
         ["00:00:60:00", "refuse"], ["00:00:00:25@25", "refuse"], ["00:00:00:24@24", "refuse"], ["00:00:00:30@30", "refuse"],
         ["00:01:00:00@29.97df", "refuse"], ["00:01:00:01@29.97df", "refuse"],
-        ["", "web"], ["00:01:00;02@29.97df", "web"], ["00:00:10:29 @ 29.97 NDF", "web"], ["00:00:10:00 @25", "web"],
-        [" 00:00:10:00@25 ", "web"], ["00:00:10:00@29.97\tdf", "web"],
+        ["", "web", ""], ["00:01:00;02@29.97df", "web", "00:01:00:02@29.97 DF"],
+        ["00:00:10:29 @ 29.97 NDF", "web", "00:00:10:29@29.97 NDF"], ["00:00:10:00 @25", "web", "00:00:10:00@25"],
+        [" 00:00:10:00@25 ", "web", "00:00:10:00@25"], ["00:00:10:00@29.97\tdf", "web", "00:00:10:00@29.97 DF"],
     ]
 
     @Test func cueTriggerSpellingsMatchTheWeb() throws {
@@ -390,6 +392,11 @@ struct ShowControlTests {
         for (i, row) in Self.triggerSpellings.enumerated() {
             let result = store.execute("cue.add", args: ["number": .number(Double(i + 1)), "name": "t", "trigger": .string(row[0])], role: .programmer)
             #expect((result.failureCode == nil) == (row[1] == "accept"), "\(row[0].debugDescription) \(row[1])")
+            if row[1] == "web" {
+                let sent: JSONValue = row[2].isEmpty ? .null : .string(row[2])
+                let normalized = store.execute("cue.add", args: ["number": .number(Double(1000 + i)), "name": "t", "trigger": sent], role: .programmer)
+                #expect(normalized.failureCode == nil, "\(row[2].debugDescription) sent for \(row[0].debugDescription)")
+            }
         }
         #expect(
             store.execute("cue.add", args: ["number": 999, "name": "t", "trigger": "+1:00:00:00"], role: .programmer).failureMessage
@@ -404,6 +411,11 @@ struct ShowControlTests {
             ("000:00:00:010@25", Timecode(hours: 0, minutes: 0, seconds: 0, frames: 10, rate: .fps25)),
             ("00:00:00:05@24@junk", Timecode(hours: 0, minutes: 0, seconds: 0, frames: 5, rate: .fps24)),
             ("00:01:00:02@fps2997df", Timecode(hours: 0, minutes: 1, seconds: 0, frames: 2, rate: .fps2997df)),
+            // empty fields and an empty rate are skipped on load, as before
+            ("00::01:02:03", Timecode(hours: 0, minutes: 1, seconds: 2, frames: 3, rate: .fps25)),
+            ("00:00:00:07:", Timecode(hours: 0, minutes: 0, seconds: 0, frames: 7, rate: .fps25)),
+            ("00:00:00:08@", Timecode(hours: 0, minutes: 0, seconds: 0, frames: 8, rate: .fps25)),
+            ("00:00:00:09@@24", Timecode(hours: 0, minutes: 0, seconds: 0, frames: 9, rate: .fps24)),
         ]
         let cues: JSONValue = .array(
             old.enumerated().map { ShowCommands.normalizedCue(["number": .number(Double($0.offset + 1)), "name": "old", "trigger": .string($0.element.0)], id: UUID().uuidString) })
@@ -422,7 +434,7 @@ struct ShowControlTests {
                 == "trigger is hh:mm:ss:ff@rate, the rate 24, 25, 29.97df, 29.97ndf or 30")
         try renamed.set("01:00:00:00@25", at: "/trigger")
         _ = try store.execute("cue.set", args: ["id": first["id"] ?? .null, "cue": renamed], role: .programmer).get()
-        #expect(ShowCommands.cueList(from: store.project).cues.map(\.name) == ["new name", "old", "old", "old"])
+        #expect(ShowCommands.cueList(from: store.project).cues.map(\.name) == ["new name"] + Array(repeating: "old", count: old.count - 1))
     }
 
     /// B163: an acknowledgement holds for this failure in this show: taken back it blocks again, leaving show mode drops
