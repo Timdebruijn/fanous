@@ -10,7 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Tests: a repeated show-mode entry while on runs no readiness checks and keeps the acknowledgements (PR #NNN).
+- Tests: a repeated show-mode entry while on runs no readiness checks and keeps the acknowledgements (PR #355).
 - Release: 1.0.0-rc.9 is on GitHub as a pre-release with the signed, notarized dmg, built from main e99c648
   (PR #353).
 
