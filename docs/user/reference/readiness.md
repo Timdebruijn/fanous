@@ -19,7 +19,11 @@ Spotlight Privacy, which does not count, and the one for the hardware item
 says "M1 Pro or newer", while every chip but the base M1 passes. The checks run when
 show mode turns on, every 30 seconds while it is on, once after a resumed
 show mode, after a display mode switch in show mode, and on **Run checks**;
-nothing alerts you when an item turns red meanwhile. The last column is
+nothing alerts you when an item turns red meanwhile. The Spotlight, Time
+Machine and display sleep rows ask macOS tools (`mdutil`, `tmutil`,
+`pmset`); a tool that has not answered within 3 seconds is stopped and its
+row reads "unknown", so turning show mode on takes at most about 9 seconds
+even when all three hang. The last column is
 the id the API's `readiness.acknowledge` takes and the yellow banner names
 ("readiness: dmx, spotlight").
 

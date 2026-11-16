@@ -4494,7 +4494,8 @@ backing up; Focus/Do Not Disturb cannot be read reliably → shown as a manual
 checklist item; display sleep settings; unsupported hardware (hard fail: no hardware ProRes
 decoder, `SystemInfo.hasProResEngine`, B144).
 Failed items block show mode until acknowledged (programmer) — except hard
-fails.
+fails. The external tools (`mdutil`, `tmutil`, `pmset`) are killed after 3 s
+and their item reads unknown (B187).
 
 An MDM configuration profile that enforces the non-programmable items is a
 later deliverable (`[OPEN-20]`).
@@ -4751,7 +4752,10 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   `beginActivity` (latency critical, no App Nap), ingest paused. Readiness
   runs the §14 items (15 with display modes) on entering and every 30 s while on
   (`readiness.run`, `readiness.acknowledge`); `show.mode` is refused with the
-  blocking ids (`notReady`). Desired display modes are applied on entering
+  blocking ids (`notReady`). Entering runs the checks on the control queue (the
+  refusal needs them); the 30 s timer, `readiness.run` and the display syncs
+  queue them on a serial readiness queue, off the feed queue, and a run's items
+  are stored only if no later-started run stored first (B187). Desired display modes are applied on entering
   and restored on leaving (B33, `DisplayModeSwitcher`, matching in
   `DisplayModeMatching`; one `.forSession` transaction, re-applied on
   re-plug; previous modes persisted in `display-modes.json` and restored on
