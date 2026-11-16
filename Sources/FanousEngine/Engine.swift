@@ -96,8 +96,9 @@ public final class Engine: @unchecked Sendable {
     private let showMode: ShowModeController
     private let readiness = Mutex<(items: [ReadinessItem], acknowledged: Set<String>, checkedAt: Double)>(([], [], 0))
     private var readinessTimer: DispatchSourceTimer?
-    /// When show mode came back by itself after an unclean stop (live `show.resumedAt`); cleared when show mode is left.
-    private let showResumedAt = Mutex<Double?>(nil)
+    /// When show mode came back by itself at start (live `show.resumedAt`) and whether that was a kept-for-restart one
+    /// rather than an unclean stop (live `show.resumedRestart`, B181); cleared when show mode is left.
+    private let showResumed = Mutex<(at: Double, restart: Bool)?>(nil)
     /// The show lock as last written to disk: a change is saved at once, not with the 2 s autosave.
     private let savedShowLock = Mutex<Bool?>(nil)
     /// Main actor: after a resume the first display sync runs readiness at once instead of after 30 s.
@@ -429,7 +430,7 @@ public final class Engine: @unchecked Sendable {
             if on { self.startReadinessTimer() } else { self.stopReadinessTimer() }
             if on { self.endLeases() }  // a lease never outlives show mode or show lock (§9.10 item 4)
             if !on {
-                self.showResumedAt.withLock { $0 = nil }
+                self.showResumed.withLock { $0 = nil }
                 self.canvasSwitch?.run()  // a canvas change deferred during show mode (B31)
             }
             DispatchQueue.main.async { [weak self] in
@@ -444,7 +445,7 @@ public final class Engine: @unchecked Sendable {
         if let resumeShow {
             let since = Date(timeIntervalSince1970: resumeShow.since)
             logger.warning(resumeShow.restart == true ? "show mode kept across a restart" : "show mode resumed after an unclean stop", metadata: ["since": "\(since)"])
-            showResumedAt.withLock { $0 = Date().timeIntervalSince1970 }
+            showResumed.withLock { $0 = (Date().timeIntervalSince1970, resumeShow.restart == true) }
             readinessOnNextSync = true
             showMode.enter(since: since)
         }
@@ -999,9 +1000,11 @@ public final class Engine: @unchecked Sendable {
 
     private func showLive() -> JSONValue {
         let r = readiness.withLock { $0 }
+        let resumed = showResumed.withLock { $0 }
         return [
             "mode": .bool(showMode.isOn),
-            "resumedAt": showResumedAt.withLock { $0 }.map { .number($0) } ?? .null,
+            "resumedAt": resumed.map { .number($0.at) } ?? .null,
+            "resumedRestart": .bool(resumed?.restart ?? false),
             "checkedAt": .number(r.checkedAt),
             "ready": .bool(!r.items.contains { $0.blocks }),
             "readiness": .array(

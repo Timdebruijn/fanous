@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { ReadinessItemDoc } from './docs';
 import {
   ageText, droppedTone, filterLines, formatClock, headerCaption, memoryText, metricTiles, outputTone, parseMetrics, parseOpenRoles, permissionRow,
-  plural, pushHistory, readinessBadge, readinessSummary, resumedText, sparkline, stampText, thermalTone, typedNumber,
+  plural, pushHistory, readinessBadge, readinessSummary, resumedDetail, resumedText, sparkline, stampText, thermalTone, typedNumber,
 } from './system';
 
 const item = (state: ReadinessItemDoc['state'], acknowledged = false): ReadinessItemDoc => ({ id: state, title: state, state, detail: '', fix: '', acknowledged });
@@ -24,6 +24,12 @@ describe('clocks and captions', () => {
     expect(stampText(0)).toBe('never');
     expect(stampText(new Date(2026, 9, 23, 13, 5, 9).getTime() / 1000)).toBe('13:05:09');
     expect(stampText(new Date(2026, 9, 23, 0, 5, 9).getTime() / 1000)).toBe('00:05:09');
+  });
+
+  it('words the resume banner per cause: a deliberate restart or an unclean stop (B181)', () => {
+    expect(resumedDetail(true)).toBe('Engine › Restart Engine kept show mode on; check the outputs.');
+    expect(resumedDetail(false)).toBe('The engine stopped uncleanly during the show; check the outputs and the log.');
+    expect(resumedDetail(undefined)).toBe('The engine stopped uncleanly during the show; check the outputs and the log.');
   });
 
   it('names the restart time when show mode resumed by itself', () => {

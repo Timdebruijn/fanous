@@ -75,7 +75,6 @@ link here. Back to the [index](../README.md).
 | Show mode does not lower the log level, throttle thumbnails or check for mirrored displays. | B42 |
 | Readiness probes for Spotlight, automatic updates and Time Machine read macOS tools; when the output changes they show **manual** and you check by hand. Focus (Do Not Disturb) is always manual. | B38 |
 | An acknowledged readiness item stays acknowledged until the engine restarts: there is no un-acknowledge, and the item keeps its acknowledgement if it fails again later. | B163 |
-| After a deliberate Engine › Restart Engine in show mode the System screen says "The engine stopped uncleanly during the show": the UI cannot tell a restart from a crash. | B181 |
 | **Spotlight indexing off for the library volume** reads the volume's indexing switch only: macOS lets only an administrator read Spotlight Privacy, so a library folder added there still fails the item. Turn indexing off for the volume, or acknowledge. | — |
 | A port held by another program (the web UI's 8443, OSC 8000) is only logged as "listener failed": the engine keeps running without that listener, and with 8443 taken nothing on screen can say so; Start Engine then restarts that healthy engine. A second engine started by hand refuses on the terminal only, not in the log. | B183 |
 | Logins do not survive an engine restart: every iPad logs in again, and a client that asked for a role it can no longer get drops to the highest open role without a word. | B184 |

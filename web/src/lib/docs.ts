@@ -258,8 +258,9 @@ export interface LiveDoc {
     level?: number | null;
   };
   cue: { current: number | null; currentName: string | null; next: number | null; nextName: string | null; fading: boolean; count: number };
-  /** resumedAt: epoch seconds when show mode came back by itself after an unclean engine stop; null otherwise. */
-  show: { mode: boolean; checkedAt: number; ready: boolean; readiness: ReadinessItemDoc[]; resumedAt?: number | null };
+  /** resumedAt: epoch seconds when show mode came back by itself at engine start; null otherwise. resumedRestart: that start
+   *  followed a deliberate Restart Engine, not an unclean stop (absent from engines before B181). */
+  show: { mode: boolean; checkedAt: number; ready: boolean; readiness: ReadinessItemDoc[]; resumedAt?: number | null; resumedRestart?: boolean };
   system: {
     thermal: 'nominal' | 'fair' | 'serious' | 'critical';
     onAC: boolean;
@@ -344,7 +345,7 @@ export const emptyLive: LiveDoc = {
   outputs: [],
   timecode: { state: 'off', source: '', value: '--:--:--:--', rate: '25', frames: 0, seen: 0, error: null, device: '' },
   cue: { current: null, currentName: null, next: null, nextName: null, fading: false, count: 0 },
-  show: { mode: false, checkedAt: 0, ready: false, readiness: [], resumedAt: null },
+  show: { mode: false, checkedAt: 0, ready: false, readiness: [], resumedAt: null, resumedRestart: false },
   system: { thermal: 'nominal', onAC: true, power: '', memoryFreeFraction: 1, memoryGB: 0, os: '', host: '', addresses: [], port: 8443, tlsFingerprint: '', bonjour: '' },
   osc: { port: 8000, recent: [], midiSources: [] },
   audio: { inputs: [] },
