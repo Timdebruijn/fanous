@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Release: 1.0.0-rc.7 is on GitHub as a pre-release with the signed, notarized dmg, built from main 4b5906f
+  (PR #345).
+
 ## 1.0.0-rc.7 — 2026-11-16
 
 - Show mode: a `show-state.json` older than 2 hours no longer resumes show mode on the same boot either, so a crash nobody
