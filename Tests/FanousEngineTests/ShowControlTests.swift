@@ -400,6 +400,28 @@ struct ShowControlTests {
         #expect(ShowModeState.load(from: url) == nil)  // unreadable: start normally
     }
 
+    /// `touch()` refreshes the write time while on (the 30 s readiness timer), so a crash in a show longer than 2 h still
+    /// resumes (B186); while off it writes nothing.
+    @Test func showModeTouchRefreshesTheWriteTime() throws {
+        let directory = try tempDir("fanous-show")
+        let url = directory.appending(path: "show-state.json")
+        let show = ShowModeController(logger: testLogger, stateURL: url)
+        show.enter(since: Date(timeIntervalSince1970: 1_800_000_000))
+        var old = try #require(ShowModeState.load(from: url))
+        old.written -= 3 * 3600
+        try JSONEncoder().encode(old).write(to: url)
+        #expect(ShowModeState.decide(ShowModeState.load(from: url), now: Date().timeIntervalSince1970) == .stale)
+        show.touch()
+        let now = Date().timeIntervalSince1970  // after the write: a time before it would be a write in the future
+        let fresh = try #require(ShowModeState.load(from: url))
+        #expect(abs(fresh.written - now) < 5)
+        #expect(ShowModeState.decide(fresh, now: now) == .resume(fresh))
+        show.leave()
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        show.touch()  // off: no file
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
     /// Resume only within 2 h of the last write, whether the engine died or the Mac (B186): a crash nobody restarted
     /// does not resume show mode days later. A file written in the future (clock stepped back) is stale.
     @Test func showModeStartDecision() throws {
