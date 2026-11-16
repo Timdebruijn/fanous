@@ -11,7 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Readiness: a probe tool (`mdutil`, `tmutil`, `pmset`) that has not exited within 3 s is killed and its row reads
-  "unknown", and the 30 s runs no longer hold the live values, DMX monitor or autosave while the tools run (PR #N).
+  "unknown", and the 30 s runs no longer hold the live values, DMX monitor or autosave while the tools run (PR #343).
 - Release: 1.0.0-rc.6 is on GitHub as a pre-release with the signed, notarized dmg, built from main 6adbc5c
   (PR #334).
 
