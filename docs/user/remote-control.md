@@ -80,7 +80,9 @@ appear was not taken: a wrong address or argument, a layer the project
 does not have, or a read-back request (`/get`, subscribe, ping). A listed
 cue, show or timecode command can still be refused, for example show mode
 while readiness blocks it; the panel does not say so, the engine log does
-("OSC/MIDI command refused", see [Logs](troubleshooting.md#logs)).
+("OSC/MIDI command refused", see [Logs](troubleshooting.md#logs)). Entering
+show mode is the one command that is refused in practice: a cue go, back or
+goto is always taken, and a goto to a number that does not exist fires nothing.
 
 <img src="images/show-osc.png" width="321" alt="The OSC panel: Port 8000, Last received with its empty text, and the address list with argument types">
 
