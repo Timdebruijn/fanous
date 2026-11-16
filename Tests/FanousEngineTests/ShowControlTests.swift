@@ -244,6 +244,11 @@ struct ShowControlTests {
         #expect(store.execute("cue.add", args: ["name": "second"], role: .programmer).failureCode == "invalidArgs")
         #expect(store.execute("cue.add", args: ["number": 0, "name": "zero"], role: .programmer).failureCode == "invalidArgs")
         #expect(ShowCommands.cueList(from: store.project).cues.map(\.number) == [0])
+        // cue.set keeps its refusal: a taken number, also the 0 a numberless cue normalizes to
+        let one = try #require(try store.execute("cue.add", args: ["number": 1, "name": "one"], role: .programmer).get().value?.string)
+        #expect(store.execute("cue.set", args: ["id": .string(one), "cue": ["number": 0, "name": "one"]], role: .programmer).failureCode == "invalidArgs")
+        #expect(store.execute("cue.set", args: ["id": .string(one), "cue": ["name": "one"]], role: .programmer).failureCode == "invalidArgs")
+        #expect(ShowCommands.cueList(from: store.project).cues.map(\.number) == [0, 1])
     }
 
     @Test func cueJSONRoundTripAndCommands() throws {
