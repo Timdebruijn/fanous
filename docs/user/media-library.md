@@ -108,7 +108,8 @@ listed, also a container macOS cannot open (`.webm`, `.mkv`, `.mxf`, `.wmv`,
 `.flv`): it reads red **unreadable**, "AVFoundation cannot open .webm files".
 Convert it on another machine. A newly listed container never takes a number
 from a `.mov`, `.mp4`, `.m4v`, `.avi`, `.mkv` or `.mxf` file, a still or a
-sequence in the same folder: on a shared number it is the duplicate. A file that needs a transcode has no thumbnail: its tile is black.
+sequence in the same folder: on a shared number it is the duplicate. A file
+that needs a transcode has no thumbnail: its tile is black.
 
 <img src="images/media-needs-transcode.png" width="218" alt="A tile with the yellow needs transcode badge, the line H.264 · 720p25, the codec list reading HAP Q and the Transcode button">
 
