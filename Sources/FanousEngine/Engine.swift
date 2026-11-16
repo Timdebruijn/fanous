@@ -813,17 +813,17 @@ public final class Engine: @unchecked Sendable {
         ]
     }
 
-    // MARK: Show control
-
     /// B198: the DMX and MIDI queues hand a command over and go on; it runs on `commandQueue` after the ones before it.
-    /// Three allocations per command in a release build (the block and its captures), at operator rate; the synchronous
-    /// `store.execute` before allocated at least four. Parameter values never get here.
+    /// Measured in a release build: 3 allocations per command on the handing queue, at operator rate; the synchronous
+    /// `store.execute` before allocated 4 for a refused command. Parameter values never get here.
     func handOver(_ command: OSCCommand, to store: StateStore) {
         commandQueue.async { [weak self] in
             guard let self, !self.commandsStopped.load(ordering: .relaxed) else { return }
             self.runCommand(command, on: store)
         }
     }
+
+    // MARK: Show control
 
     /// Cue, show and timecode commands from OSC (DESIGN.md §15.3) and the MIDI map (B36); parameter values never get
     /// here, they go straight to the resolvers.
@@ -1813,10 +1813,9 @@ public final class Engine: @unchecked Sendable {
     }
 
     public func stop() {
-        // B198: no command runs against what is torn down below; the one running finishes first (a show-mode entry
-        // waits for its readiness checks, at most the probe timeout)
+        // B198: a command still queued does not run against what is torn down below. One already running is not
+        // waited for (a show-mode entry's checks can hang, B197); it meets the same stopped parts it did on the DMX queue.
         commandsStopped.store(true, ordering: .relaxed)
-        commandQueue.sync {}
         liveTimer?.cancel()
         feedQueue.sync {
             dmxTimer?.cancel()
