@@ -222,21 +222,26 @@ struct LibraryIndexTests {
 @Suite(.cleansTempFiles)
 struct LibraryIndexGPUTests {
     /// B161: a newly listed container AVFoundation opens needs transcode; one it has no reader for is unreadable and says so.
+    /// B195: the needs-transcode reason names what is wrong, the container (ProRes in a `.3gp`, HAP in a `.qt`) or the codec (H.264).
     @Test func newlyListedContainersProbeToTranscodeOrUnreadable() async throws {
         let folder = try tempDir("fanous-library").appending(path: "001_Show")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try await writePatternMovie(to: folder.appending(path: "001_phone.3gp"), size: (64, 64), fps: 25, frames: 2)
         try Data(repeating: 7, count: 4096).write(to: folder.appending(path: "002_web.webm"))
         try Data(repeating: 7, count: 4096).write(to: folder.appending(path: "003_broken.mp4"))
+        try await IngestQueueTests.writeH264(to: folder.appending(path: "004_phone.mp4"))
+        try await writePatternMovie(to: folder.appending(path: "005_hap.qt"), size: (64, 64), fps: 25, frames: 2, codec: .hap(.hap))
         let index = LibraryIndex(root: folder.deletingLastPathComponent(), cacheDirectory: folder.appending(path: "_cache"), logger: testLogger)
         index.start()
         defer { index.stop() }
         #expect(await waitUntil(every: .milliseconds(50)) { index.snapshot.folders.first?.items.allSatisfy { $0.status != .probing } == true })
         let items = try #require(index.snapshot.folders.first?.items)
-        #expect(items.map(\.status) == [.needsTranscode, .unreadable, .unreadable])
-        #expect(items[0].reason == "apch is not ProRes/HAP in .mov")
+        #expect(items.map(\.status) == [.needsTranscode, .unreadable, .unreadable, .needsTranscode, .needsTranscode])
+        #expect(items[0].reason == "apch in .3gp: plays only in .mov, transcode re-encodes it", "B195: ProRes is fine, the container is not")
         #expect(items[1].reason == "AVFoundation cannot open .webm files")
         #expect(items[2].reason == "Cannot Open", "a damaged file in a container AVFoundation reads keeps AVFoundation's text")
+        #expect(items[3].reason == "avc1 is not ProRes or HAP", "B195: the codec is what is wrong")
+        #expect(items[4].reason == "Hap1 in .qt: plays only in .mov, remux it to a .mov on another machine", "macOS cannot decode HAP to transcode it")
         #expect(index.resolve(MediaKey(folder: 1, file: 1)) == nil && index.resolve(MediaKey(folder: 1, file: 2)) == nil)
     }
 
