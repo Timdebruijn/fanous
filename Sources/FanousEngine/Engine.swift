@@ -94,7 +94,13 @@ public final class Engine: @unchecked Sendable {
     private var cues: CueRunner?
     private var lastCues = CueList()
     private let showMode: ShowModeController
-    private let readiness = Mutex<(items: [ReadinessItem], acknowledged: Set<String>, checkedAt: Double)>(([], [], 0))
+    /// `started`/`stored`: the number of the last run started and of the run whose items these are (B187).
+    let readiness = Mutex<(items: [ReadinessItem], acknowledged: Set<String>, checkedAt: Double, started: Int, stored: Int)>(([], [], 0, 0, 0))
+    /// The readiness runs of the timer, `readiness.run` and the display syncs, one at a time (B187): a probe at its
+    /// timeout holds neither the feed queue (live publish, DMX monitor, autosave, `showMode.touch()`) nor the control queue.
+    private let readinessQueue = DispatchQueue(label: "org.fanous.readiness", qos: .utility)
+    /// The checks; a test replaces them with a probe that hangs.
+    var readinessCheck: @Sendable (ReadinessContext, Set<String>) -> [ReadinessItem] = Readiness.check
     private var readinessTimer: DispatchSourceTimer?
     /// When show mode came back by itself after an unclean stop (live `show.resumedAt`); cleared when show mode is left.
     private let showResumedAt = Mutex<Double?>(nil)
@@ -135,7 +141,7 @@ public final class Engine: @unchecked Sendable {
     /// Versions queue only: the last OSC project load, so a repeat of the same version within the window is ignored.
     private var lastOSCLoad: (id: String, at: TimeInterval)?
     static let oscLoadRepeatWindow: TimeInterval = 2
-    private let feedQueue = DispatchQueue(label: "org.fanous.feed", qos: .utility)
+    let feedQueue = DispatchQueue(label: "org.fanous.feed", qos: .utility)
     public let metrics = MetricsRing()
 
     /// The command registry as `fanousd protocol-dts` sees it: no engine needed.
@@ -1128,15 +1134,30 @@ public final class Engine: @unchecked Sendable {
         return context
     }
 
-    /// Off the control queue: the probes shell out (mdutil, tmutil, pmset, defaults).
-    private func runReadiness() {
+    /// On the readiness queue: the probes shell out (mdutil, tmutil, pmset).
+    func runReadiness() {
         let context = readinessContext()
-        feedQueue.async { [self] in
-            let acknowledged = readiness.withLock { $0.acknowledged }
-            let items = Readiness.check(context, acknowledged: acknowledged)
-            readiness.withLock { $0.items = items; $0.checkedAt = Date().timeIntervalSince1970 }
+        readinessQueue.async { [self] in
+            _ = checkReadiness(context)
             publishReadiness()
         }
+    }
+
+    /// Runs the checks and stores their items, unless a run that started later stored first: a show-mode entry on the
+    /// control queue can overlap a run on the readiness queue (B187).
+    private func checkReadiness(_ context: ReadinessContext) -> [ReadinessItem] {
+        let (run, acknowledged) = readiness.withLock { r in
+            r.started += 1
+            return (r.started, r.acknowledged)
+        }
+        let items = readinessCheck(context, acknowledged)
+        readiness.withLock { r in
+            guard run > r.stored else { return }
+            r.items = items
+            r.checkedAt = Date().timeIntervalSince1970
+            r.stored = run
+        }
+        return items
     }
 
     private func publishReadiness() {
@@ -1144,16 +1165,13 @@ public final class Engine: @unchecked Sendable {
     }
 
     /// `show.mode`: entering runs the checks synchronously and refuses with the blocking item ids.
-    private func setShowMode(_ on: Bool) -> [String]? {
+    func setShowMode(_ on: Bool) -> [String]? {
         if !on {
             showMode.leave()
             return nil
         }
         if librarySwitches.load(ordering: .relaxed) > 0 { return ["libraryRootChanging"] }  // B51: a moment, not a readiness item
-        let acknowledged = readiness.withLock { $0.acknowledged }
-        let items = Readiness.check(readinessContext(), acknowledged: acknowledged)
-        readiness.withLock { $0.items = items; $0.checkedAt = Date().timeIntervalSince1970 }
-        let blocking = items.filter(\.blocks).map(\.id)
+        let blocking = checkReadiness(readinessContext()).filter(\.blocks).map(\.id)
         if !blocking.isEmpty { return blocking }
         showMode.enter()
         return nil

@@ -239,7 +239,8 @@ public struct ReadinessContext: Sendable {
 
 public enum Readiness {
     /// All items; the slow probes (power, disk, volume, Spotlight, Time Machine, updates, display sleep) run here too,
-    /// so call it off the control queue.
+    /// each external tool for at most `toolTimeout`. The engine runs it on its readiness queue, and on the control queue
+    /// only to enter show mode, which needs the answer (B187).
     public static func check(_ context: ReadinessContext, acknowledged: Set<String>) -> [ReadinessItem] {
         var items: [ReadinessItem] = []
         /// `failing`: the state when not ok (`warn` never blocks, `hard` cannot be acknowledged).
@@ -382,17 +383,33 @@ public enum Readiness {
         return (values.volumeIsLocal ?? true) && !(values.volumeIsRemovable ?? false)
     }
 
-    static func run(_ tool: String, _ arguments: [String]) -> String? {
+    /// How long a probe tool may take (B187). Measured on an M1 Pro, 2026-11-16, 20 runs each at load average 6–11:
+    /// `mdutil -s` 8–16 ms, `tmutil status` 5–10 ms, `pmset -g` 8–16 ms.
+    static let toolTimeout: Double = 3
+
+    /// The tool's output (stdout and stderr); nil when it cannot be started or has not exited within `timeout`, and
+    /// then it is killed (an unreachable Time Machine target must not hold the caller, B187). The output goes to an
+    /// unlinked temporary file, not a pipe: a child the tool leaves behind keeps a pipe's write end open, and reading
+    /// to its end would block until that child exits.
+    static func run(_ tool: String, _ arguments: [String], timeout: Double = toolTimeout) -> String? {
+        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-probe-\(UUID().uuidString)")
+        guard FileManager.default.createFile(atPath: url.path, contents: nil), let output = try? FileHandle(forUpdating: url) else { return nil }
+        try? FileManager.default.removeItem(at: url)
+        defer { try? output.close() }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: tool)
         process.arguments = arguments
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
+        process.standardOutput = output
+        process.standardError = output
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
         do { try process.run() } catch { return nil }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return String(data: data, encoding: .utf8)
+        guard exited.wait(timeout: .now() + timeout) == .success else {
+            kill(process.processIdentifier, SIGKILL)  // Process reaps it when it exits; SIGTERM could be ignored
+            return nil
+        }
+        try? output.seek(toOffset: 0)
+        return String(data: (try? output.readToEnd()) ?? Data(), encoding: .utf8)
     }
 
     /// `mdutil -s` for the library's volume; nil when it cannot be read.

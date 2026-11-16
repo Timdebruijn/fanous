@@ -316,6 +316,52 @@ struct ShowControlTests {
         #expect(item.state == .hard && item.blocks && item.detail == "no hardware ProRes decoder")
     }
 
+    /// B187: a probe tool that does not exit is killed at the timeout and reads as unknown (nil); one that exits but
+    /// leaves a child holding its output open returns at once.
+    @Test func aHungProbeToolReturnsNilAtTheTimeout() async throws {
+        try await offPool {
+            #expect(Readiness.run("/bin/echo", ["ok"], timeout: 2) == "ok\n")
+            for (arguments, expected) in [(["-c", "sleep 30"], nil), (["-c", "sleep 30 & wait"], nil), (["-c", "echo hi; sleep 30 &"], "hi\n")] as [([String], String?)] {
+                let started = ContinuousClock.now
+                let output = Readiness.run("/bin/sh", arguments, timeout: 0.3)
+                #expect(output == expected, "\(arguments)")
+                #expect(ContinuousClock.now - started < .seconds(3), "\(arguments) held the caller")
+            }
+        }
+    }
+
+    /// B187: a readiness run with a probe that hangs leaves the feed queue (live publish, DMX monitor, autosave) free,
+    /// and its result, when it comes, does not replace that of a show-mode entry that started after it.
+    @Test func aHungReadinessRunHoldsNeitherTheFeedQueueNorANewerResult() async throws {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
+        let release = DispatchSemaphore(value: 0)
+        let calls = Atomic<Int>(0)
+        let seenByThirdRun = Mutex<[String]?>(nil)
+        engine.readinessCheck = { [weak engine] _, _ in
+            switch calls.add(1, ordering: .relaxed).newValue {
+            case 1:
+                _ = release.wait(timeout: .now() + 10)
+                return [ReadinessItem(id: "old", title: "", state: .ok, detail: "", fix: "")]
+            case 2: return [ReadinessItem(id: "new", title: "", state: .hard, detail: "", fix: "")]
+            default:
+                // queued behind the hung run: what that run left stored
+                seenByThirdRun.withLock { $0 = engine?.readiness.withLock { $0.items.map(\.id) } }
+                return []
+            }
+        }
+        defer { release.signal() }
+        engine.feedQueue.sync { engine.runReadiness() }  // as the 30 s timer does
+        #expect(await waitUntil { calls.load(ordering: .relaxed) == 1 }, "the run started")
+        let free = DispatchGroup()
+        engine.feedQueue.async(group: free) {}
+        #expect(try await offPool { free.wait(timeout: .now() + 1) } == .success, "the feed queue waited for the hung probe")
+        #expect(try await offPool { engine.setShowMode(true) } == ["new"])
+        engine.runReadiness()
+        release.signal()
+        #expect(await waitUntil { seenByThirdRun.withLock { $0 } != nil })
+        #expect(seenByThirdRun.withLock { $0 } == ["new"], "the older run stored its items over the show-mode entry's")
+    }
+
     @Test func readinessReflectsTheContextAndRunsEveryProbe() {
         var context = ReadinessContext()
         context.universesSilent = ["artnet:0.0.1"]
