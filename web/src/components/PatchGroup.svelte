@@ -273,7 +273,7 @@
   .head h2 { margin-right: 4px; }
   .count { display: inline-flex; align-items: center; justify-content: center; min-width: 48px; border-left: 1px solid var(--line-strong); border-right: 1px solid var(--line-strong); font-size: 15px; }
   .stepper button:disabled { color: var(--text-3); cursor: default; }
-  .block .universe { width: 110px; text-align: left; }
+  .block .universe { width: 160px; text-align: left; }  /* A 127.15.15 needs 148 px */
   .address { width: 84px; }
   .full { flex-basis: 100%; margin: 0; }
   .warn, .tone-warn { color: var(--yellow); }

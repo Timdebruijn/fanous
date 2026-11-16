@@ -125,6 +125,6 @@
   .tone-warn { color: var(--yellow); }
   .tone-bad { color: var(--red); }
   .fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
-  .fields .universe { width: 140px; text-align: left; }
+  .fields .universe { width: 160px; text-align: left; }  /* A 127.15.15 needs 148 px */
   .stepper button:disabled, .stepper input:disabled { color: var(--text-3); cursor: default; }
 </style>
