@@ -63,6 +63,21 @@ export function swapSteps(cues: readonly CueDoc[], id: string, direction: -1 | 1
   return [{ ...a, number: parked }, { ...b, number: a.number }, { ...a, number: b.number }];
 }
 
+/**
+ * Sends the swap steps in order through `send` (cue.set; false = refused). When the neighbour is refused, for example for
+ * a trigger an older build stored that the engine now refuses, the picked cue gets its own number back instead of
+ * staying parked at the end of the list.
+ */
+export async function moveCue(cues: readonly CueDoc[], id: string, direction: -1 | 1, send: (cue: CueDoc) => Promise<boolean>): Promise<void> {
+  const steps = swapSteps(cues, id, direction);
+  for (const [i, step] of steps.entries()) {
+    if (await send(step)) continue;
+    const picked = cues.find((c) => c.id === id);
+    if (i === 1 && picked) await send(picked);
+    return;
+  }
+}
+
 // ---- trigger text ------------------------------------------------------------------------------------------
 
 /**
@@ -97,6 +112,7 @@ export function parseTrigger(text: string): TriggerResult {
   if (!rate) return { ok: false, error: `Unknown rate "${match[5]}"; use 24, 25, 29.97df, 29.97ndf or 30` };
   if (h > 23 || m > 59 || s > 59) return { ok: false, error: 'Hours go to 23, minutes and seconds to 59' };
   if (f >= rate.frames) return { ok: false, error: `Frames go to ${rate.frames - 1} at ${rate.id} fps` };
+  if (rate.id === '29.97df' && s === 0 && f < 2 && m % 10 !== 0) return { ok: false, error: '29.97df skips frames 00 and 01 of each minute except every tenth' };
   return { ok: true, value: `${pad2(h)}:${pad2(m)}:${pad2(s)}:${pad2(f)}@${rate.engine}` };
 }
 

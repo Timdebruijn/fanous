@@ -4,7 +4,7 @@
 <script lang="ts">
   import type { CueDoc } from '../lib/docs';
   import type { JSONValue } from '../lib/protocol';
-  import { cueRowLabel, cueRowText, cueStatus, formatNumber, nextCueNumber, numberAfter, sortedCues, swapSteps } from '../lib/show';
+  import { cueRowLabel, cueRowText, cueStatus, formatNumber, moveCue, nextCueNumber, numberAfter, sortedCues } from '../lib/show';
   import { app, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
 
   let { selected = $bindable('') }: { selected: string } = $props();
@@ -46,11 +46,15 @@
   async function move(direction: -1 | 1) {
     if (!picked) return;
     busy = true;
+    let refusal: typeof app.lastError = null;
     try {
-      for (const step of swapSteps($state.snapshot(app.project.cues) as CueDoc[], picked.id, direction)) {
-        if ((await cmd('cue.set', { id: step.id, cue: step as unknown as JSONValue })) === undefined) break;
-      }
+      await moveCue($state.snapshot(app.project.cues) as CueDoc[], picked.id, direction, async (step) => {
+        if ((await cmd('cue.set', { id: step.id, cue: step as unknown as JSONValue })) !== undefined) return true;
+        refusal = app.lastError;
+        return false;
+      });
     } finally {
+      if (refusal) app.lastError = refusal; // putting the picked cue back succeeds, which clears the banner
       busy = false;
     }
   }

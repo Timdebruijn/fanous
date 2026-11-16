@@ -8,7 +8,7 @@ import {
   levelText,
   ltcInput,
   meterFill,
-  cueRowLabel, cueRowText, cueStatus, fixtureNames, fixtureType, formatNumber, groupSpecs, isNumberTaken, lockTitle, newValue, nextCueNumber,
+  cueRowLabel, cueRowText, cueStatus, fixtureNames, fixtureType, formatNumber, groupSpecs, isNumberTaken, lockTitle, moveCue, newValue, nextCueNumber,
   numberAfter, parseTrigger, retargetValue, sortedCues, specsFor, swapSteps, timecodeBadge, timecodeOn, timecodeSource, valueControl, withFade,
   offsetText,
   TRIGGER_HINT,
@@ -98,6 +98,19 @@ describe('swapSteps', () => {
     expect(swapSteps(cues, 'c', 1)).toEqual([]);
     expect(swapSteps(cues, 'zzz', 1)).toEqual([]);
   });
+
+  it('moveCue gives the picked cue its number back when the neighbour is refused (B189)', async () => {
+    const sent: [string, number][] = [];
+    const refuseB = async (step: CueDoc) => {
+      sent.push([step.id, step.number]);
+      return step.id !== 'b'; // b holds a trigger an older build stored
+    };
+    await moveCue(cues, 'a', 1, refuseB);
+    expect(sent).toEqual([['a', 5], ['b', 1], ['a', 1]]);
+    sent.length = 0;
+    await moveCue(cues, 'a', 1, async (step) => (sent.push([step.id, step.number]), true));
+    expect(sent).toEqual([['a', 5], ['b', 1], ['a', 2]]);
+  });
 });
 
 describe('parseTrigger', () => {
@@ -125,6 +138,10 @@ describe('parseTrigger', () => {
     expect(parseTrigger('00:00:00:25@25')).toMatchObject({ ok: false, error: 'Frames go to 24 at 25 fps' });
     expect(parseTrigger('00:00:00:24@24')).toMatchObject({ ok: false });
     expect(parseTrigger('00:00:00:29@25')).toMatchObject({ ok: false });
+    expect(parseTrigger('00:01:00:00@29.97df')).toMatchObject({ ok: false, error: expect.stringContaining('29.97df skips frames 00 and 01') });
+    expect(parseTrigger('00:01:00;01@29.97df')).toMatchObject({ ok: false });
+    expect(parseTrigger('00:10:00:00@29.97df')).toMatchObject({ ok: true });
+    expect(parseTrigger('00:01:00:00@29.97ndf')).toMatchObject({ ok: true });
   });
 });
 

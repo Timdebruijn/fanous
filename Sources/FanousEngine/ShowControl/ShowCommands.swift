@@ -50,7 +50,8 @@ public enum ShowCommands {
     }
 
     /// "hh:mm:ss:ff@25", 25 without "@rate"; the rate as the guide writes it ("29.97df", "29.97ndf"), the engine's label
-    /// ("29.97 DF") or the raw value ("fps2997df"), case and spaces ignored.
+    /// ("29.97 DF") or the raw value ("fps2997df"), case and spaces ignored. Field ranges are not checked here: `validateCue`
+    /// refuses an out-of-range trigger (`Timecode.isValid`), while a project stored by an older build keeps its trigger armed.
     static func parseTimecode(_ text: String) -> Timecode? {
         let parts = text.split(separator: "@")
         guard let time = parts.first else { return nil }
@@ -75,8 +76,13 @@ public enum ShowCommands {
         if let values = value["values"]?.array, values.count != values.compactMap(cueValue(from:)).count {
             throw CommandError.invalidArgs("every value needs fixture (\"Layer n\" / \"Master\" / \"Output n\" / \"Keystone n\"), a parameter key and raw")
         }
-        if let trigger = value["trigger"], trigger != .null, trigger.string.flatMap(parseTimecode) == nil {
-            throw CommandError.invalidArgs("trigger is hh:mm:ss:ff@rate, the rate 24, 25, 29.97df, 29.97ndf or 30")
+        if let trigger = value["trigger"], trigger != .null {
+            guard let timecode = trigger.string.flatMap(parseTimecode) else {
+                throw CommandError.invalidArgs("trigger is hh:mm:ss:ff@rate, the rate 24, 25, 29.97df, 29.97ndf or 30")
+            }
+            guard timecode.isValid else {
+                throw CommandError.invalidArgs("trigger out of range: hours go to 23, minutes and seconds to 59, frames to one below the rate; 29.97df skips frames 00 and 01 of each minute except every tenth")
+            }
         }
     }
 

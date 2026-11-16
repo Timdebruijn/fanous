@@ -123,8 +123,12 @@ A **Trigger** fires the cue from timecode: `hh:mm:ss:ff@rate`, for example
 `00:01:30:00@25`. The rate is the timecode's frame rate: copy it from the
 Timecode panel's source line (`LTC · device · 25 fps`); 24, 25, 29.97df,
 29.97ndf and 30 are accepted, and without `@rate` it means 25. Use 29.97df
-(drop frame) only when the source says so; frames count from 0 to one
-below the rate. A **Follow (s)** fires the next cue in the list that many
+(drop frame) only when the source says so. Hours go to 23, minutes and
+seconds to 59, and frames count from 0 to one below the rate (29 at
+29.97); 29.97df has no frames 00 and 01 at the start of a minute, except
+every tenth minute. Fanous refuses a trigger outside these ranges. A
+trigger an older version stored outside them still fires, but the cue
+takes no other change until you correct its trigger. A **Follow (s)** fires the next cue in the list that many
 seconds after this one fires, not after its fade ends: a 5 s fade with
 Follow 5 fires the next cue as the fade ends. 0 fires it at once; empty is
 none.
