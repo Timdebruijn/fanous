@@ -174,7 +174,7 @@
         {@const start = block.start}
         <span>Block ·</span>
         <input class="input mono universe" type="text" list={listId} autocomplete="off" spellcheck="false" aria-label="{group.title} block universe"
-          value={universeName(start.universe)} disabled={locked} title={lock ?? 'A net.subnet.universe or S n; the list has the universes in use'}
+          value={universeName(start.universe)} disabled={locked} title={lock ?? 'A net.subnet.universe or S n; suggestions as you type'}
           onchange={(e) => moveUniverse(e.currentTarget, start)} />
         <datalist id={listId}>
           {#each options as id (id)}

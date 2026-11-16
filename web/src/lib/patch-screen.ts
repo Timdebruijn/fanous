@@ -132,6 +132,14 @@ export function parseUniverseName(text: string): string {
   return `${m[1]!.toLowerCase() === 'a' ? 'artnet' : 'sacn'}:${m[2]}`;
 }
 
+/** An id the engine accepts (Core `UniverseID(parsing:)`): Art-Net net 0–127, subnet and universe 0–15; sACN 1–63999. */
+export function validUniverse(id: string): boolean {
+  const a = /^artnet:(\d+)\.(\d+)\.(\d+)$/.exec(id);
+  if (a) return Number(a[1]) <= 127 && Number(a[2]) <= 15 && Number(a[3]) <= 15;
+  const s = /^sacn:(\d+)$/.exec(id);
+  return !!s && Number(s[1]) >= 1 && Number(s[1]) <= 63999;
+}
+
 /** Art-Net port-address 0–32767 as "artnet:net.subnet.universe". */
 function artnetId(n: number): string {
   return `artnet:${n >> 8}.${(n >> 4) & 0xf}.${n & 0xf}`;

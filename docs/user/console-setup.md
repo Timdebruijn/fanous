@@ -185,7 +185,7 @@ flowchart TD
   desk{"What does the desk send?"}
   desk -- "Art-Net, port-address n" --> art["Patch the fixtures on A universes with that port-address"]
   desk -- "sACN, universe n" --> sacn{"Repatch Fanous onto S universes?"}
-  sacn -- yes --> sU["Each chip's Universe list, or the Block universe field: S n"]
+  sacn -- yes --> sU["Each chip's Universe field, or the Block universe field: S n"]
   sacn -- "no, keep the A patch" --> pair["Patch screen › Universes › tap the universe › Protocol: sACN,<br>and type the sACN universe it is fed from (S 1 for A 0.0.0 by default).<br>Repeat for every universe, the Master's too"]
   desk -- "both: a backup console on the other protocol" --> both["Protocol: Art-Net + sACN; see Two consoles"]
   art --> iface
@@ -214,12 +214,12 @@ in the setting but receives nothing until it is back; the readiness item
 **Universe interfaces usable** warns, and a replugged adapter is joined again
 within 5 s.
 
-**Universes you can pick.** A fixture's Universe list offers `A 0.0.0` to
+**Universes you can pick.** A fixture's Universe field and the Block
+universe field take any `A net.subnet.universe` (`A 0.0.0` to `A 127.15.15`)
+or `S n` (`S 1` to `S 63999`); as you type, they suggest `A 0.0.0` to
 `A 0.0.3`, `S 1` to `S 4`, and every universe that is patched, has been
-heard or has settings. For another Art-Net universe, let the desk send to it
-once: it appears as "heard". For another sACN universe, patch on an A
-universe and type the number into its **sACN universe** field, or type it in
-the Block universe field. sACN multicast is joined for every S universe in
+heard or has settings. An sACN universe can also be set on an A universe in
+its **sACN universe** field. sACN multicast is joined for every S universe in
 the patch and for the sACN universe paired with every A universe fed by
 sACN; with none of those, S 1 is joined so the multicast path is ready.
 

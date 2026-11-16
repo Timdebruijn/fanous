@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { app, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
-  import { UNIVERSE_SIZE, compareUniverse, parseUniverseName, rangeText, universeName, type FixtureRow, type Slot, type Status } from '../lib/patch-screen';
+  import { UNIVERSE_SIZE, compareUniverse, parseUniverseName, rangeText, universeName, validUniverse, type FixtureRow, type Slot, type Status } from '../lib/patch-screen';
 
   // The inline editor of one fixture, inside its group (DESIGN §6.6 item 2): universe, address, Patch or Unpatch.
   let { row, status, options, slot, defaultUniverse, onpatched }: {
@@ -55,10 +55,12 @@
     if ((await cmd('output.remove', { id: output.id })) !== undefined) toastUndo(`${name} removed.`);
   }
 
-  /** A typed universe (`A 0.1.0`, `S 17`, or an id); the engine refuses one outside the protocol's range (B191). */
+  /** A typed universe (`A 0.1.0`, `S 17`, or an id); the engine refuses one outside the protocol's range, and a draft
+   *  that the engine will not see yet (no address) is checked here (B191). */
   async function commitUniverse(input: HTMLInputElement) {
     const next = parseUniverseName(input.value);
-    if (next !== '' && next !== universe) await apply(next, address);
+    const sent = row.patched || address > 0;
+    if (next !== universe && (sent ? next !== '' : validUniverse(next))) await apply(next, address);
     input.value = universeName(universe);
   }
 
@@ -81,7 +83,7 @@
       <span class="label">Universe</span>
       <input
         class="input mono universe" type="text" list={listId} autocomplete="off" spellcheck="false"
-        value={universeName(universe)} disabled={locked} title={lock ?? 'A net.subnet.universe or S n; the list has the universes in use'}
+        value={universeName(universe)} disabled={locked} title={lock ?? 'A net.subnet.universe or S n; suggestions as you type'}
         onchange={(e) => commitUniverse(e.currentTarget)} />
       <datalist id={listId}>
         {#each choices as id (id)}
