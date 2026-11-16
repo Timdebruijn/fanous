@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- OSC panel: a "Last received" row wraps (up to three lines) instead of being cut with an ellipsis, so a parameter
+  row shows its value in the narrow panel (B199, PR #NNN).
 - Release: 1.0.0-rc.7 is on GitHub as a pre-release with the signed, notarized dmg, built from main 4b5906f
   (PR #345).
 
