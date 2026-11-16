@@ -8,7 +8,6 @@ import Foundation
 import FanousCore
 import Logging
 import Synchronization
-import UniformTypeIdentifiers
 
 /// One entry of the library (DESIGN.md §8.1): a numbered file, a sequence
 /// directory, or something invalid that the Media screen shows in red.
@@ -87,12 +86,14 @@ public struct LibrarySnapshot: Codable, Sendable, Equatable {
 public final class LibraryIndex: @unchecked Sendable {
     public static let movieExtensions: Set<String> = ["mov", "mp4", "m4v", "avi", "mkv", "mxf"]
 
-    /// Listed since B161: an extension the system's type database calls a movie (`.webm`, `.mpg`, `.m2ts`, `.wmv`, `.flv`,
-    /// …) beyond the six above, so no video file is skipped without a word; the probe then says needs transcode or
-    /// unreadable. The database also holds what installed apps declare (VLC's `.mkv`), hence the six stay listed by hand.
-    static func isLateMovie(_ ext: String) -> Bool {
-        !movieExtensions.contains(ext) && UTType(filenameExtension: ext)?.conforms(to: .movie) == true
-    }
+    /// Common video containers listed since B161, so none is skipped without a word; the probe then says needs transcode
+    /// or unreadable. Fixed, not the system's type list: that one grows with installed apps (VLC adds `.vob`), and a listed
+    /// numbered file is a CITP/MSEX element, so every Mac must list the same files. A TypeScript `.ts` shows as unreadable.
+    static let lateMovieExtensions: Set<String> = [
+        "webm", "mpg", "mpeg", "m2ts", "mts", "ts", "wmv", "flv", "3gp", "3g2", "ogv", "vob", "dv", "qt", "m2v", "f4v", "asf", "divx",
+    ]
+    /// The containers AVFoundation reads: a "Cannot Open" in one of these is a damaged file, not the container.
+    static let avFoundationContainers: Set<String> = ["mov", "mp4", "m4v"]
     /// The codecs `MovieSource` plays, as the fourCC strings of `Metadata.codec`.
     static let playableCodecs = Set(MovieSource.proResCodecs.union(MovieSource.hapCodecs.keys).map(fourCCString))
 
@@ -216,14 +217,17 @@ public final class LibraryIndex: @unchecked Sendable {
             }
             var items: [LibraryItem] = []
             var seenFiles: Set<Int> = []
-            // a late movie (B161) claims its number after everything else: one that shares a number with a file listed
-            // before B161 is the duplicate, so a show's folder/file numbers stay what they were
-            let names = ((try? fm.contentsOfDirectory(atPath: folderURL.path)) ?? []).filter { !$0.hasPrefix(".") && !$0.hasPrefix("_") }
-                .map { ($0, Self.isLateMovie(($0 as NSString).pathExtension.lowercased())) }  // not URL(fileURLWithPath:): it stats
-                .sorted { ($0.1 ? 1 : 0, $0.0) < ($1.1 ? 1 : 0, $1.0) }
-            for (name, late) in names {
+            // a late movie (B161, a regular file) claims its number after everything else: one that shares a number with an
+            // entry listed before B161 is the duplicate, so a show's folder/file numbers stay what they were
+            let entries = ((try? fm.contentsOfDirectory(atPath: folderURL.path)) ?? []).filter { !$0.hasPrefix(".") && !$0.hasPrefix("_") }
+                .compactMap { name -> (name: String, values: URLResourceValues, late: Bool)? in
+                    let url = folderURL.appending(path: name)
+                    guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey]) else { return nil }
+                    return (name, values, values.isDirectory != true && Self.lateMovieExtensions.contains(url.pathExtension.lowercased()))
+                }
+                .sorted { ($0.late ? 1 : 0, $0.name) < ($1.late ? 1 : 0, $1.name) }
+            for (name, values, late) in entries {
                 let url = folderURL.appending(path: name)
-                guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey]) else { continue }
                 let isDirectory = values.isDirectory == true
                 let ext = url.pathExtension.lowercased()
                 let kind: LibraryItem.Kind =
@@ -317,7 +321,7 @@ public final class LibraryIndex: @unchecked Sendable {
                 if entry.status == .needsTranscode {
                     entry.reason = metadata.rotated == true ? "rotated or flipped (phone footage): transcode to make it upright" : "\(metadata.codec) is not ProRes/HAP in .mov"
                 }
-            } catch let error as AVError where error.code == .fileFormatNotRecognized {
+            } catch let error as AVError where error.code == .fileFormatNotRecognized && !Self.avFoundationContainers.contains(url.pathExtension.lowercased()) {
                 entry.reason = "AVFoundation cannot open .\(url.pathExtension.lowercased()) files"  // "Cannot Open" told nothing (B161)
             } catch {
                 entry.reason = error.clientText  // `/api/library` reaches monitors: no file path (B25)
