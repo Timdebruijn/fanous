@@ -509,6 +509,64 @@ struct ShowControlTests {
         #expect(ran.withLock { $0 } == ["show.mode", "cue.go", "cue.goto 2.0", "cue.go"])
     }
 
+    /// B198: a console repeating `/fanous/show/mode 1` while the entry's checks hang queues no backlog: the repeats are
+    /// dropped while one entry is queued or running, and a cue go sent after them fires once, right after that entry.
+    @Test func repeatedShowModeEntriesAreCoalescedButACueGoIsNot() async throws {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
+        let gate = DispatchSemaphore(value: 0)
+        let checks = Atomic<Int>(0)
+        engine.readinessCheck = { _, _ in
+            checks.add(1, ordering: .relaxed)
+            _ = gate.wait(timeout: .now() + 10)
+            gate.signal()  // a turnstile: once open, every later check passes at once
+            return [ReadinessItem(id: "hung", title: "", state: .hard, detail: "", fix: "")]
+        }
+        defer { gate.signal() }
+        let cues = Atomic<Int>(0)
+        let store = StateStore(project: [:], logger: testLogger)
+        store.register(CommandSpec(name: "show.mode", role: .operator, mutatesConfig: false, undoable: false, summary: "") { [weak engine] _, _ in
+            _ = engine?.setShowMode(true)
+            return nil
+        })
+        store.register(CommandSpec(name: "cue.go", role: .operator, mutatesConfig: false, undoable: false, summary: "") { _, _ in
+            cues.add(1, ordering: .relaxed)
+            return nil
+        })
+        engine.handOver(.showMode(true), to: store)
+        #expect(await waitUntil { checks.load(ordering: .relaxed) == 1 }, "the entry started")
+        for _ in 0..<100 { engine.handOver(.showMode(true), to: store) }
+        engine.handOver(.cueGo, to: store)
+        gate.signal()
+        // the cue go runs after every entry queued before it: once it fired, those have run
+        #expect(await waitUntil(.seconds(2)) { cues.load(ordering: .relaxed) == 1 }, "the cue go waited behind queued entries")
+        #expect(checks.load(ordering: .relaxed) <= 2, "\(checks.load(ordering: .relaxed)) readiness runs for 101 entries")
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(cues.load(ordering: .relaxed) == 1)
+    }
+
+    /// B198: `1, 0, 1` ends on, also when it arrives while an entry runs; a `1` during that entry is dropped (it answers
+    /// for it). The store's `show.mode` only records here, so show mode is not really entered.
+    @Test func showModeOnOffOnDuringARunningEntryEndsOn() async throws {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
+        let gate = DispatchSemaphore(value: 0)
+        let started = Atomic<Bool>(false)
+        let ran = Mutex<[Bool]>([])
+        let store = StateStore(project: [:], logger: testLogger)
+        store.register(CommandSpec(name: "show.mode", role: .operator, mutatesConfig: false, undoable: false, summary: "") { _, args in
+            if !started.exchange(true, ordering: .relaxed) { _ = gate.wait(timeout: .now() + 10) }
+            ran.withLock { $0.append(args["on"]?.bool ?? false) }
+            return nil
+        })
+        defer { gate.signal() }
+        engine.handOver(.showMode(true), to: store)  // the running entry, held
+        #expect(await waitUntil { started.load(ordering: .relaxed) })
+        for command in [OSCCommand.showMode(true), .showMode(false), .showMode(true)] { engine.handOver(command, to: store) }
+        gate.signal()
+        #expect(await waitUntil { ran.withLock { $0.count } == 3 })
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(ran.withLock { $0 } == [true, false, true], "the repeat during the entry is dropped, the last state wins")
+    }
+
     @Test func readinessReflectsTheContextAndRunsEveryProbe() {
         var context = ReadinessContext()
         context.universesSilent = ["artnet:0.0.1"]
