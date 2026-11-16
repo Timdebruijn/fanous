@@ -255,7 +255,7 @@ public final class IngestQueue: @unchecked Sendable {
             outcome = .cancelled
         } catch {
             try? FileManager.default.removeItem(at: temporary)
-            let message = error.clientText
+            let message = LibraryIndex.openFailureText(error, job.source)  // the library's words for a container AVFoundation cannot open (B194)
             outcome = .failed(message)
             logger.warning("ingest job failed", metadata: ["source": "\(job.source.path)", "error": "\(message)"])
         }

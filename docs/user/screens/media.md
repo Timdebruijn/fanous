@@ -100,7 +100,9 @@ Folder 0 has no Search and no Import.
 
 Jobs run one at a time at low priority and pause in show mode. A done or
 cancelled job leaves the list a minute later; a failed one stays until you
-remove it. The status bar shows the running job's progress too.
+remove it. An imported file macOS cannot open fails with the library's
+reason, "AVFoundation cannot open .webm files"; its uploaded copy stays in
+`_incoming/`. The status bar shows the running job's progress too.
 
 ## Messages
 

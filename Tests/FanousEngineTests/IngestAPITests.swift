@@ -100,6 +100,38 @@ import Testing
         #expect(incoming().isEmpty)
     }
 
+    /// B194: a transcode of a file the library already probed as unreadable is refused at once with the
+    /// library's reason; once the file changes on disk the index has no word on it and the job is queued. An upload of
+    /// such a file is still stored and queued: it is the user's file.
+    @Test func transcodeOfAKnownUnreadableFileIsRefused() async throws {
+        let (api, library) = try Self.api()
+        let folder = library.root.appending(path: "001_Show")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let webm = folder.appending(path: "002_web.webm")
+        try Data(repeating: 7, count: 4096).write(to: webm)
+        library.start()
+        defer { library.stop() }
+        #expect(await waitUntil { library.snapshot.folders.first { $0.number == 1 }?.items.first?.status == .unreadable })
+        let body = #"{"source": "\#(webm.path)", "folder": 1, "file": 2, "name": "002_web.webm"}"#
+        let refused = api.handle(try Self.request("POST", "/api/ingest", body: Array(body.utf8)), uploadedFile: nil)
+        #expect(refused.status == 400)
+        #expect(String(decoding: refused.body, as: UTF8.self) == "AVFoundation cannot open .webm files")
+        #expect(try Data(contentsOf: webm) == Data(repeating: 7, count: 4096))
+
+        let upload = api.handle(try Self.put("/api/upload/1/web.webm", body: Array(repeating: 7, count: 4096)), uploadedFile: nil)
+        #expect(upload.status == 202)
+        #expect(FileManager.default.fileExists(atPath: library.incomingDirectory.appending(path: "web.webm").path))
+
+        try Data(repeating: 8, count: 4097).write(to: webm)  // not the file the index probed
+        #expect(api.handle(try Self.request("POST", "/api/ingest", body: Array(body.utf8)), uploadedFile: nil).status == 202)
+    }
+
+    static func request(_ method: String, _ path: String, body: [UInt8]) throws -> HTTPRequest {
+        var request = try #require(try HTTPRequest.parse(Array("\(method) \(path) HTTP/1.1\r\nHost: x\r\n\r\n".utf8))).request
+        request.body = body
+        return request
+    }
+
     /// Two parallel uploads with the same name: each gets its own file the moment it asks, so B's refusal (a hold → 409)
     /// removes only B's file, never the one A claimed and is still writing (B155).
     @Test func parallelUploadsWithOneNameGetTheirOwnFiles() throws {

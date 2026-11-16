@@ -94,6 +94,16 @@ public final class LibraryIndex: @unchecked Sendable {
     ]
     /// The containers AVFoundation reads: a "Cannot Open" in one of these is a damaged file, not the container.
     static let avFoundationContainers: Set<String> = ["mov", "mp4", "m4v"]
+    /// Why `url` did not open, as a client may see it: "Cannot Open" for a container AVFoundation has no reader for told
+    /// nothing (B161); the library and a failed ingest job say the same (B194). `/api/library` and `live.ingest` reach
+    /// monitors: no file path (B25).
+    static func openFailureText(_ error: Error, _ url: URL) -> String {
+        let ext = url.pathExtension.lowercased()
+        if let error = error as? AVError, error.code == .fileFormatNotRecognized, !avFoundationContainers.contains(ext) {
+            return "AVFoundation cannot open .\(ext) files"
+        }
+        return error.clientText
+    }
     /// The codecs `MovieSource` plays, as the fourCC strings of `Metadata.codec`.
     static let playableCodecs = Set(MovieSource.proResCodecs.union(MovieSource.hapCodecs.keys).map(fourCCString))
 
@@ -321,10 +331,8 @@ public final class LibraryIndex: @unchecked Sendable {
                 if entry.status == .needsTranscode {
                     entry.reason = metadata.rotated == true ? "rotated or flipped (phone footage): transcode to make it upright" : "\(metadata.codec) is not ProRes/HAP in .mov"
                 }
-            } catch let error as AVError where error.code == .fileFormatNotRecognized && !Self.avFoundationContainers.contains(url.pathExtension.lowercased()) {
-                entry.reason = "AVFoundation cannot open .\(url.pathExtension.lowercased()) files"  // "Cannot Open" told nothing (B161)
             } catch {
-                entry.reason = error.clientText  // `/api/library` reaches monitors: no file path (B25)
+                entry.reason = Self.openFailureText(error, url)
             }
         case .sequence:
             let frames = (try? SequenceIngest.frames(in: url)) ?? []
