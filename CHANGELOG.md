@@ -14,6 +14,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   their own queue in arrival order, so Art-Net, sACN and OSC parameters keep flowing during a show-mode entry's
   readiness checks. A repeated show-mode entry is dropped while one is queued or running; a cue command can still wait
   behind one running entry (B198; B200 open) (PR #351).
+- Engine: a show-control command from OSC that the engine refuses logs a warning with the command, the code and the
+  reason, at most once per command and code every 3 s with a count of the repeats. In practice that is entering show
+  mode while readiness blocks; cue go, back and goto are never refused (B193, PR #349).
 - Release: 1.0.0-rc.8 is on GitHub as a pre-release with the signed, notarized dmg, built from main 40400ef
   (PR #348).
 

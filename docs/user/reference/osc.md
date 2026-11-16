@@ -50,7 +50,7 @@ show, and they are never refused by the show lock or show mode.
 | `/fanous/cue/goto` | 1 number (`i f h d`, or `T`/`F`) | The cue with that number (decimals work); a non-number is ignored | operator |
 | `/fanous/cue/{number}/go` | none | That cue | operator |
 | `/fanous/show/lock` | 1 bool-like (`i` or `f` non-zero, `T`, `F`, or an impulse `I` for true; `h` and `d` are ignored) | Locks or unlocks | programmer, also while locked |
-| `/fanous/show/mode` | 1 bool-like | Enters or leaves show mode; entering is refused silently while readiness items block | operator |
+| `/fanous/show/mode` | 1 bool-like | Enters or leaves show mode; entering is refused while readiness items block, with a warning in the engine log | operator |
 | `/fanous/timecode/enable` | 1 bool-like | The timecode switch | operator |
 | `/fanous/project/load` | 1 string | Restores the newest named project version with that name (case-insensitive), else the version with that id; the same version within 2 s is ignored; refused in show mode and while the show is locked | programmer |
 
