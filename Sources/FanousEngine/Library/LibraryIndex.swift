@@ -319,7 +319,10 @@ public final class LibraryIndex: @unchecked Sendable {
                 entry.metadata = metadata
                 entry.status = url.pathExtension.lowercased() == "mov" && Self.playableCodecs.contains(metadata.codec) && metadata.rotated != true ? .playable : .needsTranscode
                 if entry.status == .needsTranscode {
-                    entry.reason = metadata.rotated == true ? "rotated or flipped (phone footage): transcode to make it upright" : "\(metadata.codec) is not ProRes/HAP in .mov"
+                    entry.reason = metadata.rotated == true ? "rotated or flipped (phone footage): transcode to make it upright"
+                        : !Self.playableCodecs.contains(metadata.codec) ? "\(metadata.codec) is not ProRes or HAP"  // B195: the codec or the container
+                        : "\(metadata.codec) in .\(url.pathExtension.lowercased()): plays only in .mov, "
+                            + (MovieSource.proResCodecs.contains(makeFourCC(metadata.codec)) ? "transcode re-encodes it" : "remux it to a .mov on another machine")
                 }
             } catch let error as AVError where error.code == .fileFormatNotRecognized && !Self.avFoundationContainers.contains(url.pathExtension.lowercased()) {
                 entry.reason = "AVFoundation cannot open .\(url.pathExtension.lowercased()) files"  // "Cannot Open" told nothing (B161)
