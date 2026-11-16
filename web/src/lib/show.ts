@@ -63,6 +63,20 @@ export function swapSteps(cues: readonly CueDoc[], id: string, direction: -1 | 1
   return [{ ...a, number: parked }, { ...b, number: a.number }, { ...a, number: b.number }];
 }
 
+/**
+ * Why a move cannot start, '' when it can: a cue of the swap holds a stored trigger (from an older build, B189) that the
+ * engine refuses in cue.set, which would leave the picked cue parked at the end of the list.
+ */
+export function moveProblem(cues: readonly CueDoc[], id: string, direction: -1 | 1): string {
+  const list = sortedCues(cues);
+  const index = list.findIndex((c) => c.id === id);
+  for (const c of [list[index], list[index + direction]]) {
+    const result = c?.trigger ? parseTrigger(c.trigger) : null;
+    if (c && result && !result.ok) return `Correct the trigger of cue ${formatNumber(c.number)} (${c.trigger}) before moving: ${result.error}`;
+  }
+  return '';
+}
+
 // ---- trigger text ------------------------------------------------------------------------------------------
 
 /**
@@ -97,6 +111,7 @@ export function parseTrigger(text: string): TriggerResult {
   if (!rate) return { ok: false, error: `Unknown rate "${match[5]}"; use 24, 25, 29.97df, 29.97ndf or 30` };
   if (h > 23 || m > 59 || s > 59) return { ok: false, error: 'Hours go to 23, minutes and seconds to 59' };
   if (f >= rate.frames) return { ok: false, error: `Frames go to ${rate.frames - 1} at ${rate.id} fps` };
+  if (rate.id === '29.97df' && s === 0 && f < 2 && m % 10 !== 0) return { ok: false, error: '29.97df skips frames 00 and 01 of each minute except every tenth' };
   return { ok: true, value: `${pad2(h)}:${pad2(m)}:${pad2(s)}:${pad2(f)}@${rate.engine}` };
 }
 

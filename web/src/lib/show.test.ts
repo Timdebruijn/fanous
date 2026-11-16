@@ -8,7 +8,7 @@ import {
   levelText,
   ltcInput,
   meterFill,
-  cueRowLabel, cueRowText, cueStatus, fixtureNames, fixtureType, formatNumber, groupSpecs, isNumberTaken, lockTitle, newValue, nextCueNumber,
+  cueRowLabel, cueRowText, cueStatus, fixtureNames, fixtureType, formatNumber, groupSpecs, isNumberTaken, lockTitle, moveProblem, newValue, nextCueNumber,
   numberAfter, parseTrigger, retargetValue, sortedCues, specsFor, swapSteps, timecodeBadge, timecodeOn, timecodeSource, valueControl, withFade,
   offsetText,
   TRIGGER_HINT,
@@ -98,6 +98,16 @@ describe('swapSteps', () => {
     expect(swapSteps(cues, 'c', 1)).toEqual([]);
     expect(swapSteps(cues, 'zzz', 1)).toEqual([]);
   });
+
+  it('moveProblem stops a move when either cue holds a trigger the engine refuses (B189)', () => {
+    const old = [cue('a', 1), cue('b', 2, { trigger: '00:00:00:99@25' }), cue('c', 3, { trigger: '00:00:10:00@25' })];
+    expect(moveProblem(old, 'a', 1)).toBe('Correct the trigger of cue 2 (00:00:00:99@25) before moving: Frames go to 24 at 25 fps'); // neighbour bad
+    expect(moveProblem(old, 'b', -1)).toContain('cue 2 (00:00:00:99@25)'); // picked bad
+    expect(moveProblem(old, 'c', -1)).toContain('cue 2');
+    expect(moveProblem([cue('d', 1, { trigger: '00:01:00:00@29.97 DF' }), cue('e', 2)], 'e', -1)).toContain('29.97df skips frames 00 and 01');
+    expect(moveProblem([cue('d', 1, { trigger: '00:10:00:00@29.97 DF' }), cue('e', 2, { trigger: null }), cue('f', 3)], 'e', -1)).toBe('');
+    expect(moveProblem(old, 'zzz', 1)).toBe('');
+  });
 });
 
 describe('parseTrigger', () => {
@@ -125,6 +135,10 @@ describe('parseTrigger', () => {
     expect(parseTrigger('00:00:00:25@25')).toMatchObject({ ok: false, error: 'Frames go to 24 at 25 fps' });
     expect(parseTrigger('00:00:00:24@24')).toMatchObject({ ok: false });
     expect(parseTrigger('00:00:00:29@25')).toMatchObject({ ok: false });
+    expect(parseTrigger('00:01:00:00@29.97df')).toMatchObject({ ok: false, error: expect.stringContaining('29.97df skips frames 00 and 01') });
+    expect(parseTrigger('00:01:00;01@29.97df')).toMatchObject({ ok: false });
+    expect(parseTrigger('00:10:00:00@29.97df')).toMatchObject({ ok: true });
+    expect(parseTrigger('00:01:00:00@29.97ndf')).toMatchObject({ ok: true });
   });
 });
 

@@ -94,6 +94,13 @@ public struct Timecode: Hashable, Codable, Sendable, CustomStringConvertible {
 
     public var secondsValue: Double { Double(frameCount) / rate.exactFrameRate }
 
+    /// Every field in range: hours 0-23, minutes and seconds 0-59, frames below the nominal rate, and at drop frame not one
+    /// of the skipped numbers (frames 0 and 1 of every minute except each tenth).
+    public var isValid: Bool {
+        (0..<24).contains(hours) && (0..<60).contains(minutes) && (0..<60).contains(seconds) && (0..<rate.nominalFrames).contains(frames)
+            && !(rate.isDropFrame && seconds == 0 && frames < 2 && minutes % 10 != 0)
+    }
+
     public var description: String {
         String(format: "%02d:%02d:%02d%@%02d", hours, minutes, seconds, rate.isDropFrame ? ";" : ":", frames)
     }

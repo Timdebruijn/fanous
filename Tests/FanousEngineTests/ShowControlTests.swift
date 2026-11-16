@@ -322,6 +322,43 @@ struct ShowControlTests {
         _ = try store.execute("cue.add", args: ["number": 4, "name": "none", "trigger": .null], role: .programmer).get()
     }
 
+    /// B189: cue.add and cue.set refuse a trigger outside the field ranges, the same rules as the web's parseTrigger; a project
+    /// stored by an older build still loads every cue with that trigger armed as before.
+    @Test func cueTriggerFieldRanges() throws {
+        let (store, _) = testStore(outputs: 0)
+        ShowCommands.register(
+            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _ in }, runReadiness: {}))
+        let bad = [
+            "00:00:00:99@25", "25:00:00:00@25", "00:60:00:00", "00:00:60:00", "00:00:00:25@25", "00:00:00:24@24", "00:00:00:30@30",
+            "00:01:00:00@29.97df", "00:01:00:01@29.97df",
+        ]
+        for (i, trigger) in bad.enumerated() {
+            let result = store.execute("cue.add", args: ["number": .number(Double(i + 1)), "name": "bad", "trigger": .string(trigger)], role: .programmer)
+            #expect(result.failureMessage?.hasPrefix("trigger \(trigger) out of range: ") == true, "\(trigger)")
+        }
+        let good = ["23:59:59:24@25", "00:00:00:23@24", "00:00:00:29@29.97df", "00:01:00:02@29.97df", "00:10:00:00@29.97df", "00:01:00:00@29.97ndf"]
+        for (i, trigger) in good.enumerated() {
+            _ = try store.execute("cue.add", args: ["number": .number(Double(i + 1)), "name": "good", "trigger": .string(trigger)], role: .programmer).get()
+        }
+        let first = try #require(store.project["cues"]?.array?.first)
+        var changed = first
+        try changed.set("00:00:00:99@25", at: "/trigger")
+        let refused = store.execute("cue.set", args: ["id": first["id"] ?? .null, "cue": changed], role: .programmer)
+        #expect(
+            refused.failureMessage
+                == "trigger 00:00:00:99@25 out of range: hours go to 23, minutes and seconds to 59, frames to one below the rate; 29.97df skips frames 00 and 01 of each minute except every tenth")
+        // a malformed trigger keeps its own text
+        #expect(
+            store.execute("cue.add", args: ["number": 99, "name": "typo", "trigger": "00:01:30:00@29.97"], role: .programmer).failureMessage
+                == "trigger is hh:mm:ss:ff@rate, the rate 24, 25, 29.97df, 29.97ndf or 30")
+
+        let stored: JSONValue = ["cues": .array(bad.enumerated().map { ["number": .number(Double($0.offset + 1)), "name": "old", "trigger": .string($0.element)] })]
+        let loaded = ShowCommands.cueList(from: stored).cues
+        #expect(loaded.count == bad.count)
+        #expect(loaded.allSatisfy { $0.timecodeTrigger != nil })
+        #expect(loaded.first?.timecodeTrigger == Timecode(hours: 0, minutes: 0, seconds: 0, frames: 99, rate: .fps25))
+    }
+
     /// B144: a Mac without a ProRes engine fails the "Supported hardware" item hard; acknowledging does not unblock it.
     @Test func aMacWithoutAProResEngineIsRefusedShowMode() throws {
         #expect(!SystemInfo.proResEngine(chip: "Apple M1") && SystemInfo.proResEngine(chip: "Apple M1 Pro") && SystemInfo.proResEngine(chip: "Apple M2"))
