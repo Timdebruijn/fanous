@@ -15,6 +15,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   PR #354).
 - Ingest: a job for a file macOS cannot open fails with the library's reason ("AVFoundation cannot open .webm files")
   instead of "Cannot Open", B194 (PR #357).
+- Show: `cue.add` and `cue.set` refuse the trigger spellings the cue editor refuses, for example a sign, three
+  digits in a field, text after a second `@` or the rate `fps2997df`; projects that hold one still load with the
+  trigger armed (PR #356).
 - Release: 1.0.0-rc.9 is on GitHub as a pre-release with the signed, notarized dmg, built from main e99c648
   (PR #353).
 

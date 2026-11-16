@@ -64,7 +64,7 @@ export interface CueDoc {
   name: string;
   fade: number; // seconds
   values: CueValueDoc[];
-  trigger?: string | null; // "hh:mm:ss:ff@25" (rates: 24, 25, 29.97df, 30)
+  trigger?: string | null; // "hh:mm:ss:ff@25" (rates: 24, 25, 29.97df, 29.97ndf, 30)
   follow?: number | null; // seconds after which the next cue fires
 }
 

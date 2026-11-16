@@ -78,7 +78,7 @@ are the programmer's and are refused while the show is locked
 6. **Duplicate** makes "name (copy)" numbered halfway to the next cue, with
    the fade and the values but not the trigger and follow. **Move up** and
    **Move down** swap numbers with the neighbour, unless one of the two
-   holds a trigger out of range (see
+   holds a trigger out of range or in a form Fanous refuses (see
    [Triggers and follows](#triggers-and-follows)). **Remove** shows a
    toast with Undo for 8 seconds.
 
@@ -122,18 +122,22 @@ change wins** a running fade holds against the console until it ends.
 ## Triggers and follows
 
 A **Trigger** fires the cue from timecode: `hh:mm:ss:ff@rate`, for example
-`00:01:30:00@25`. The rate is the timecode's frame rate: copy it from the
-Timecode panel's source line (`LTC · device · 25 fps`); 24, 25, 29.97df,
-29.97ndf and 30 are accepted, and without `@rate` it means 25. Use 29.97df
-(drop frame) only when the source says so. Hours go to 23, minutes and
-seconds to 59, and frames count from 0 to one below the rate (29 at
-29.97); 29.97df has no frames 00 and 01 at the start of a minute, except
-every tenth minute. Fanous refuses a trigger outside these ranges. A
-trigger an older version stored outside them works as before, but until
-you correct it the cue takes no other change ("trigger 00:00:00:99@25
-out of range: …"), and Move up and Move down do not swap it with a
-neighbour in either direction ("Correct the trigger of cue 2
-(00:00:00:99@25) before moving: …").
+`00:01:30:00@25`, each field one or two digits. The rate is the timecode's
+frame rate: copy it from the Timecode panel's source line
+(`LTC · device · 25 fps`); 24, 25, 29.97df, 29.97ndf and 30 are accepted
+(case and spaces in the rate do not matter), and without `@rate` it means
+25. The cue editor also takes `;` before the frames and spaces around `@`.
+Use 29.97df (drop frame) only when the source says so. Hours go to 23,
+minutes and seconds to 59, and frames count from 0 to one below the rate
+(29 at 29.97); 29.97df has no frames 00 and 01 at the start of a minute,
+except every tenth minute. Fanous refuses a trigger outside these ranges
+or in another form. A trigger an older version stored outside them, or in
+a form it took then (a sign as in `+1:00:00:00`, three digits in a field,
+more text after a second `@`, the rate `fps2997df`), works as before, but
+until you correct it the cue takes no other change ("trigger 00:00:00:99@25
+out of range: …", "trigger is hh:mm:ss:ff@rate, …"), and Move up and Move
+down do not swap it with a neighbour in either direction ("Correct the
+trigger of cue 2 (00:00:00:99@25) before moving: …").
 A **Follow (s)** fires the next cue in the list that many
 seconds after this one fires, not after its fade ends: a 5 s fade with
 Follow 5 fires the next cue as the fade ends. 0 fires it at once; empty is
