@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Release: 1.0.0-rc.10 is on GitHub as a pre-release with the signed, notarized dmg, built from main 8531e6c
+  (PR #NNN).
+
 ## 1.0.0-rc.10 — 2026-11-16
 
 - Library: the needs-transcode reason names what is wrong, the codec ("avc1 is not ProRes or HAP") or the container
