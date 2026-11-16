@@ -12,6 +12,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Release: 1.0.0-rc.6 is on GitHub as a pre-release with the signed, notarized dmg, built from main 6adbc5c
   (PR #334).
+- The System screen's resume banner tells a deliberate Engine › Restart Engine from an unclean stop; the live document carries `show.resumedRestart` (B181) (PR #NNN)
 
 ## 1.0.0-rc.6 — 2026-11-16
 
