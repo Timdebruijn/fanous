@@ -11,7 +11,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Show: cue.add and cue.set refuse a timecode trigger out of range (hours, minutes, seconds, frames, dropped
-  29.97df numbers), and Move up/down no longer parks a cue at the end when its neighbour is refused (PR #336).
+  29.97df numbers), and Move up/down names the cue to correct instead of parking a cue at the end when one of the
+  two holds such a trigger (PR #336).
 - Release: 1.0.0-rc.6 is on GitHub as a pre-release with the signed, notarized dmg, built from main 6adbc5c
   (PR #334).
 
