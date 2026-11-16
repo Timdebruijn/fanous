@@ -84,6 +84,12 @@ public final class DMXStore: @unchecked Sendable {
     /// (Output ch 7, DESIGN.md §9.10 item 3): `publish` records one when either changes.
     private var shown = [(preset: UInt8, compare: Bool)](repeating: (0, false), count: ParameterSnapshotSlot.maxOutputs)
     private var morphs = [PresetMorph](repeating: PresetMorph(), count: ParameterSnapshotSlot.maxOutputs)
+    /// `live.osc.recent` (B176): the last accepted OSC messages as received, in a fixed ring written on the queue. Storing
+    /// a parsed message only retains its storage; the text is made when the live document asks (`recentOSC`).
+    private var oscRing = [(at: Double, message: OSCMessage)](repeating: (0, OSCMessage("")), count: DMXStore.oscRecentCount)
+    private var oscNext = 0
+    private var oscCount = 0
+    static let oscRecentCount = 50
 
     /// `fixtures`: the fixtures that exist (`ProjectDocument.fixtures`); nil, the patched ones.
     public init(patch: Patch, fixtures: Set<FixtureRef>? = nil, logger: Logger) {
@@ -181,19 +187,25 @@ public final class DMXStore: @unchecked Sendable {
     }
 
     /// Cue, show and timecode commands from OSC go to the engine (Phase 7); set on the DMX queue's behalf by the engine.
-    nonisolated(unsafe) public var onCommand: (@Sendable (OSCCommand) -> Void)?
+    /// Returns whether the engine took the command (false: refused, e.g. no such cue or the show locked).
+    nonisolated(unsafe) public var onCommand: (@Sendable (OSCCommand) -> Bool)?
 
-    func apply(_ command: OSCCommand) {
+    /// `message`: the OSC message the command came from; logged for `live.osc.recent` when the command is taken.
+    func apply(_ command: OSCCommand, from message: OSCMessage? = nil) {
         let now = Self.now
+        let accepted: Bool
         switch command {
         case .setParameter(let fixture, let parameter, let raw):
+            accepted = resolvers[fixture] != nil
             resolvers[fixture]?.setInternal(parameter, raw: raw, source: .osc, at: now)
             publish(receivedAt: 0)
         case .setMedia(let layer, let folder, let file):
+            accepted = resolvers[.layer(layer)] != nil
             resolvers[.layer(layer)]?.setInternal(.layer(.folder), raw: UInt16(clamping: folder), source: .osc, at: now)
             resolvers[.layer(layer)]?.setInternal(.layer(.file), raw: UInt16(clamping: file), source: .osc, at: now)
             publish(receivedAt: 0)
         case .retrigger(let layer):
+            accepted = resolvers[.layer(layer)] != nil
             // Control 8–15 = Retrigger; the compositor latches the edge, so the value returns to idle right after
             resolvers[.layer(layer)]?.setInternal(.layer(.control), raw: 8, source: .osc, at: now)
             publish(receivedAt: 0)
@@ -202,8 +214,25 @@ public final class DMXStore: @unchecked Sendable {
                 publish(receivedAt: 0)
             }
         default:
-            if let onCommand { onCommand(command) } else { logger.info("OSC command not wired", metadata: ["command": "\(command)"]) }
+            if let onCommand { accepted = onCommand(command) } else {
+                accepted = false
+                logger.info("OSC command not wired", metadata: ["command": "\(command)"])
+            }
         }
+        if accepted, let message { log(message) }
+    }
+
+    /// A message on the same address as the newest entry replaces it, so a fader sweep holds one row with its last value.
+    private func log(_ message: OSCMessage) {
+        let at = Date().timeIntervalSince1970
+        let newest = (oscNext + Self.oscRecentCount - 1) % Self.oscRecentCount
+        if oscCount > 0, oscRing[newest].message.address == message.address {
+            oscRing[newest] = (at, message)
+            return
+        }
+        oscRing[oscNext] = (at, message)
+        oscNext = (oscNext + 1) % Self.oscRecentCount
+        oscCount = min(oscCount + 1, Self.oscRecentCount)
     }
 
     /// Hand-operated sources, which can be left holding a value: the UI and a MIDI controller (B27, B36).
@@ -480,6 +509,30 @@ public final class DMXStore: @unchecked Sendable {
     }
 
     public func snapshot() -> LiveSnapshot { snapshot(at: Self.now) }
+
+    /// `live.osc.recent`, oldest first: the time (Unix seconds) and the message in its OSC spelling, address then arguments.
+    public func recentOSC() -> [(at: Double, text: String)] {
+        let n = Self.oscRecentCount
+        // copied out element by element, so the ring is never shared and the next write stays in place
+        let entries = queue.sync { (0..<oscCount).map { oscRing[(oscNext - oscCount + $0 + n) % n] } }
+        return entries.map { ($0.at, Self.text($0.message)) }
+    }
+
+    static func text(_ message: OSCMessage) -> String {
+        let args = message.arguments.map { argument -> String in
+            switch argument {
+            case .int32(let v): "\(v)"
+            case .int64(let v): "\(v)"
+            case .float32(let v): "\(v)"
+            case .double(let v): "\(v)"
+            case .string(let s): "\"\(s)\""
+            case .blob(let b): "blob(\(b.count))"
+            case .timetag(let t): "\(t)"
+            case .bool, .null, .impulse: String(argument.typeTag)
+            }
+        }
+        return ([message.address] + args).joined(separator: " ")
+    }
 
     func snapshot(at now: TimeInterval) -> LiveSnapshot {
         queue.sync {
