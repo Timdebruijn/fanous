@@ -127,8 +127,9 @@ Timecode panel's source line (`LTC · device · 25 fps`); 24, 25, 29.97df,
 seconds to 59, and frames count from 0 to one below the rate (29 at
 29.97); 29.97df has no frames 00 and 01 at the start of a minute, except
 every tenth minute. Fanous refuses a trigger outside these ranges. A
-trigger an older version stored outside them still fires, but the cue
-takes no other change until you correct its trigger. A **Follow (s)** fires the next cue in the list that many
+trigger an older version stored outside them works as before, but the
+cue takes no other change until you correct its trigger.
+A **Follow (s)** fires the next cue in the list that many
 seconds after this one fires, not after its fade ends: a 5 s fade with
 Follow 5 fires the next cue as the fade ends. 0 fires it at once; empty is
 none.
