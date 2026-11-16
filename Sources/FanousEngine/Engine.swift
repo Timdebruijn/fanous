@@ -809,8 +809,8 @@ public final class Engine: @unchecked Sendable {
 
     /// Cue, show and timecode commands from OSC (DESIGN.md §15.3) and the MIDI map (B36); parameter values never get
     /// here, they go straight to the resolvers.
-    /// Whether the command was taken: a refused one (no such cue, show locked) is not listed in `live.osc.recent`. A
-    /// project load counts as taken once handed to the version lookup; its refusal is only logged.
+    /// Whether the command was taken: a refused one (no such cue, show locked) is logged, not listed in `live.osc.recent`.
+    /// A project load counts as taken once handed to the version lookup; its refusal is only logged.
     @discardableResult
     private func runCommand(_ command: OSCCommand, on store: StateStore) -> Bool {
         let result: Result<CommandResult, CommandError>
@@ -841,8 +841,9 @@ public final class Engine: @unchecked Sendable {
             return true
         default: return false
         }
-        if case .failure = result { return false }
-        return true
+        guard case .failure(let error) = result else { return true }
+        logger.warning("OSC or MIDI command refused", metadata: ["command": "\(command)", "code": "\(error.code)", "reason": "\(error.message)"])
+        return false
     }
 
     /// A stable per-install UUID for CITP (MSEX 1.2 server UUID), kept next to the shell token.

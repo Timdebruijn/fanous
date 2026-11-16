@@ -112,11 +112,10 @@ cue has no values. The engine's own refusals come as the yellow banner.
 | Part | Shows |
 |---|---|
 | Port | 8000 |
-| **Last received** | The newest messages first, with their time; "Nothing received yet. Send /fanous/cue/go to port 8000 to try it." |
-| **Addresses** | The thirteen control addresses with their argument types (`f` a float from 0 to 1 of the parameter's range, `i` an integer, `ii` two integers, "no args" none) and one line each: layer, master, output and keystone parameters, media, retrigger, cue go, back, goto and `{number}/go`, show lock, show mode, timecode enable. `/fanous/cue/goto` is listed with `i` but takes any number, so 2.5 works, as does `/fanous/cue/2.5/go` |
+| **Last received** | "Every message the engine took, as sent; repeats on one address show once, with the last value. Refused or unknown messages and read-back requests are not listed." The newest messages first, with their time, address and arguments as sent (`/fanous/cue/goto 3`, `/fanous/layer/1/intensity 0.5`); a fader sweep is one row with its last value; the last 50 rows. Empty: "Nothing received yet. Send /fanous/cue/go to port 8000 to try it." |
+| **Addresses** | Every address with its argument types (`f` a float from 0 to 1 of the parameter's range, `i` an integer, `ii` two integers, `s` a text, brackets optional, "no args" none) and one line each: the control addresses (layer, master, output and keystone parameters, media, retrigger, cue go, back, goto and `{number}/go`, show lock, show mode, timecode enable, project load) and the read-back ones (`/get`, subscribe, subscribe ack, unsubscribe, ping). `/fanous/cue/goto` is listed with `i` but takes any number, so 2.5 works, as does `/fanous/cue/2.5/go` |
 
-The panel is read-only. The feedback addresses (`/get`, subscribe) and
-`/fanous/project/load` are not listed here:
+The panel is read-only. Examples for every address:
 [OSC reference](../reference/osc.md).
 
 ## MIDI

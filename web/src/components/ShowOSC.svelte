@@ -40,7 +40,7 @@
   </header>
 
   <h3 id="osc-recent">Last received</h3>
-  <p class="caption">Cue, show, timecode and project-load commands; parameter, media and retrigger messages are not listed.</p>
+  <p class="caption">Every message the engine took, as sent; repeats on one address show once, with the last value. Refused or unknown messages and read-back requests are not listed.</p>
   {#if recent.length === 0}
     <p class="caption">Nothing received yet. Send <span class="mono">/fanous/cue/go</span> to port {osc.port} to try it.</p>
   {:else}
