@@ -22,6 +22,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - OSC panel: "Last received" lists every message received on a known address, as sent (`/fanous/cue/goto 3`), parameter, media and retrigger messages included; a fader sweep on one address is one row (PR #338)
 - Readiness: an acknowledgement drops when show mode is left or, outside show mode, when its item passes a check,
   and Take back (`readiness.unacknowledge`, programmer) withdraws it (B163) (PR #341).
+- Readiness: a probe tool (`mdutil`, `tmutil`, `pmset`) that has not exited within 3 s is killed and its row reads
+  "unknown" (manual for Spotlight and Time Machine, passing for display sleep), and the 30 s runs no longer hold the live values, DMX monitor or autosave while the tools run (PR #343).
 - Release: 1.0.0-rc.6 is on GitHub as a pre-release with the signed, notarized dmg, built from main 6adbc5c
   (PR #334).
 - The System screen's resume banner tells a deliberate Engine › Restart Engine from an unclean stop; the live document carries `show.resumedRestart` (B181) (PR #340)

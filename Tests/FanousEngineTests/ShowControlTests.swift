@@ -369,42 +369,48 @@ struct ShowControlTests {
             [ReadinessItem(id: "outputs", title: "All outputs bound to their displays", state: state, detail: detail, fix: "", acknowledged: acknowledged)]
         }
         var ledger = ReadinessLedger()
-        ledger.store(run(.fail, acknowledged: false), at: 1, showMode: false)
+        ledger.store(run(.fail, acknowledged: false), run: ledger.begin().run, at: 1, showMode: false)
         #expect(ledger.items[0].blocks)
         ledger.acknowledge("outputs", true)
         #expect(!ledger.items[0].blocks && ledger.acknowledged == ["outputs"])
         // another failure detail keeps it: no detail tracking
-        ledger.store(run(.fail, detail: "unassigned: [2]"), at: 2, showMode: false)
+        ledger.store(run(.fail, detail: "unassigned: [2]"), run: ledger.begin().run, at: 2, showMode: false)
         #expect(!ledger.items[0].blocks)
         ledger.acknowledge("outputs", false)
         #expect(ledger.items[0].blocks && ledger.acknowledged.isEmpty)
         // a run that read the old set (acknowledged when it started) lands after the take-back: it blocks
-        ledger.store(run(.fail), at: 3, showMode: false)
+        ledger.store(run(.fail), run: ledger.begin().run, at: 3, showMode: false)
         #expect(ledger.items[0].blocks)
         // in show mode a pass keeps it (the camera passes while no cue uses it): the next failure is still accepted
         ledger.acknowledge("outputs", true)
-        ledger.store(run(.ok), at: 4, showMode: true)
-        ledger.store(run(.fail), at: 5, showMode: true)
+        ledger.store(run(.ok), run: ledger.begin().run, at: 4, showMode: true)
+        ledger.store(run(.fail), run: ledger.begin().run, at: 5, showMode: true)
         #expect(!ledger.items[0].blocks && ledger.checkedAt == 5)
         // outside show mode manual (unreadable) keeps it; ok and warn drop it, so fail → pass → fail needs a new one
-        ledger.store(run(.manual), at: 6, showMode: false)
+        ledger.store(run(.manual), run: ledger.begin().run, at: 6, showMode: false)
         #expect(ledger.acknowledged == ["outputs"])
-        ledger.store(run(.ok), at: 7, showMode: false)
+        ledger.store(run(.ok), run: ledger.begin().run, at: 7, showMode: false)
         #expect(ledger.acknowledged.isEmpty)
         ledger.acknowledge("outputs", true)
-        ledger.store(run(.warn), at: 8, showMode: false)
+        ledger.store(run(.warn), run: ledger.begin().run, at: 8, showMode: false)
         #expect(ledger.acknowledged.isEmpty && !ledger.items[0].acknowledged)
-        ledger.store(run(.fail, acknowledged: false), at: 9, showMode: false)
+        ledger.store(run(.fail, acknowledged: false), run: ledger.begin().run, at: 9, showMode: false)
         #expect(ledger.items[0].blocks)
         // a run in flight that sampled ok before the programmer acknowledged the red row drops nothing
         ledger.acknowledge("outputs", true)
-        ledger.store(run(.ok, acknowledged: false), at: 10, showMode: false)
+        ledger.store(run(.ok, acknowledged: false), run: ledger.begin().run, at: 10, showMode: false)
         #expect(ledger.acknowledged == ["outputs"])
         // leaving show mode drops every acknowledgement, also one for an item the last run did not show
         ledger.acknowledge("spotlight", true)
-        ledger.store(run(.fail), at: 11, showMode: true)
+        ledger.store(run(.fail), run: ledger.begin().run, at: 11, showMode: true)
         ledger.leaveShow()
         #expect(ledger.items[0].blocks && ledger.acknowledged.isEmpty)
+        // B187: a run that started before the one stored last changes nothing, an acknowledgement neither
+        ledger.acknowledge("outputs", true)
+        let older = ledger.begin().run
+        ledger.store(run(.fail), run: ledger.begin().run, at: 12, showMode: false)
+        #expect(ledger.store(run(.ok), run: older, at: 13, showMode: false).map(\.state) == [.ok])
+        #expect(ledger.checkedAt == 12 && ledger.items[0].state == .fail && ledger.acknowledged == ["outputs"])
     }
 
     /// B144: a Mac without a ProRes engine fails the "Supported hardware" item hard; acknowledging does not unblock it.
@@ -415,6 +421,52 @@ struct ShowControlTests {
         context.hardwareSupported = false
         let item = try #require(Readiness.check(context, acknowledged: ["hardware"]).first { $0.id == "hardware" })
         #expect(item.state == .hard && item.blocks && item.detail == "no hardware ProRes decoder")
+    }
+
+    /// B187: a probe tool that does not exit is killed at the timeout and reads as unknown (nil); one that exits but
+    /// leaves a child holding its output open returns at once.
+    @Test func aHungProbeToolReturnsNilAtTheTimeout() async throws {
+        try await offPool {
+            #expect(Readiness.run("/bin/echo", ["ok"], timeout: 2) == "ok\n")
+            for (arguments, expected) in [(["-c", "sleep 30"], nil), (["-c", "sleep 30 & wait"], nil), (["-c", "echo hi; sleep 30 &"], "hi\n")] as [([String], String?)] {
+                let started = ContinuousClock.now
+                let output = Readiness.run("/bin/sh", arguments, timeout: 0.3)
+                #expect(output == expected, "\(arguments)")
+                #expect(ContinuousClock.now - started < .seconds(3), "\(arguments) held the caller")
+            }
+        }
+    }
+
+    /// B187: a readiness run with a probe that hangs leaves the feed queue (live publish, DMX monitor, autosave) free,
+    /// and its result, when it comes, does not replace that of a show-mode entry that started after it.
+    @Test func aHungReadinessRunHoldsNeitherTheFeedQueueNorANewerResult() async throws {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
+        let release = DispatchSemaphore(value: 0)
+        let calls = Atomic<Int>(0)
+        let seenByThirdRun = Mutex<[String]?>(nil)
+        engine.readinessCheck = { [weak engine] _, _ in
+            switch calls.add(1, ordering: .relaxed).newValue {
+            case 1:
+                _ = release.wait(timeout: .now() + 10)
+                return [ReadinessItem(id: "old", title: "", state: .ok, detail: "", fix: "")]
+            case 2: return [ReadinessItem(id: "new", title: "", state: .hard, detail: "", fix: "")]
+            default:
+                // queued behind the hung run: what that run left stored
+                seenByThirdRun.withLock { $0 = engine?.readiness.withLock { $0.items.map(\.id) } }
+                return []
+            }
+        }
+        defer { release.signal() }
+        engine.feedQueue.sync { engine.runReadiness() }  // as the 30 s timer does
+        #expect(await waitUntil { calls.load(ordering: .relaxed) == 1 }, "the run started")
+        let free = DispatchGroup()
+        engine.feedQueue.async(group: free) {}
+        #expect(try await offPool { free.wait(timeout: .now() + 1) } == .success, "the feed queue waited for the hung probe")
+        #expect(try await offPool { engine.setShowMode(true) } == ["new"])
+        engine.runReadiness()
+        release.signal()
+        #expect(await waitUntil { seenByThirdRun.withLock { $0 } != nil })
+        #expect(seenByThirdRun.withLock { $0 } == ["new"], "the older run stored its items over the show-mode entry's")
     }
 
     @Test func readinessReflectsTheContextAndRunsEveryProbe() {

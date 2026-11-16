@@ -94,7 +94,13 @@ public final class Engine: @unchecked Sendable {
     private var cues: CueRunner?
     private var lastCues = CueList()
     private let showMode: ShowModeController
-    private let readiness = Mutex(ReadinessLedger())
+    /// The last run's items, the acknowledgements (B163) and the run numbers (B187).
+    let readiness = Mutex(ReadinessLedger())
+    /// The readiness runs of the timer, `readiness.run` and the display syncs, one at a time (B187): a probe at its
+    /// timeout holds neither the feed queue (live publish, DMX monitor, autosave, `showMode.touch()`) nor the control queue.
+    private let readinessQueue = DispatchQueue(label: "org.fanous.readiness", qos: .utility)
+    /// The checks; a test replaces them with a probe that hangs.
+    var readinessCheck: @Sendable (ReadinessContext, Set<String>) -> [ReadinessItem] = Readiness.check
     private var readinessTimer: DispatchSourceTimer?
     /// When show mode came back by itself at start (live `show.resumedAt`) and whether that was a kept-for-restart one
     /// rather than an unclean stop (live `show.resumedRestart`, B181); cleared when show mode is left.
@@ -135,7 +141,7 @@ public final class Engine: @unchecked Sendable {
     /// Versions queue only: the last OSC project load, so a repeat of the same version within the window is ignored.
     private var lastOSCLoad: (id: String, at: TimeInterval)?
     static let oscLoadRepeatWindow: TimeInterval = 2
-    private let feedQueue = DispatchQueue(label: "org.fanous.feed", qos: .utility)
+    let feedQueue = DispatchQueue(label: "org.fanous.feed", qos: .utility)
     public let metrics = MetricsRing()
 
     /// The command registry as `fanousd protocol-dts` sees it: no engine needed.
@@ -1122,15 +1128,22 @@ public final class Engine: @unchecked Sendable {
         return context
     }
 
-    /// Off the control queue: the probes shell out (mdutil, tmutil, pmset, defaults).
-    private func runReadiness() {
+    /// On the readiness queue: the probes shell out (mdutil, tmutil, pmset).
+    func runReadiness() {
         let context = readinessContext()
-        feedQueue.async { [self] in
-            let acknowledged = readiness.withLock { $0.acknowledged }
-            let items = Readiness.check(context, acknowledged: acknowledged)
-            readiness.withLock { $0.store(items, at: Date().timeIntervalSince1970, showMode: showMode.isOn) }
+        readinessQueue.async { [self] in
+            _ = checkReadiness(context)
             publishReadiness()
         }
+    }
+
+    /// Runs the checks and stores their items, unless a run that started later stored first: a show-mode entry on the
+    /// control queue can overlap a run on the readiness queue (B187). Returns this run's items, flagged by the
+    /// acknowledgements as they are when it lands (B163). `entering`: the run of `show.mode true`, show mode still off.
+    private func checkReadiness(_ context: ReadinessContext, entering: Bool = false) -> [ReadinessItem] {
+        let (run, acknowledged) = readiness.withLock { $0.begin() }
+        let checked = readinessCheck(context, acknowledged)
+        return readiness.withLock { $0.store(checked, run: run, at: Date().timeIntervalSince1970, showMode: !entering && showMode.isOn) }
     }
 
     private func publishReadiness() {
@@ -1138,7 +1151,7 @@ public final class Engine: @unchecked Sendable {
     }
 
     /// `show.mode`: entering runs the checks synchronously and refuses with the blocking item ids.
-    private func setShowMode(_ on: Bool) -> [String]? {
+    func setShowMode(_ on: Bool) -> [String]? {
         if !on {
             if showMode.isOn { readiness.withLock { $0.leaveShow() } }  // B163: an acknowledgement holds for one show
             showMode.leave()
@@ -1149,12 +1162,10 @@ public final class Engine: @unchecked Sendable {
         // acknowledgement on a pass as if show mode were off
         if showMode.isOn { return nil }
         if librarySwitches.load(ordering: .relaxed) > 0 { return ["libraryRootChanging"] }  // B51: a moment, not a readiness item
-        let acknowledged = readiness.withLock { $0.acknowledged }
-        let checked = Readiness.check(readinessContext(), acknowledged: acknowledged)
-        // decided on the set as it is under the lock (a feed-queue run may have stored meanwhile); show mode is still
-        // off here, so an item that passes now drops its acknowledgement: it needs none to enter
-        let items = readiness.withLock { $0.store(checked, at: Date().timeIntervalSince1970, showMode: false); return $0.items }
-        let blocking = items.filter(\.blocks).map(\.id)
+        // decided on this run's items as the acknowledgements are when it lands (a run on the readiness queue may have
+        // stored meanwhile); show mode is still off here, so an item that passes now drops its acknowledgement: it
+        // needs none to enter
+        let blocking = checkReadiness(readinessContext(), entering: true).filter(\.blocks).map(\.id)
         if !blocking.isEmpty { return blocking }
         showMode.enter()
         return nil
