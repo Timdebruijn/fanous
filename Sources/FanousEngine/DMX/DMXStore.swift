@@ -525,7 +525,8 @@ public final class DMXStore: @unchecked Sendable {
     /// datagram must not become a 64 KiB row (sent to every client). At most 8 arguments, then "… (+n)"; the address
     /// and each string cut to 64 characters with "…".
     static func text(_ message: OSCMessage) -> String {
-        func cut(_ s: String) -> String { s.count > 64 ? s.prefix(64) + "…" : s }
+        // prefix first: counting a 64 KiB string on every live publish would cost what the cap is there to save
+        func cut(_ s: String) -> String { s.prefix(65).count > 64 ? s.prefix(64) + "…" : s }
         var parts = [cut(message.address)]
         for argument in message.arguments.prefix(8) {
             switch argument {
