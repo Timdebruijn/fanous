@@ -65,10 +65,11 @@
   header { display: flex; align-items: center; gap: 12px; }
   p { margin: 0; }
   .recent { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
-  .recent li { display: flex; gap: 12px; align-items: baseline; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .recent li { display: flex; gap: 12px; align-items: flex-start; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
   .recent li:last-child { border-bottom: 0; }
   .recent time { flex: none; }
-  /* wraps, so a parameter row shows its value in the narrow panel; three lines bound a long message (the title has all of it) */
+  /* wraps, so a parameter row shows its value in the narrow panel; three lines bound a long message (the title has all of it).
+     The time and the text are the same mono face, so top-aligned they share a first line without a baseline of the clamp box. */
   .recent .text { min-width: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
   .addresses { list-style: none; margin: 0; padding: 0; font-size: 12px; }
   .addresses li { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
