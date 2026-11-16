@@ -35,7 +35,8 @@ export function resumedText(resumedAt: number | null | undefined): string | null
   return `Show mode resumed after the engine restarted at ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
-/** What the status bar's red "blocking: …" names while show mode is on and an item blocks (B185): the first title and how many more. */
+/** What the status bar's red "not ready: …" names while show mode is on and an item blocks, failing unacknowledged or hard
+    (B185): the first title, the condition that should hold, and how many more. An acknowledged failure is not shown. */
 export function blockingNote(showMode: boolean, blocking: readonly { title: string }[]): string | null {
   if (!showMode || blocking.length === 0) return null;
   return `${blocking[0].title}${blocking.length > 1 ? ` + ${blocking.length - 1} more` : ''}`;

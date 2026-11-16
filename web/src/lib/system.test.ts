@@ -87,7 +87,7 @@ describe('readiness', () => {
     expect(readinessSummary([item('fail')], 0).status).toBe('notReady');
   });
 
-  it('names the blocking items in the status bar only while show mode is on (B185)', () => {
+  it('names the blocking items after "not ready" in the status bar only while show mode is on (B185)', () => {
     const blocking = readinessSummary([item('ok'), item('fail'), item('hard'), item('warn')], 100).blocking;
     expect(blockingNote(true, blocking)).toBe('fail + 1 more');
     expect(blockingNote(true, blocking.slice(1))).toBe('hard');
