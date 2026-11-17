@@ -27,7 +27,8 @@ fi
 # Test engines get a throwaway FANOUS_HOME, so an AppPaths write lands there and not in the real install (B240); a
 # FANOUS_HOME already set is kept.
 if [[ -z "${FANOUS_HOME:-}" ]]; then
-  export FANOUS_HOME="$(mktemp -d -t fanous-test-home)"
+  FANOUS_HOME="$(mktemp -d -t fanous-test-home)"  # its own line: `export X="$(…)"` hides a failed mktemp from set -e
+  export FANOUS_HOME
   trap 'rm -rf "$FANOUS_HOME"' EXIT
 fi
 plugins="$(xcode-select -p)/usr/lib/swift/host/plugins/testing"
