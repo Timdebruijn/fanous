@@ -980,6 +980,22 @@ struct ShowControlTests {
         }
     }
 
+    /// B242: with the files `start` sets (temporary ones here), a stop takes a fresh restart marker through the
+    /// engine's `restartPendingFile` and keeps show mode in the state file as a restart: Engine › Restart Engine on a
+    /// started engine. Only temporary files, so it runs the same with or without FANOUS_HOME. A stop that took
+    /// `AppPaths.restartPendingFile` instead would leave the temporary marker and keep nothing.
+    @Test func aStopTakesTheRestartMarkerTheEngineKnows() throws {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
+        let state = tempFile("b242-show-state", ext: "json"), marker = tempFile("b242-restart-pending")
+        engine.showMode.persist(to: state)
+        engine.restartPendingFile = marker
+        try Data().write(to: marker)
+        engine.showMode.enter()
+        engine.stop()
+        #expect(!FileManager.default.fileExists(atPath: marker.path), "the stop did not take the marker the engine knows")
+        #expect(ShowModeState.load(from: state)?.restart == true, "show mode was not kept for the restart")
+    }
+
     /// B243: the flush at stop writes the newest change the 2 s autosave has not written yet, at once and once; the
     /// debounced save firing afterwards (`perform()` stands in for its timer) and a second flush write nothing.
     @Test func theFlushAtStopWritesTheUnsavedChangeOnce() throws {
