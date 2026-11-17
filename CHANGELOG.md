@@ -10,6 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: the dependency register matches `web/package.json` (svelte, vitest, svelte-check row, release dates), the font version and the vendored-code notes (PR #N).
 - Release: 1.0.0-rc.12 is on GitHub as a pre-release with the signed, notarized dmg, built from main 5b0bf6a
   (PR #369).
 
