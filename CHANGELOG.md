@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- The show-mode library-switch test waits for the switch to end instead of 200 ms and checks it is on the started-count branch, B258 (PR #N)
+
 ## 1.0.0-rc.14 — 2026-11-17
 
 - Fix: a trigger text with a long run of whitespace after `@` no longer freezes the cue editor for seconds; the rate part of the trigger regex is linear now (PR #377).

@@ -126,10 +126,11 @@ public final class Engine: @unchecked Sendable {
     private let liveInProject = Mutex<[LiveCatalog.Kind: JSONValue]>([:])
     /// The catalogs of folder 0's numbered live inputs (B61, B73), nil before the render service.
     private var liveCatalogs: [LiveCatalog] { render.map { [$0.syphonCatalog, $0.captureCatalog, $0.screensCatalog] } ?? [] }
-    /// Root switches run here one at a time (scan, probe-thread join): never on the feed or control queue.
-    private let libraryQueue = DispatchQueue(label: "org.fanous.library.switch", qos: .utility)
-    /// Root switches queued or running; show mode is refused meanwhile.
-    private let librarySwitches = Atomic<Int>(0)
+    /// Root switches run here one at a time (scan, probe-thread join): never on the feed or control queue. Internal: a
+    /// test syncs on it to wait for a switch's end (B258); no engine code outside this file uses it.
+    let libraryQueue = DispatchQueue(label: "org.fanous.library.switch", qos: .utility)
+    /// Root switches queued or running; show mode is refused meanwhile. Internal: a test reads it (B258).
+    let librarySwitches = Atomic<Int>(0)
     /// Root switches started so far: a show-mode entry refuses one that started and ended during its checks (B200).
     private let librarySwitchesStarted = Atomic<Int>(0)
     /// Set by `stop()`: a queued switch does nothing.
