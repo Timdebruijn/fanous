@@ -15,6 +15,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   (PR #369).
 - Web: vite 8.3.5 to 8.3.8 (rolldown 1.2.15 to 1.2.19); the built UI is unchanged apart from a 4-byte smaller script
   (PR #370).
+- Dependencies: Playwright 1.64.1 to 1.65.1 (Chromium 156 to 159 for the e2e suite), and its row in the dependency register
+  (PR #372).
 
 ## 1.0.0-rc.12 — 2026-11-17
 

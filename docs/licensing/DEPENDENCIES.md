@@ -41,6 +41,7 @@ platform; the GPL's system-library exception covers linking against them.
 | vite | 8.3.8 (2026-11-11) | MIT | yes | build/dev server |
 | vitest | 5.1.0 (2026-11-02) | MIT | yes | tests |
 | svelte-check | 4.7.8 (2026-11-01) | MIT | yes | type checking and Svelte diagnostics (`npm run check`) |
+| @playwright/test | 1.65.1 (2026-11-13) | Apache-2.0 | yes | end-to-end tests (CI) |
 | typescript | 6.0.3 (2026-04-16) | Apache-2.0 | yes | type checking (svelte-check) |
 
 Rejected alternative: preact 11.0.1 + @preact/signals 2.11.3 (MIT) — see
