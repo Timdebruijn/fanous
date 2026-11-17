@@ -26,3 +26,12 @@ is Objective-C. The owner wants SwiftPM, not Xcode projects.
 + Core tests run everywhere; GPU tests are a separate workflow.
 + No Xcode project to maintain; one build command.
 − Bundle assembly and signing are our script, not Xcode's.
+
+## Amendment 2026-11-17: Swift 6.2.3 is the compiler minimum
+
+Since swift-log 1.17.0 (PR #373) the package needs the Swift 6.2.3 compiler or
+newer: swift-log uses `@nonexhaustive`, which Swift 6.2.0 to 6.2.2 do not know
+(upstream issue apple/swift-log#533). `swift-tools-version: 6.2` stays as it is;
+the tools version and the compiler patch level are different things. CI builds
+with Swift 6.3.3 and the development Mac with Swift 6.4.2 (Xcode 27.2 here,
+from `xcodebuild -version` next to `swift --version` on that Mac).

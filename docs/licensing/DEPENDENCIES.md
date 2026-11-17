@@ -2,16 +2,16 @@
 
 Every dependency of the server, the vendored C/ObjC code, the web build and
 the protocols with license conditions. Compatibility is with GPL-3.0-only.
-Versions verified 2026-10-22; "pinned" means an exact version/commit in the
-manifest or lockfile. Adding a row is mandatory for any new dependency (CI
-checks).
+Versions verified 2026-10-22 (web dev tools, vendored code, fonts and swift-collections re-checked 2026-11-17); "pinned" means an exact version/commit in the
+manifest or lockfile. Adding a row is mandatory for any new dependency (reviewed by hand;
+no CI job checks it).
 
 ## Server (Swift packages)
 
 | Package | Version | License | GPLv3-compatible | Use | Pinned |
 |---|---|---|---|---|---|
-| apple/swift-log | 1.16.2 (2026-10-22) | Apache-2.0 | yes | logging facade (os_log + file handlers) | exact |
-| apple/swift-collections | 1.7.3 (2026-10-12) | Apache-2.0 | yes | only if a concrete need appears (Deque/Heap); not added by default | exact |
+| apple/swift-log | 1.17.0 (2026-11-04) | Apache-2.0 | yes | logging facade (os_log + file handlers) | exact |
+| apple/swift-collections | 1.7.6 (2026-11-10) | Apache-2.0 | yes | only if a concrete need appears (Deque/Heap); not added by default | exact |
 | apple/swift-atomics | — | Apache-2.0 | yes | **not used**: minimum macOS is 15 (ADR-0020), the stdlib `Synchronization` module replaces it | — |
 
 ## Vendored C / Objective-C (SPM targets)
@@ -19,7 +19,7 @@ checks).
 | Code | Version / commit | License | GPLv3-compatible | Use | Notes |
 |---|---|---|---|---|---|
 | Vidvox/hap (`hap.c`, `hap.h`) | master @ `d847f6b` (2024-07-25), vendored in `Sources/CHap` | BSD-2-Clause | yes | HAP encode/decode (chunk callback for parallel decode) | no commits since 2024-07; we own fixes; fuzz-tested inputs (Phase 3) |
-| google/snappy | 1.3.1 = `9c28114` (2026-09-18), vendored in `Sources/CSnappy` | BSD-3-Clause (text match; COPYING unlabeled) | yes | HAP frame (de)compression | C++17 target; `snappy-stubs-public.h` generated for macOS |
+| google/snappy | 1.3.1 = `9c28114` (2026-09-18), vendored in `Sources/CSnappy` | BSD-3-Clause (text match; COPYING unlabeled) | yes | HAP frame (de)compression | C++17 target; `snappy-stubs-public.h` generated for macOS; upstream HEAD `9466064` (2026-10-23) is two commits past the 1.3.1 tag and not vendored (B248) |
 | Syphon/Syphon-Framework | main @ `f476167` (2026-09-21); last tagged release "5" is from 2019 | Syphon Framework License (BSD-3-Clause style) | yes | Syphon Metal server (output) and client (input), vendored in `Sources/Syphon` | pin to commit, not tag; Metal path only, shaders compiled at runtime (`Sources/Syphon/VENDORED.md`) |
 
 Not used: Vidvox/hap-in-avfoundation (multi-license file with YCoCg/EA
@@ -36,11 +36,13 @@ platform; the GPL's system-library exception covers linking against them.
 
 | Package | Version | License | GPLv3-compatible | Use |
 |---|---|---|---|---|
-| svelte | 5.57.2 (2026-10-06) | MIT | yes | UI framework (runtime ships) |
-| @sveltejs/vite-plugin-svelte | 7.3.1 | MIT | yes | build |
-| vite | 8.3.5 (2026-10-21) | MIT | yes | build/dev server |
-| vitest | 5.0.5 (2026-10-15) | MIT | yes | tests |
-| typescript | 6.0.3 | Apache-2.0 | yes | type checking (svelte-check) |
+| svelte | 5.57.3 (2026-10-26) | MIT | yes | UI framework (runtime ships) |
+| @sveltejs/vite-plugin-svelte | 7.3.1 (2026-09-23) | MIT | yes | build |
+| vite | 8.3.8 (2026-11-11) | MIT | yes | build/dev server |
+| vitest | 5.1.0 (2026-11-02) | MIT | yes | tests |
+| svelte-check | 4.7.8 (2026-11-01) | MIT | yes | type checking and Svelte diagnostics (`npm run check`) |
+| @playwright/test | 1.65.1 (2026-11-13) | Apache-2.0 | yes | end-to-end tests (CI) |
+| typescript | 6.0.3 (2026-04-16) | Apache-2.0 | yes | type checking (svelte-check) |
 
 Rejected alternative: preact 11.0.1 + @preact/signals 2.11.3 (MIT) — see
 ADR-0012.
@@ -49,8 +51,8 @@ ADR-0012.
 
 | Font | Version / source | License | GPLv3-compatible | Use |
 |---|---|---|---|---|
-| Atkinson Hyperlegible Next | 2.66, variable woff2 from `googlefonts/atkinson-hyperlegible-next` (fetched 2026-10-25) | SIL OFL 1.1 (`web/public/fonts/OFL-Next.txt`; "Atkinson" and "Hyperlegible" are reserved names) | yes (font files ship unmodified next to the code) | UI text |
-| Atkinson Hyperlegible Mono | 2.66, variable woff2 from `googlefonts/atkinson-hyperlegible-next-mono` (fetched 2026-10-25) | SIL OFL 1.1 (`web/public/fonts/OFL-Mono.txt`) | yes | values, addresses, timecode |
+| Atkinson Hyperlegible Next | font version 2.001 (`head`/`name` tables; 2.66 is the WOFF2 header of the file), `fonts/webfonts/AtkinsonHyperlegibleNext[wght].woff2` of `googlefonts/atkinson-hyperlegible-next`, byte-identical to its HEAD `7925f50` (2025-02-21) on 2026-11-17 (fetched 2026-10-25) | SIL OFL 1.1 (`web/public/fonts/OFL-Next.txt`; "Atkinson" and "Hyperlegible" are reserved names) | yes (font files ship unmodified next to the code) | UI text |
+| Atkinson Hyperlegible Mono | font version 2.001 (`head`/`name` tables; 2.66 is the WOFF2 header of the file), `fonts/webfonts/AtkinsonHyperlegibleMono[wght].woff2` of `googlefonts/atkinson-hyperlegible-next-mono`, byte-identical to its HEAD `154d503` (2024-11-20) on 2026-11-17 (fetched 2026-10-25) | SIL OFL 1.1 (`web/public/fonts/OFL-Mono.txt`) | yes | values, addresses, timecode |
 
 ## Protocols and specifications with conditions
 
