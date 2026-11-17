@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Tests (B230): the OSC "Last received" order test sends its probe and burst from one socket; the flake was two new
+  UDP flows set up at once, where a few datagrams came out of the other flow's connection, now row B252 and a
+  known limitation (PR #374).
 - Docs: the dependency register matches `web/package.json` (svelte, vitest, svelte-check row, release dates), the font version and the vendored-code notes (PR #371).
 - Release: 1.0.0-rc.12 is on GitHub as a pre-release with the signed, notarized dmg, built from main 5b0bf6a
   (PR #369).

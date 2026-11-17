@@ -113,7 +113,12 @@ all of them work while the show is locked; a refusal (show mode blocked by
 the readiness list, project load under the lock) is logged, not sent back.
 Cue, show and timecode messages run one at a time in the order they arrive
 (together with MIDI cue actions), but parameter messages do not wait for
-them: a parameter sent after a command can take effect before it. Show-mode
+them: a parameter sent after a command can take effect before it. When a
+second sender starts at the moment another one is sending, a few messages
+that arrive in that moment can run out of order; a single sender, also a new
+one, kept its order in every test. Set each controller to send from one fixed
+port, and do not start two senders at the same instant
+([known limitations](reference/known-limitations.md#consoles-and-protocols)). Show-mode
 messages keep their own order and cue messages do not wait for them, so a cue
 go fires while show mode is still running its readiness checks. A
 `/fanous/show/mode 1` that arrives while an earlier one is still waiting or

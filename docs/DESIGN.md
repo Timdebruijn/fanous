@@ -4569,7 +4569,11 @@ Bundles with timetags are honoured (scheduled on the DMX queue). Parameter
 messages are applied on the DMX queue; cue, show and timecode commands are
 handed from there to the engine's command queue (B198, `Engine.handOver`), the
 same serial queue as MIDI's cue actions, and run there one at a time in arrival
-order, so the DMX queue never waits on the control queue or the readiness
+order (arrival = the order the DMX queue takes the datagrams in: not kept when
+two UDP flows start at the same moment, where a few datagrams of one flow were
+seen coming out of the other flow's `NWConnection` receive callback, cause
+inside Network.framework not established; B230, B252),
+so the DMX queue never waits on the control queue or the readiness
 checks; a repeated `show.mode true` is dropped while one is queued or running (a
 stale clear lets at most one more through). `show.mode` commands have a serial
 queue of their own (B200), so cue commands never wait for an entry's checks;

@@ -23,6 +23,7 @@ link here. Back to the [index](../README.md).
 | Fanous answers ArtPoll, but has no registered Art-Net OEM code yet. | B13 |
 | The ArtPollReply names the Mac's first network address, which on a Mac with Wi-Fi and a show adapter can be the wrong one, and carries no MAC address, so two Macs look like one node to a desk that keys on it. Enter the Mac's address on the desk by hand. | B166 |
 | A loss of OSC messages sent back to back was seen once and never reproduced. If a controller's bursts seem partly lost, leave about 50 ms between messages and report it. | B30 |
+| When an OSC sender starts sending (or a controller sends from a new port) at the moment another new sender is being taken in, a few messages that arrive in that moment (one to five in tests) can run ahead of messages sent before them, a cue command included, and "Last received" lists them in that order. In tests on one Mac under heavy load this happened in 11 of 181 such starts; a lone new sender and a sender that had already sent kept their order every time (200 tries each), which is a test result, not a guarantee. Set each controller to send from one fixed port, and do not start two senders at the same instant. | B252 |
 | Who controls applies to the whole project, not per layer. | — |
 
 ## Show control
