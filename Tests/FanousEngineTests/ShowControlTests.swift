@@ -684,14 +684,14 @@ struct ShowControlTests {
     /// Wires `onCommand` to the hand-over the way `Engine.start` does; the UDP receive and `start` itself are not run.
     @Test func anOSCCommandDoesNotHoldTheDMXQueue() async throws {
         let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
-        let release = DispatchSemaphore(value: 0)
+        let release = Hold()
         let checking = Atomic<Bool>(false)
         engine.readinessCheck = { _, _ in
             checking.store(true, ordering: .relaxed)
-            _ = release.wait(timeout: .now() + 10)
+            release.wait()
             return [ReadinessItem(id: "hung", title: "", state: .hard, detail: "", fix: "")]
         }
-        defer { release.signal() }
+        defer { release.done() }
         let ran = Mutex<[String]>([])
         let store = StateStore(project: [:], logger: testLogger)
         // the entry runs in `prepare`, off the control queue, as the real command's does (B200)
@@ -716,7 +716,7 @@ struct ShowControlTests {
         #expect(await waitUntil { checking.load(ordering: .relaxed) }, "the readiness check started")
         let free = DispatchGroup()
         dmx.queue.async(group: free) {}
-        #expect(try await offPool { free.wait(timeout: .now() + 1) } == .success, "the DMX queue waited for the readiness check")
+        #expect(try await offPool { free.wait(timeout: .now() + 5) } == .success, "the DMX queue waited for the readiness check")
         #expect(await waitUntil { ran.withLock { $0.count } == 3 }, "the cue commands waited for the entry")
         release.signal()
         #expect(await waitUntil { ran.withLock { $0.count } == 4 })
@@ -727,21 +727,23 @@ struct ShowControlTests {
     /// dropped while one entry is queued or running, and a cue go sent after them fires once, without waiting (B200).
     @Test func repeatedShowModeEntriesAreCoalescedButACueGoIsNot() async throws {
         let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
-        let gate = DispatchSemaphore(value: 0)
+        let gate = Hold()
         let checks = Atomic<Int>(0)
         engine.readinessCheck = { _, _ in
             checks.add(1, ordering: .relaxed)
-            _ = gate.wait(timeout: .now() + 10)
-            gate.signal()  // a turnstile: once open, every later check passes at once
+            gate.wait(turnstile: true)  // once open, every later check passes at once
             return [ReadinessItem(id: "hung", title: "", state: .hard, detail: "", fix: "")]
         }
-        defer { gate.signal() }
-        let cues = Atomic<Int>(0)
+        defer { gate.done() }
+        let cues = Atomic<Int>(0), leaves = Atomic<Int>(0)
         let store = StateStore(project: [:], logger: testLogger)
         store.register(CommandSpec(name: "show.mode", role: .operator, mutatesConfig: false, undoable: false, summary: "", prepare: { [weak engine] args in
-            _ = engine?.setShowMode(true)
+            if args["on"]?.bool == true { _ = engine?.setShowMode(true) }
             return args
-        }) { _, _ in nil })
+        }) { _, args in
+            if args["on"]?.bool == false { leaves.add(1, ordering: .relaxed) }
+            return nil
+        })
         store.register(CommandSpec(name: "cue.go", role: .operator, mutatesConfig: false, undoable: false, summary: "") { _, _ in
             cues.add(1, ordering: .relaxed)
             return nil
@@ -752,9 +754,32 @@ struct ShowControlTests {
         engine.handOver(.cueGo, to: store)
         #expect(await waitUntil(.seconds(5)) { cues.load(ordering: .relaxed) == 1 }, "the cue go waited for the entry")
         gate.signal()
-        try await Task.sleep(for: .milliseconds(200))  // what the entries queued behind the first would take
+        // a leave runs on the show-mode queue after every entry handed over before it: once it ran, they have
+        engine.handOver(.showMode(false), to: store)
+        #expect(await waitUntil { leaves.load(ordering: .relaxed) == 1 }, "the entries queued before the leave did not finish")
         #expect(checks.load(ordering: .relaxed) <= 2, "\(checks.load(ordering: .relaxed)) readiness runs for 101 entries")
         #expect(cues.load(ordering: .relaxed) == 1)
+    }
+
+    /// B245: a check or command a test holds until it opens the gate. It never opens by itself on the test's timeline:
+    /// a starved machine (CI) makes a test slow, never wrong. The bound only keeps a broken engine from hanging the
+    /// suite, far above any wait in the tests; reaching it fails the test in `done`.
+    private final class Hold: Sendable {
+        static let lastResort: TimeInterval = 120
+        private let semaphore = DispatchSemaphore(value: 0)
+        private let timedOut = Atomic<Bool>(false)
+        /// `turnstile`: once open, every later wait passes at once.
+        func wait(turnstile: Bool = false) {
+            if semaphore.wait(timeout: .now() + Self.lastResort) == .timedOut { timedOut.store(true, ordering: .relaxed) }
+            if turnstile { semaphore.signal() }
+        }
+        func signal() { semaphore.signal() }
+        /// Opens the gate (a `defer`), and fails the test if it ever opened by itself.
+        func done(sourceLocation: SourceLocation = #_sourceLocation) {
+            let opened = timedOut.load(ordering: .relaxed)
+            #expect(!opened, "a held check opened by itself after \(Self.lastResort) s", sourceLocation: sourceLocation)
+            semaphore.signal()
+        }
     }
 
     /// B200: an engine whose `show.mode` and `cue.go` are the real commands on `store`, decided on its queue as after
@@ -763,7 +788,7 @@ struct ShowControlTests {
     private final class HeldEntry: Sendable {
         let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger, showStateURL: nil)
         let store = StateStore(project: [:], logger: testLogger)
-        let gate = DispatchSemaphore(value: 0)
+        let gate = Hold()
         let checks = Atomic<Int>(0)
         let gos = Atomic<Int>(0)
         let changes = Mutex<[Bool]>([])
@@ -775,8 +800,7 @@ struct ShowControlTests {
                 if let checkTime {
                     Thread.sleep(forTimeInterval: checkTime)
                 } else {
-                    _ = gate.wait(timeout: .now() + 10)
-                    gate.signal()
+                    gate.wait(turnstile: true)
                 }
                 return []
             }
@@ -785,8 +809,8 @@ struct ShowControlTests {
                 go: { [weak self] in self?.gos.add(1, ordering: .relaxed) }, back: {}, goto: { _ in },
                 showMode: { [weak self] in self?.engine.setShowMode($0) }, acknowledge: { _, _ in }, runReadiness: {}))
         }
-        func done() {
-            gate.signal()
+        func done(sourceLocation: SourceLocation = #_sourceLocation) {
+            gate.done(sourceLocation: sourceLocation)
             _ = store.execute("show.mode", args: ["on": false], role: .operator)
         }
         /// `show.mode true` as a WebSocket connection runs it, on its own queue; true when it was answered ok.
@@ -935,16 +959,16 @@ struct ShowControlTests {
     /// for it). The store's `show.mode` only records here, so show mode is not really entered.
     @Test func showModeOnOffOnDuringARunningEntryEndsOn() async throws {
         let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
-        let gate = DispatchSemaphore(value: 0)
+        let gate = Hold()
         let started = Atomic<Bool>(false)
         let ran = Mutex<[Bool]>([])
         let store = StateStore(project: [:], logger: testLogger)
         store.register(CommandSpec(name: "show.mode", role: .operator, mutatesConfig: false, undoable: false, summary: "") { _, args in
-            if !started.exchange(true, ordering: .relaxed) { _ = gate.wait(timeout: .now() + 10) }
+            if !started.exchange(true, ordering: .relaxed) { gate.wait() }
             ran.withLock { $0.append(args["on"]?.bool ?? false) }
             return nil
         })
-        defer { gate.signal() }
+        defer { gate.done() }
         engine.handOver(.showMode(true), to: store)  // the running entry, held
         #expect(await waitUntil { started.load(ordering: .relaxed) })
         for command in [OSCCommand.showMode(true), .showMode(false), .showMode(true)] { engine.handOver(command, to: store) }
