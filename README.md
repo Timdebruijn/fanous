@@ -130,7 +130,7 @@ background (Login Items), and once for Local Network access: allow both.
 Camera, microphone and screen-recording prompts come the first time a layer
 needs them; grant them before the show, never during it.
 
-**Build** with Swift 6.2+ and Node 26:
+**Build** with Swift 6.2.3+ and Node 26:
 
 ```bash
 git clone https://github.com/Timdebruijn/fanous && cd fanous

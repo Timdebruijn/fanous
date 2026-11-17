@@ -10,7 +10,7 @@ no CI job checks it).
 
 | Package | Version | License | GPLv3-compatible | Use | Pinned |
 |---|---|---|---|---|---|
-| apple/swift-log | 1.16.2 (2026-10-22) | Apache-2.0 | yes | logging facade (os_log + file handlers) | exact |
+| apple/swift-log | 1.17.0 (2026-11-04) | Apache-2.0 | yes | logging facade (os_log + file handlers) | exact |
 | apple/swift-collections | 1.7.6 (2026-11-10) | Apache-2.0 | yes | only if a concrete need appears (Deque/Heap); not added by default | exact |
 | apple/swift-atomics | — | Apache-2.0 | yes | **not used**: minimum macOS is 15 (ADR-0020), the stdlib `Synchronization` module replaces it | — |
 

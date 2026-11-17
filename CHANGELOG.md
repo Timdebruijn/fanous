@@ -17,6 +17,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   (PR #370).
 - Dependencies: Playwright 1.64.1 to 1.65.1 (Chromium 156 to 159 for the e2e suite), and its row in the dependency register
   (PR #372).
+- Dependencies: swift-log 1.16.2 to 1.17.0; Swift 6.2.3 is now the minimum, as 1.17.0 uses `@nonexhaustive` (PR #373).
 
 ## 1.0.0-rc.12 — 2026-11-17
 
