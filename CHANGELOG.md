@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Release: 1.0.0-rc.14 is on GitHub as a pre-release with the signed, notarized dmg, built from main bcdb5f3
+  (PR #383).
 - Fix (B220): a file the library cached as not playable is probed once again after an update that rewords the reasons, so an
   old "Cannot Open" no longer stays; playable files keep their cache hit and thumbnail (PR #385).
 
