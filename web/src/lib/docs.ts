@@ -197,6 +197,14 @@ export interface CaptureLiveDoc {
   permissions?: { camera: 'granted' | 'denied' | 'notDetermined'; screen: 'granted' | 'denied'; microphone?: 'granted' | 'denied' | 'notDetermined' };
 }
 
+/** `live.osc.refused` (B210): command as its OSC message (MIDI cue actions too), the error code and reason, `at` Unix seconds. */
+export interface OSCRefusalDoc {
+  command: string;
+  code: string;
+  reason: string;
+  at: number;
+}
+
 /** `live.audio.inputs[n]` (B137): an input device as CoreAudio names it. */
 export interface AudioInputDoc {
   name: string;
@@ -276,7 +284,9 @@ export interface LiveDoc {
     tlsFingerprint: string;
     bonjour: string;
   };
-  osc: { port: number; recent: { at: number; command: string }[]; midiSources: string[] };
+  /** refused (B210): the last OSC or MIDI command the engine refused, as its OSC message, replaced by a newer one; null
+   * once that command is accepted from OSC/MIDI, 60 s after its last logged refusal, or (show.mode) once show mode is on. */
+  osc: { port: number; recent: { at: number; command: string }[]; refused: OSCRefusalDoc | null; midiSources: string[] };
   /** Audio input devices (B137): name, input channels, the system default marked. */
   audio?: { inputs: AudioInputDoc[] };
   /** MIDI control input: sources listened to, the last message ("source · ch 1 · note 36 on · 127"), learn state;
@@ -347,7 +357,7 @@ export const emptyLive: LiveDoc = {
   cue: { current: null, currentName: null, next: null, nextName: null, fading: false, count: 0 },
   show: { mode: false, checkedAt: 0, ready: false, readiness: [], resumedAt: null, resumedRestart: false },
   system: { thermal: 'nominal', onAC: true, power: '', memoryFreeFraction: 1, memoryGB: 0, os: '', host: '', addresses: [], port: 8443, tlsFingerprint: '', bonjour: '' },
-  osc: { port: 8000, recent: [], midiSources: [] },
+  osc: { port: 8000, recent: [], refused: null, midiSources: [] },
   audio: { inputs: [] },
   midi: { connected: [], last: null, lastAt: null, learning: null, learned: null, error: null },
   citp: { port: 0, clients: [], streams: 0, multicast: [] },

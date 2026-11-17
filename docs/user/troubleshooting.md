@@ -265,8 +265,8 @@ layer's audio channels on the console (volume, mute); audio plays only at
   ([Remote control](remote-control.md#midi-show-control)). A cue command is
   never refused, so the log has no line for it: a goto to a number that does
   not exist fires nothing. Only `/fanous/show/mode 1` is refused, while
-  readiness blocks, and that leaves "OSC/MIDI command refused" in the
-  [log](#logs).
+  readiness blocks: the OSC panel says so in red ("Refused at …") and the
+  [log](#logs) has "OSC/MIDI command refused".
 - After an engine restart no cue is current: Go to the right one.
 
 ## LTC does not lock
@@ -349,7 +349,7 @@ log show --predicate 'subsystem == "org.fanous"' --last 1h
 | "readiness changed in show mode" | A check during the show found an item that started failing or passes again: `failing`, `acknowledged` (of those failing), `passing` and `blocking` (what blocks now). A warning when an item started blocking. An acknowledged item that fails again is here only, not in the status bar |
 | "readiness acknowledged in show mode", "readiness acknowledgement taken back in show mode" | The programmer acknowledged or took back `item` on System during the show; `blocking` is what blocks now |
 | "autosave failed", "show mode state not saved" | The disk or the folder is not writable: the engine plays on and saves nothing |
-| "OSC/MIDI command refused" | A show-control command from OSC did nothing; in practice `/fanous/show/mode 1` while readiness blocks. `command` is the message in its plain form, `code` and `reason` say why (`notReady` names the blocking readiness items). One line per command and code every 3 s at most; `repeats` counts the refusals in the 3 s after the previous line, so after a burst that stopped, the rest of its count comes with the next refusal, whenever that is |
+| "OSC/MIDI command refused" | A show-control command from OSC did nothing; in practice `/fanous/show/mode 1` while readiness blocks. `command` is the message in its plain form, `code` and `reason` say why (`notReady` names the blocking readiness items). One line per command and code every 3 s at most; `repeats` counts the refusals in the 3 s after the previous line, so after a burst that stopped, the rest of its count comes with the next refusal, whenever that is, unless that command was taken from OSC or MIDI in between: then the next refusal logs at once and the old count is dropped |
 
 ## Disk full, or the folder not writable
 

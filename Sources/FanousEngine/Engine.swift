@@ -147,8 +147,9 @@ public final class Engine: @unchecked Sendable {
     /// Versions queue only: the last OSC project load, so a repeat of the same version within the window is ignored.
     private var lastOSCLoad: (id: String, at: TimeInterval)?
     static let oscLoadRepeatWindow: TimeInterval = 2
-    /// B193: refused OSC/MIDI commands, throttled; a Mutex because `runCommand` runs on whichever queue delivers
-    /// (DMX, MIDI, OSC), and it is taken only on a refusal.
+    /// B193: refused OSC/MIDI commands, throttled, and the last one for `live.osc.refused` (B210); a Mutex because
+    /// `runCommand` and the live document read it from different queues. Taken on a refusal, on an accepted command
+    /// (to end that command's refusal and throttle window) and once per live publish.
     private let refusals = Mutex(RefusalThrottle())
     let feedQueue = DispatchQueue(label: "org.fanous.feed", qos: .utility)
     /// B198: OSC (from the DMX queue) and MIDI (from the MIDI queue) commands run here one at a time, in the order they
@@ -896,12 +897,35 @@ public final class Engine: @unchecked Sendable {
         default: return
         }
         // B193: nothing else says why a listed command did nothing; the throttle keeps a 40 Hz repeat to a line per window
-        guard case .failure(let error) = result else { return }
+        guard case .failure(let error) = result else {
+            refusals.withLock { $0.accepted(name) }  // B210: accepted now, so a next refusal of it is a new one
+            return
+        }
         let now = ProcessInfo.processInfo.systemUptime
-        guard let repeats = refusals.withLock({ $0.admit(name, code: error.code, now: now) }) else { return }
+        // B210: the panel's copy changes only when a line is logged, so a burst patches the live document once a window
+        guard let repeats = refusals.withLock({ throttle -> Int? in
+            let repeats = throttle.admit(name, code: error.code, now: now)
+            if repeats != nil {
+                throttle.last = (name, Self.oscSpelling(command), error.code, error.message, Date().timeIntervalSince1970, now)
+            }
+            return repeats
+        }) else { return }
         var metadata: Logger.Metadata = ["command": "\(Self.oscSpelling(command))", "code": "\(error.code)", "reason": "\(error.message)"]
         if repeats > 0 { metadata["repeats"] = "\(repeats)" }
         logger.warning("OSC/MIDI command refused", metadata: metadata)
+    }
+
+    /// `live.osc.refused` (B210): the last refused OSC/MIDI command as its OSC message, with the code, the reason and
+    /// the time (Unix seconds) of its last logged refusal. A newer refusal of any command replaces it; null once that
+    /// command is accepted from OSC/MIDI, `RefusalThrottle.shown` after that line, or, for `show.mode`, once show mode
+    /// is on however it was entered (only `show.mode true` is refused; cleared, so leaving show mode does not bring it back).
+    func refusedLive(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> JSONValue {
+        let on = showMode.isOn
+        guard let r = refusals.withLock({ throttle -> RefusalThrottle.Refusal? in
+            if on, throttle.last?.name == "show.mode" { throttle.last = nil }
+            return throttle.last
+        }), now - r.uptime < RefusalThrottle.shown else { return .null }
+        return ["command": .string(r.command), "code": .string(r.code), "reason": .string(r.reason), "at": .number(r.at)]
     }
 
     /// A show-control command as its OSC message, for the log (MIDI cue actions map to the same commands).
@@ -1816,7 +1840,7 @@ public final class Engine: @unchecked Sendable {
             "cue": cueLive(),
             "show": showLive(),
             "system": systemLive(addresses: facts.addresses, interfaces: facts.interfaces),
-            "osc": ["port": 8000, "recent": .array(dmx.recentOSC().map { ["at": .number($0.at), "command": .string($0.text)] }), "midiSources": .array(facts.midiSources.map { .string($0) })],
+            "osc": ["port": 8000, "recent": .array(dmx.recentOSC().map { ["at": .number($0.at), "command": .string($0.text)] }), "refused": refusedLive(), "midiSources": .array(facts.midiSources.map { .string($0) })],
             "audio": ["inputs": Self.audioInputsLive(facts.audioInputs)],
             "midi": midiLive(),
             "citp": citpLive(),
@@ -2006,12 +2030,26 @@ public enum WebRoot {
 
 /// B193: refused OSC/MIDI commands, one log line per (command, error code) per window. The first refusal logs at once;
 /// repeats of the same pair within `window` of that line are counted, and the count goes out with the pair's next line
-/// (no timer: a burst that stops is reported with that pair's next refusal). One entry per pair seen (seven command
+/// (no timer: a burst that stops is reported with that pair's next refusal, unless the command is accepted first: B210). One entry per pair seen (seven command
 /// names, a handful of codes), so it allocates only on a pair's first refusal. Not thread-safe by itself: the engine
 /// keeps it in a Mutex.
 struct RefusalThrottle {
     static let window: TimeInterval = 3
+    /// B210: how long the OSC panel shows a refusal after its last logged line; a console still repeating it renews it
+    /// every `window`.
+    static let shown: TimeInterval = 60
     private var entries: [(command: String, code: String, at: TimeInterval, repeats: Int)] = []
+    /// B210: the last logged refusal, for `live.osc.refused`; `name` is the command's name, `command` its OSC spelling,
+    /// `at` Unix seconds and `uptime` the host uptime of that line.
+    typealias Refusal = (name: String, command: String, code: String, reason: String, at: Double, uptime: TimeInterval)
+    var last: Refusal?
+
+    /// B210: `command` was accepted: its refusal is over, and its next one logs and shows at once instead of being
+    /// counted into a window that no longer means anything (repeats counted before the accept are dropped).
+    mutating func accepted(_ command: String) {
+        entries.removeAll { $0.command == command }
+        if last?.name == command { last = nil }
+    }
 
     /// nil: counted, not logged. Otherwise log now, with the repeats counted since the pair's previous line.
     mutating func admit(_ command: String, code: String, now: TimeInterval) -> Int? {

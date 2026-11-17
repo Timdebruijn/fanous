@@ -959,6 +959,76 @@ struct ShowControlTests {
         #expect(refused == ["OSC/MIDI command refused code=notReady command=/fanous/show/mode 1 reason=readiness: outputs, spotlight"])
     }
 
+    /// B210: the live document carries the last refused command for the OSC panel. A 40-message burst changes it once
+    /// (the live document is diffed, so once is one patch); it goes when the same command is accepted, or
+    /// `RefusalThrottle.shown` after its last line. The old code had no `refused` at all.
+    @Test func aRefusedCommandIsInTheLiveDocumentUntilAcceptedOrAged() {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
+        let blocking = Atomic<Bool>(true)
+        let store = StateStore(project: [:], logger: testLogger)  // `show.mode` refusing as the engine's does, without entering it
+        store.register(CommandSpec(name: "show.mode", role: .operator, mutatesConfig: false, undoable: false, summary: "") { _, _ in
+            if blocking.load(ordering: .relaxed) { throw CommandError("notReady", "readiness: outputs") }
+            return nil
+        })
+        store.register(CommandSpec(name: "cue.go", role: .operator, mutatesConfig: false, undoable: false, summary: "") { _, _ in nil })
+        #expect(engine.refusedLive() == .null)
+        var seen: [JSONValue] = []
+        for _ in 0..<40 {
+            engine.runCommand(.showMode(true), on: store)
+            if seen.last != engine.refusedLive() { seen.append(engine.refusedLive()) }
+        }
+        #expect(seen.count == 1, "a burst inside the throttle window changes the live document once")
+        let refused = seen[0]
+        #expect(refused["command"] == "/fanous/show/mode 1" && refused["code"] == "notReady" && refused["reason"] == "readiness: outputs")
+        #expect((refused["at"]?.double ?? 0) > Date().timeIntervalSince1970 - 5)
+        engine.runCommand(.cueGo, on: store)  // accepted, another command: the refusal stays
+        #expect(engine.refusedLive() == refused)
+        let now = ProcessInfo.processInfo.systemUptime
+        #expect(engine.refusedLive(now: now + RefusalThrottle.shown) == .null, "aged out")
+        blocking.store(false, ordering: .relaxed)
+        engine.runCommand(.showMode(true), on: store)  // the cause fixed, the console sends it again: accepted
+        #expect(engine.refusedLive() == .null)
+    }
+
+    /// B210 review: a console toggle sends `/fanous/show/mode 1` (refused), `0` (accepted) and `1` again within the
+    /// throttle window. The accept ends the refusal, so the second `1` is a new one: logged and shown. Before, the
+    /// throttle still held the pair and swallowed it: no line, an empty panel.
+    @Test func aRefusalAfterAnAcceptIsShownAndLoggedAgain() {
+        let lines = HTTPSServerLogTests.Lines()
+        let logger = Logger(label: "test") { _ in HTTPSServerLogTests.Capture(lines: lines) }
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: logger)
+        let store = StateStore(project: [:], logger: testLogger)  // `show.mode true` refused, `false` accepted
+        store.register(CommandSpec(name: "show.mode", role: .operator, mutatesConfig: false, undoable: false, summary: "") { _, args in
+            if args["on"]?.bool == true { throw CommandError("notReady", "readiness: outputs") }
+            return nil
+        })
+        engine.runCommand(.showMode(true), on: store)
+        #expect(engine.refusedLive() != .null)
+        engine.runCommand(.showMode(false), on: store)
+        #expect(engine.refusedLive() == .null, "accepted: the refusal is over")
+        engine.runCommand(.showMode(true), on: store)
+        #expect(engine.refusedLive()["command"] == "/fanous/show/mode 1", "pressed again: shown again")
+        #expect(lines.all.withLock { $0 }.filter { $0.hasPrefix("OSC/MIDI command refused") }.count == 2, "and logged again")
+    }
+
+    /// B210 review: a `show.mode` refusal is stale once show mode is on (entered from the web UI, which does not pass
+    /// through `runCommand`), and it does not come back when show mode is left. Show mode is entered for real (power
+    /// assertions for the test's duration), with no state file.
+    @Test func aShowModeRefusalGoesWhenShowModeIsOn() async throws {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger, showStateURL: nil)
+        engine.readinessCheck = { _, _ in [] }
+        let store = StateStore(project: [:], logger: testLogger)
+        store.register(CommandSpec(name: "show.mode", role: .operator, mutatesConfig: false, undoable: false, summary: "") { _, _ in
+            throw CommandError("notReady", "readiness: outputs")
+        })
+        engine.runCommand(.showMode(true), on: store)
+        #expect(engine.refusedLive() != .null)
+        #expect(try await offPool { engine.setShowMode(true) } == nil)
+        #expect(engine.refusedLive() == .null, "show mode is on: the refusal no longer holds")
+        #expect(try await offPool { engine.setShowMode(false) } == nil)
+        #expect(engine.refusedLive() == .null, "and it does not come back")
+    }
+
     @Test func readinessReflectsTheContextAndRunsEveryProbe() {
         var context = ReadinessContext()
         context.universesSilent = ["artnet:0.0.1"]
