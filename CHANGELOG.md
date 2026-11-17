@@ -12,6 +12,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Release: 1.0.0-rc.12 is on GitHub as a pre-release with the signed, notarized dmg, built from main 5b0bf6a
   (PR #369).
+- Dependencies: Playwright 1.64.1 to 1.65.1 (Chromium 156 to 159 for the e2e suite), and its row in the dependency register
+  (PR #N).
 
 ## 1.0.0-rc.12 — 2026-11-17
 
