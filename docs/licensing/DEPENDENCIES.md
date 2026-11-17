@@ -38,7 +38,7 @@ platform; the GPL's system-library exception covers linking against them.
 |---|---|---|---|---|
 | svelte | 5.57.2 (2026-10-06) | MIT | yes | UI framework (runtime ships) |
 | @sveltejs/vite-plugin-svelte | 7.3.1 | MIT | yes | build |
-| vite | 8.3.5 (2026-10-21) | MIT | yes | build/dev server |
+| vite | 8.3.8 (2026-11-11) | MIT | yes | build/dev server |
 | vitest | 5.0.5 (2026-10-15) | MIT | yes | tests |
 | typescript | 6.0.3 | Apache-2.0 | yes | type checking (svelte-check) |
 

@@ -12,6 +12,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Release: 1.0.0-rc.12 is on GitHub as a pre-release with the signed, notarized dmg, built from main 5b0bf6a
   (PR #369).
+- Web: vite 8.3.5 to 8.3.8 (rolldown 1.2.15 to 1.2.19); the built UI is unchanged apart from a 4-byte smaller script
+  (PR #0).
 
 ## 1.0.0-rc.12 — 2026-11-17
 
