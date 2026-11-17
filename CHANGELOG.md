@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Release: 1.0.0-rc.14 is on GitHub as a pre-release with the signed, notarized dmg, built from main bcdb5f3
+  (PR #NNN).
+
 ## 1.0.0-rc.14 — 2026-11-17
 
 - Fix: a trigger text with a long run of whitespace after `@` no longer freezes the cue editor for seconds; the rate part of the trigger regex is linear now (PR #377).

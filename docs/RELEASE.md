@@ -116,6 +116,9 @@ With Fanous and the console software on one subnet (Little Snitch: allow
       Done again for 1.0.0-rc.13 on 2026-11-17 from main 53387a2 (the built tree, cf5dd66): app and signed dmg
       accepted, both stapled, both `spctl` checks `accepted`, `source=Notarized Developer ID`; no engine was
       running when the bundle was built.
+      Done again for 1.0.0-rc.14 on 2026-11-17 from main bcdb5f3 (the built tree, b423501): app and signed dmg
+      accepted, both stapled, both `spctl` checks `accepted`, `source=Notarized Developer ID`; no engine was
+      running when the bundle was built.
 - [ ] `shasum -a 256 dist/Fanous-<version>.dmg` goes into the release notes
 - [ ] only on a developer Mac that ran ad-hoc builds: the first Developer ID open re-registers the agent (B50), and
       the old Screen Recording switch stays on while the engine reads `denied` after the signature change:
@@ -197,6 +200,8 @@ On a fresh macOS user account (or a fresh Mac) with the notarized dmg:
       on 2026-11-16 (no anonymous download checked). 1.0.0-rc.11 and 1.0.0-rc.12 the same way on 2026-11-17 (no
       anonymous download checked; for rc.12 the `swift` job on the release commit failed once on the flaky test
       of B230 and passed on the rerun before publishing). 1.0.0-rc.13 the same way on 2026-11-17 (no anonymous
-      download checked; all three jobs on the release commit passed at the first attempt)
+      download checked; all three jobs on the release commit passed at the first attempt). 1.0.0-rc.14 the same
+      way on 2026-11-17 UTC (no anonymous download checked; all three jobs on the release commit passed at the
+      first attempt)
 - [ ] the release notes name the drawable-loop driver and the macOS 27.0.1
       stall (R17, ADR-0006) so early adopters know why it is the default
