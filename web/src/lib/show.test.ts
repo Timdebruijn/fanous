@@ -16,6 +16,7 @@ import {
   midiControlText,
   midiParameterTarget,
   midiTargetText,
+  refusalNote,
 } from './show';
 
 const cue = (id: string, number: number, extra: Partial<CueDoc> = {}): CueDoc => ({ id, number, name: `Cue ${number}`, fade: 0, values: [], ...extra });
@@ -349,5 +350,21 @@ describe('restoreKeys (B137 review)', () => {
     expect(project.timecode).toEqual(emptyProject.timecode);
     expect(project.timecode).not.toBe(emptyProject.timecode);
     expect(project.name).toBe('Show');
+  });
+});
+
+describe('refusalNote', () => {
+  const at = new Date(2026, 10, 17, 14, 2, 31).getTime() / 1000;
+  it('says nothing without a refusal', () => {
+    expect(refusalNote(null)).toBeNull();
+    expect(refusalNote(undefined)).toBeNull();
+  });
+  it('names the time, the command as listed and the blocking readiness items', () => {
+    expect(refusalNote({ command: '/fanous/show/mode 1', code: 'notReady', reason: 'readiness: outputs, spotlight', at })).toBe(
+      'Refused at 14:02:31: /fanous/show/mode 1, not ready: outputs, spotlight (System › Readiness)',
+    );
+  });
+  it('gives any other reason as the engine words it', () => {
+    expect(refusalNote({ command: '/fanous/show/lock 0', code: 'forbidden', reason: 'needs programmer', at })).toBe('Refused at 14:02:31: /fanous/show/lock 0, needs programmer');
   });
 });

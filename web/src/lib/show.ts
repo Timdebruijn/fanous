@@ -3,10 +3,10 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure logic of the Show control screen: cue numbering and reordering, trigger text, fixture and parameter
 // choices for cue values, value controls from the channel map, timecode wording, MIDI map wording.
-import type { AudioInputDoc, CueDoc, CueValueDoc, LiveDoc, MIDIMappingDoc, PatchEntry, TimecodeSettingsDoc } from './docs';
+import type { AudioInputDoc, CueDoc, CueValueDoc, LiveDoc, MIDIMappingDoc, OSCRefusalDoc, PatchEntry, TimecodeSettingsDoc } from './docs';
 import { clamp01 } from './outputs';
 import { LOCKED_TITLE, type ChannelMap, type FixtureType, type ParamSpec } from './patch-screen';
-import { pad2, plural } from './system';
+import { pad2, plural, stampText } from './system';
 
 export const LOCKED_OPERATOR = 'Locked: operator only';
 export const LOCKED_SHOW = 'Locked: the show is locked (press L to unlock)';
@@ -333,4 +333,16 @@ export function midiTargetText(m: Pick<MIDIMappingDoc, 'target' | 'cue'>, map: C
   if (!p) return m.target;
   const spec = specsFor(map, p.fixture).find((s) => s.key === p.parameter);
   return `${p.fixture} · ${spec?.name ?? p.parameter}`;
+}
+
+// ---- OSC panel ---------------------------------------------------------------------------------------------
+
+/**
+ * The OSC panel's note on the last refused OSC or MIDI command (B210), null when there is none: the time, the command
+ * as the Last received list spells it, and why. A readiness refusal says it as the status bar does and where to fix it.
+ */
+export function refusalNote(r: OSCRefusalDoc | null | undefined): string | null {
+  if (!r) return null;
+  const why = r.code === 'notReady' ? `not ready: ${r.reason.replace(/^readiness: /, '')} (System › Readiness)` : r.reason;
+  return `Refused at ${stampText(r.at)}: ${r.command}, ${why}`;
 }

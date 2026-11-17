@@ -2,6 +2,7 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
+  import { refusalNote } from '../lib/show';
   import { stampText } from '../lib/system';
   import { app } from '../lib/state.svelte';
 
@@ -30,6 +31,7 @@
 
   const osc = $derived(app.live.osc);
   const recent = $derived([...osc.recent].reverse());
+  const refused = $derived(refusalNote(osc.refused));
 </script>
 
 <section class="panel osc" aria-labelledby="osc-title">
@@ -41,6 +43,9 @@
 
   <h3 id="osc-recent">Last received</h3>
   <p class="caption">Every message received, as sent; a listed command can still be refused. A fader sweep on one address is one row with its last value.</p>
+  <!-- B210: a polite live region, always there, so a refusal is announced when it appears (StatusBar's "not ready" does
+       the same); the engine clears it once the command is accepted or a minute after its last refusal. -->
+  <p class="err" role="status" aria-atomic="true">{refused ?? ''}</p>
   {#if recent.length === 0}
     <p class="caption">Nothing received yet. Send <span class="mono">/fanous/cue/go</span> to port {osc.port} to try it.</p>
   {:else}
@@ -64,6 +69,8 @@
   .osc { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
   header { display: flex; align-items: center; gap: 12px; }
   p { margin: 0; }
+  .err { color: var(--red); font-size: 13px; overflow-wrap: anywhere; }
+  .err:empty { margin-bottom: -8px; } /* takes no room, the panel's gap included, while there is nothing to say */
   .recent { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
   .recent li { display: flex; gap: 12px; align-items: flex-start; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
   .recent li:last-child { border-bottom: 0; }

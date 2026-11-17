@@ -265,8 +265,8 @@ layer's audio channels on the console (volume, mute); audio plays only at
   ([Remote control](remote-control.md#midi-show-control)). A cue command is
   never refused, so the log has no line for it: a goto to a number that does
   not exist fires nothing. Only `/fanous/show/mode 1` is refused, while
-  readiness blocks, and that leaves "OSC/MIDI command refused" in the
-  [log](#logs).
+  readiness blocks: the OSC panel says so in red ("Refused at …") and the
+  [log](#logs) has "OSC/MIDI command refused".
 - After an engine restart no cue is current: Go to the right one.
 
 ## LTC does not lock

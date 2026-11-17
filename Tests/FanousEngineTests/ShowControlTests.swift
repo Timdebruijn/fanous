@@ -751,6 +751,37 @@ struct ShowControlTests {
         #expect(refused == ["OSC/MIDI command refused code=notReady command=/fanous/show/mode 1 reason=readiness: outputs, spotlight"])
     }
 
+    /// B210: the live document carries the last refused command for the OSC panel. A 40-message burst changes it once
+    /// (the live document is diffed, so once is one patch); it goes when the same command is accepted, or
+    /// `RefusalThrottle.shown` after its last line. The old code had no `refused` at all.
+    @Test func aRefusedCommandIsInTheLiveDocumentUntilAcceptedOrAged() {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
+        let blocking = Atomic<Bool>(true)
+        let store = StateStore(project: [:], logger: testLogger)  // `show.mode` refusing as the engine's does, without entering it
+        store.register(CommandSpec(name: "show.mode", role: .operator, mutatesConfig: false, undoable: false, summary: "") { _, _ in
+            if blocking.load(ordering: .relaxed) { throw CommandError("notReady", "readiness: outputs") }
+            return nil
+        })
+        store.register(CommandSpec(name: "cue.go", role: .operator, mutatesConfig: false, undoable: false, summary: "") { _, _ in nil })
+        #expect(engine.refusedLive() == .null)
+        var seen: [JSONValue] = []
+        for _ in 0..<40 {
+            engine.runCommand(.showMode(true), on: store)
+            if seen.last != engine.refusedLive() { seen.append(engine.refusedLive()) }
+        }
+        #expect(seen.count == 1, "a burst inside the throttle window changes the live document once")
+        let refused = seen[0]
+        #expect(refused["command"] == "/fanous/show/mode 1" && refused["code"] == "notReady" && refused["reason"] == "readiness: outputs")
+        #expect((refused["at"]?.double ?? 0) > Date().timeIntervalSince1970 - 5)
+        engine.runCommand(.cueGo, on: store)  // accepted, another command: the refusal stays
+        #expect(engine.refusedLive() == refused)
+        let now = ProcessInfo.processInfo.systemUptime
+        #expect(engine.refusedLive(now: now + RefusalThrottle.shown) == .null, "aged out")
+        blocking.store(false, ordering: .relaxed)
+        engine.runCommand(.showMode(true), on: store)  // the cause fixed, the console sends it again: accepted
+        #expect(engine.refusedLive() == .null)
+    }
+
     @Test func readinessReflectsTheContextAndRunsEveryProbe() {
         var context = ReadinessContext()
         context.universesSilent = ["artnet:0.0.1"]
