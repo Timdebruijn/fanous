@@ -9,6 +9,7 @@
   import { blockingNote, readinessSummary, resumedText } from '../lib/system';
   import { lastVersionText } from '../lib/versions';
   import { app, can, cmd, shell, toggleLock } from '../lib/state.svelte';
+  import { isRootSwitch, ROOT_SWITCH_POPOVER } from '../lib/errors';
 
   let showLogin = $state(false);
 
@@ -71,13 +72,15 @@
       {#if refused !== null}
         <div class="pop panel" role="alert">
           <strong>Cannot enter show mode</strong>
-          {#if blocking.length > 0}
+          {#if isRootSwitch(refused)}
+            <p class="caption">{ROOT_SWITCH_POPOVER}</p>
+          {:else if blocking.length > 0}
             <ul>{#each blocking as item (item.id)}<li>{item.title}{#if item.fix}<span class="caption"> — {item.fix}</span>{/if}</li>{/each}</ul>
           {:else}
             <p class="caption">{refused}</p>
           {/if}
           <div class="popactions">
-            <a class="btn btn-primary" href="#/system" onclick={() => (refused = null)}>Open System</a>
+            {#if !isRootSwitch(refused)}<a class="btn btn-primary" href="#/system" onclick={() => (refused = null)}>Open System</a>{/if}
             <button type="button" class="btn" onclick={() => (refused = null)}>Close</button>
           </div>
         </div>

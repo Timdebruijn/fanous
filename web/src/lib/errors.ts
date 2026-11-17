@@ -19,7 +19,14 @@ export const BANNER_MS = 10_000;
 export const TOAST_MS = 8_000;
 
 /** Why show mode is refused while the library root switches (B51): not a readiness item, it passes by itself. */
-export const ROOT_SWITCH_WHY = 'the library root is being switched; send it again in a few seconds';
+export const ROOT_SWITCH_CAUSE = 'the library root is being switched';
+/** What the status bar popover says for it (B239): the browser's operator presses the button again. */
+export const ROOT_SWITCH_POPOVER = `${ROOT_SWITCH_CAUSE[0].toUpperCase()}${ROOT_SWITCH_CAUSE.slice(1)}; try again in a few seconds.`;
+
+/** The engine's text for a show mode entry refused during a library root switch (a `notReady` with this one id). */
+export function isRootSwitch(message: string): boolean {
+  return message === 'readiness: libraryRootChanging';
+}
 
 /**
  * The next step for a command refusal code (engine `CommandError` codes), or '' for an unknown one. `message` is the
@@ -32,7 +39,7 @@ export function errorHint(code: string, message = ''): string {
     case 'forbidden':
       return 'Not allowed for this role — click the role tag in the status bar and log in as programmer.';
     case 'notReady':
-      if (message === 'readiness: libraryRootChanging') return `Show mode was refused: ${ROOT_SWITCH_WHY}.`;
+      if (isRootSwitch(message)) return `Show mode was refused: ${ROOT_SWITCH_CAUSE}; try again in a few seconds.`;
       return 'Show mode is blocked by failed readiness checks — open System to fix or acknowledge them.';
     case 'nothingToUndo':
       return 'Nothing left to undo.';
