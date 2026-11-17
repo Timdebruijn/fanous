@@ -355,16 +355,36 @@ describe('restoreKeys (B137 review)', () => {
 
 describe('refusalNote', () => {
   const at = new Date(2026, 10, 17, 14, 2, 31).getTime() / 1000;
+  const readiness = [
+    { id: 'outputs', title: 'All outputs bound to their displays' },
+    { id: 'spotlight', title: 'Spotlight indexing off for the library volume' },
+  ];
   it('says nothing without a refusal', () => {
-    expect(refusalNote(null)).toBeNull();
-    expect(refusalNote(undefined)).toBeNull();
+    expect(refusalNote(null, readiness)).toBeNull();
+    expect(refusalNote(undefined, readiness)).toBeNull();
   });
-  it('names the time, the command as listed and the blocking readiness items', () => {
-    expect(refusalNote({ command: '/fanous/show/mode 1', code: 'notReady', reason: 'readiness: outputs, spotlight', at })).toBe(
-      'Refused at 14:02:31: /fanous/show/mode 1, not ready: outputs, spotlight (System › Readiness)',
+  it('names the time, the command as listed and the blocking readiness items by title, as the status bar does', () => {
+    expect(refusalNote({ command: '/fanous/show/mode 1', code: 'notReady', reason: 'readiness: outputs, spotlight', at }, readiness)).toBe(
+      'Refused at 14:02:31: /fanous/show/mode 1, not ready: All outputs bound to their displays + 1 more (System › Readiness)',
+    );
+    expect(refusalNote({ command: '/fanous/show/mode 1', code: 'notReady', reason: 'readiness: spotlight', at }, readiness)).toBe(
+      'Refused at 14:02:31: /fanous/show/mode 1, not ready: Spotlight indexing off for the library volume (System › Readiness)',
+    );
+  });
+  it('keeps an id the readiness list does not have yet', () => {
+    expect(refusalNote({ command: '/fanous/show/mode 1', code: 'notReady', reason: 'readiness: syncpackets', at }, [])).toBe(
+      'Refused at 14:02:31: /fanous/show/mode 1, not ready: syncpackets (System › Readiness)',
+    );
+  });
+  it('says a library root switch in its own words, without pointing at Readiness', () => {
+    expect(refusalNote({ command: '/fanous/show/mode 1', code: 'notReady', reason: 'readiness: libraryRootChanging', at }, readiness)).toBe(
+      'Refused at 14:02:31: /fanous/show/mode 1, the library root is being switched; send it again in a few seconds',
     );
   });
   it('gives any other reason as the engine words it', () => {
-    expect(refusalNote({ command: '/fanous/show/lock 0', code: 'forbidden', reason: 'needs programmer', at })).toBe('Refused at 14:02:31: /fanous/show/lock 0, needs programmer');
+    // timecode.enable on a project whose timecode settings are not an object (the engine's own text)
+    expect(refusalNote({ command: '/fanous/timecode/enable 1', code: 'invalidArgs', reason: 'notAContainer(/enabled)', at }, readiness)).toBe(
+      'Refused at 14:02:31: /fanous/timecode/enable 1, notAContainer(/enabled)',
+    );
   });
 });

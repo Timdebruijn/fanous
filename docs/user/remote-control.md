@@ -80,11 +80,13 @@ appear was not taken: a wrong address or argument, a layer the project
 does not have, or a read-back request (`/get`, subscribe, ping). A listed
 cue, show or timecode command can still be refused, for example show mode
 while readiness blocks it; the panel then says so in red under the caption
-("Refused at 14:02:31: /fanous/show/mode 1, not ready: outputs (System ›
-Readiness)") until that command is taken or for a minute after its last
-refusal, and the engine log has the line too ("OSC/MIDI command refused",
-see [Logs](troubleshooting.md#logs)). A refused MIDI cue action shows there
-the same way, as its OSC message. Entering
+("Refused at 14:02:31: /fanous/show/mode 1, not ready: All outputs bound to
+their displays + 1 more (System › Readiness)"), and the engine log has the
+line too ("OSC/MIDI command refused", see [Logs](troubleshooting.md#logs)).
+The panel shows the last refusal only: a newer one replaces it, and it goes
+when that command is taken from OSC or MIDI, when show mode is on (however
+it was entered) for a show-mode refusal, or a minute after its last refusal.
+A refused MIDI cue action shows there the same way, as its OSC message. Entering
 show mode is the one command that is refused in practice: a cue go, back or
 goto is always taken, and a goto to a number that does not exist fires nothing.
 

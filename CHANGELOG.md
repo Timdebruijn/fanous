@@ -10,9 +10,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- OSC panel: a cue, show or timecode command from OSC or MIDI that the engine refused is shown in red under "Last
-  received" ("Refused at 14:02:31: /fanous/show/mode 1, not ready: outputs (System › Readiness)") until that command
-  is taken or a minute after its last refusal; the live document carries it as `osc.refused` (B210, PR #360).
+- OSC panel: the last cue, show or timecode command from OSC or MIDI that the engine refused is shown in red under
+  "Last received" ("Refused at 14:02:31: /fanous/show/mode 1, not ready: All outputs bound to their displays + 1 more
+  (System › Readiness)") until a newer refusal replaces it, that command is taken from OSC or MIDI, show mode is on
+  (for a show-mode refusal) or a minute after its last refusal; the live document carries it as `osc.refused`
+  (B210, PR #360).
 - Release: 1.0.0-rc.10 is on GitHub as a pre-release with the signed, notarized dmg, built from main 8531e6c
   (PR #359).
 

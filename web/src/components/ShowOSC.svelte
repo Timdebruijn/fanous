@@ -31,7 +31,7 @@
 
   const osc = $derived(app.live.osc);
   const recent = $derived([...osc.recent].reverse());
-  const refused = $derived(refusalNote(osc.refused));
+  const refused = $derived(refusalNote(osc.refused, app.live.show.readiness));
 </script>
 
 <section class="panel osc" aria-labelledby="osc-title">
@@ -44,7 +44,8 @@
   <h3 id="osc-recent">Last received</h3>
   <p class="caption">Every message received, as sent; a listed command can still be refused. A fader sweep on one address is one row with its last value.</p>
   <!-- B210: a polite live region, always there, so a refusal is announced when it appears (StatusBar's "not ready" does
-       the same); the engine clears it once the command is accepted or a minute after its last refusal. -->
+       the same). The engine replaces it with a newer refusal and clears it once the command is accepted from OSC/MIDI,
+       a minute after its last refusal, or (show mode) once show mode is on. -->
   <p class="err" role="status" aria-atomic="true">{refused ?? ''}</p>
   {#if recent.length === 0}
     <p class="caption">Nothing received yet. Send <span class="mono">/fanous/cue/go</span> to port {osc.port} to try it.</p>

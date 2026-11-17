@@ -143,7 +143,7 @@ public final class Engine: @unchecked Sendable {
     static let oscLoadRepeatWindow: TimeInterval = 2
     /// B193: refused OSC/MIDI commands, throttled, and the last one for `live.osc.refused` (B210); a Mutex because
     /// `runCommand` and the live document read it from different queues. Taken on a refusal, on an accepted command
-    /// (to clear that command's refusal) and once per live publish.
+    /// (to end that command's refusal and throttle window) and once per live publish.
     private let refusals = Mutex(RefusalThrottle())
     let feedQueue = DispatchQueue(label: "org.fanous.feed", qos: .utility)
     /// B198: OSC (from the DMX queue) and MIDI (from the MIDI queue) commands run here one at a time, in the order they
@@ -879,7 +879,7 @@ public final class Engine: @unchecked Sendable {
         }
         // B193: nothing else says why a listed command did nothing; the throttle keeps a 40 Hz repeat to a line per window
         guard case .failure(let error) = result else {
-            refusals.withLock { if $0.last?.name == name { $0.last = nil } }  // B210: accepted now, the refusal is over
+            refusals.withLock { $0.accepted(name) }  // B210: accepted now, so a next refusal of it is a new one
             return
         }
         let now = ProcessInfo.processInfo.systemUptime
@@ -897,10 +897,15 @@ public final class Engine: @unchecked Sendable {
     }
 
     /// `live.osc.refused` (B210): the last refused OSC/MIDI command as its OSC message, with the code, the reason and
-    /// the time (Unix seconds) of its last logged refusal; null once that command is accepted or
-    /// `RefusalThrottle.shown` after that line.
+    /// the time (Unix seconds) of its last logged refusal. A newer refusal of any command replaces it; null once that
+    /// command is accepted from OSC/MIDI, `RefusalThrottle.shown` after that line, or, for `show.mode`, once show mode
+    /// is on however it was entered (only `show.mode true` is refused; cleared, so leaving show mode does not bring it back).
     func refusedLive(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> JSONValue {
-        guard let r = refusals.withLock({ $0.last }), now - r.uptime < RefusalThrottle.shown else { return .null }
+        let on = showMode.isOn
+        guard let r = refusals.withLock({ throttle -> RefusalThrottle.Refusal? in
+            if on, throttle.last?.name == "show.mode" { throttle.last = nil }
+            return throttle.last
+        }), now - r.uptime < RefusalThrottle.shown else { return .null }
         return ["command": .string(r.command), "code": .string(r.code), "reason": .string(r.reason), "at": .number(r.at)]
     }
 
@@ -1976,7 +1981,7 @@ public enum WebRoot {
 
 /// B193: refused OSC/MIDI commands, one log line per (command, error code) per window. The first refusal logs at once;
 /// repeats of the same pair within `window` of that line are counted, and the count goes out with the pair's next line
-/// (no timer: a burst that stops is reported with that pair's next refusal). One entry per pair seen (seven command
+/// (no timer: a burst that stops is reported with that pair's next refusal, unless the command is accepted first: B210). One entry per pair seen (seven command
 /// names, a handful of codes), so it allocates only on a pair's first refusal. Not thread-safe by itself: the engine
 /// keeps it in a Mutex.
 struct RefusalThrottle {
@@ -1987,7 +1992,15 @@ struct RefusalThrottle {
     private var entries: [(command: String, code: String, at: TimeInterval, repeats: Int)] = []
     /// B210: the last logged refusal, for `live.osc.refused`; `name` is the command's name, `command` its OSC spelling,
     /// `at` Unix seconds and `uptime` the host uptime of that line.
-    var last: (name: String, command: String, code: String, reason: String, at: Double, uptime: TimeInterval)?
+    typealias Refusal = (name: String, command: String, code: String, reason: String, at: Double, uptime: TimeInterval)
+    var last: Refusal?
+
+    /// B210: `command` was accepted: its refusal is over, and its next one logs and shows at once instead of being
+    /// counted into a window that no longer means anything (repeats counted before the accept are dropped).
+    mutating func accepted(_ command: String) {
+        entries.removeAll { $0.command == command }
+        if last?.name == command { last = nil }
+    }
 
     /// nil: counted, not logged. Otherwise log now, with the repeats counted since the pair's previous line.
     mutating func admit(_ command: String, code: String, now: TimeInterval) -> Int? {

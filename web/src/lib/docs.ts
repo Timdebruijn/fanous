@@ -284,8 +284,8 @@ export interface LiveDoc {
     tlsFingerprint: string;
     bonjour: string;
   };
-  /** refused (B210): the last OSC or MIDI command the engine refused, as its OSC message; null once that command is
-   * accepted or 60 s after its last logged refusal. */
+  /** refused (B210): the last OSC or MIDI command the engine refused, as its OSC message, replaced by a newer one; null
+   * once that command is accepted from OSC/MIDI, 60 s after its last logged refusal, or (show.mode) once show mode is on. */
   osc: { port: number; recent: { at: number; command: string }[]; refused: OSCRefusalDoc | null; midiSources: string[] };
   /** Audio input devices (B137): name, input channels, the system default marked. */
   audio?: { inputs: AudioInputDoc[] };
