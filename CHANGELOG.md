@@ -12,6 +12,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Release: 1.0.0-rc.10 is on GitHub as a pre-release with the signed, notarized dmg, built from main 8531e6c
   (PR #359).
+- Show mode: a cue go, back or goto from OSC, MIDI or another web client no longer waits for a show-mode entry's
+  readiness checks; a show-mode leave during an entry wins (B200) (PR #N).
 
 ## 1.0.0-rc.10 — 2026-11-16
 
