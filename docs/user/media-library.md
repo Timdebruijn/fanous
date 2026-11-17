@@ -41,7 +41,7 @@ Fanous Library/
 |---|---|
 | The number | The first one to three digits of the folder or file name, 1 to 255. Anything may follow: `001_Name`, `12-Show`, `7 intro.mov` |
 | Invalid names | No digits in front, 0, above 255, four or more digits, or a duplicate number in the same folder (the name that sorts first keeps the number). Such items are listed with a red **invalid name** badge and the reason, and cannot be reached from the console: rename them in Finder. Every file in a folder with an invalid number is invalid with it |
-| Unreadable | A file macOS cannot open at all (a `.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`, `.f4v` or `.divx`, whose reason reads "AVFoundation cannot open .webm files", or "Cannot Open" for an `.mkv` or `.mxf` an older Fanous version read and that has not changed since; a damaged file; a sub-folder that is no image sequence) shows a red **unreadable** badge with the reason and no Transcode button: convert it on another machine |
+| Unreadable | A file macOS cannot open at all (a `.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`, `.f4v` or `.divx`, whose reason reads "AVFoundation cannot open .webm files"; a damaged file; a sub-folder that is no image sequence) shows a red **unreadable** badge with the reason and no Transcode button: convert it on another machine |
 | Ignored | Folders and files whose names start with `_` or `.`, and files that are not media: a file is media when it is a still or has one of these extensions: `.mov`, `.mp4`, `.m4v`, `.avi`, `.mkv`, `.mxf`, `.webm`, `.mpg`, `.mpeg`, `.m2ts`, `.mts`, `.ts`, `.wmv`, `.flv`, `.3gp`, `.3g2`, `.ogv`, `.vob`, `.dv`, `.qt`, `.m2v`, `.f4v`, `.asf`, `.divx` (a TypeScript `.ts` file therefore shows as unreadable). The list is the same on every Mac |
 | Watched | A change in Finder shows up within a moment; **Rescan** on the Media screen forces it |
 | Folder 0 | Not on disk: built-in content and live inputs ([Built-in content](reference/built-in-content.md)) |
@@ -106,8 +106,7 @@ image sequences. Long-GOP codecs such as H.264 are refused on purpose: they
 cannot scrub, run in reverse or chase timecode reliably. A container macOS
 cannot open (`.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`,
 `.f4v`, `.divx`) is listed too and reads red **unreadable**, "AVFoundation
-cannot open .webm files" (an `.mkv` or `.mxf` read by an older Fanous
-version keeps "Cannot Open" until the file changes). Convert it on another
+cannot open .webm files". Convert it on another
 machine. A file with an extension after `.mxf` in the list above never takes
 a number from a `.mov`, `.mp4`, `.m4v`, `.avi`, `.mkv` or `.mxf` file, a
 still or a sequence folder in the same folder: on a shared number it is the

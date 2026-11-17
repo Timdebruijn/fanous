@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Fix: a file the library cached with a reason (unreadable or needs transcode) is probed once again after an update that rewords the reasons, so an old "Cannot Open" or "apch is not ProRes/HAP in .mov" no longer stays; playable files keep their cache hit and thumbnail, B220 (PR #NNN).
+
 ## 1.0.0-rc.14 — 2026-11-17
 
 - Fix: a trigger text with a long run of whitespace after `@` no longer freezes the cue editor for seconds; the rate part of the trigger regex is linear now (PR #377).

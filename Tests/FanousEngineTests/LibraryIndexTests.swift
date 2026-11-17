@@ -216,6 +216,66 @@ struct LibraryIndexTests {
         #expect(elements.map(\.name) == ["001_a.mov", "002_b.mkv", "003_c.webm", "004_d.mov"])
         #expect(elements.map(\.file) == [1, 2, 3, 4])
     }
+
+    /// A probed library (one playable PNG, one empty `.mov` that cannot be opened) and its cache file; the cache holds the
+    /// unreadable entry with `reason` and `version` as given (nil version = as a build from before B220 wrote it).
+    private func probedLibrary(reason: String, version: Int?) async throws -> (root: URL, cache: URL) {
+        let root = try tempDir("fanous-library")
+        try Self.png(root.appending(path: "001_Show/001_still.png"))
+        try Self.touch(root.appending(path: "001_Show/002_broken.mov"), bytes: 0)
+        let cache = root.appending(path: ".cache")
+        let first = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        first.start()
+        #expect(await waitUntil(every: .milliseconds(50)) { first.snapshot.folders.first?.items.allSatisfy { $0.status != .probing } == true })
+        first.stop()
+        let file = cache.appending(path: "library-index.json")
+        var entries = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: [String: Any]])
+        for (key, var entry) in entries where entry["reason"] != nil {
+            entry["reason"] = reason
+            entry["reasonsVersion"] = version
+            entries[key] = entry
+        }
+        try JSONSerialization.data(withJSONObject: entries).write(to: file)
+        return (root, cache)
+    }
+
+    /// B220: a reason cached by an older build is stale, a playable entry is not.
+    @Test func staleReasonsAreProbedAgainAndPlayableEntriesAreNot() async throws {
+        let (root, cache) = try await probedLibrary(reason: "old text", version: nil)
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        final class Thumbnails: Sendable { let count = Atomic<Int>(0) }
+        let thumbnails = Thumbnails()
+        index.thumbnailer = { _, _, _ in thumbnails.count.wrappingAdd(1, ordering: .relaxed); return "thumb.jpg" }
+        index.rescan()  // no probe thread: what is still .probing now is what a probe would run
+        var items = try #require(index.snapshot.folders.first?.items)
+        #expect(items.map(\.status) == [.playable, .probing], "the playable entry hits the cache, the stale unreadable one is a miss")
+        index.start()
+        defer { index.stop() }
+        #expect(await waitUntil(every: .milliseconds(50)) { index.snapshot.folders.first?.items.allSatisfy { $0.status != .probing } == true })
+        items = try #require(index.snapshot.folders.first?.items)
+        #expect(items.map(\.status) == [.playable, .unreadable])
+        #expect(items[1].reason != "old text" && items[1].reason != nil, "the re-probe wrote the current text")
+        #expect(thumbnails.count.load(ordering: .relaxed) == 0, "a cache hit is not thumbnailed again")
+    }
+
+    /// B220: written by this version, nothing is probed again.
+    @Test func currentReasonsAreCacheHits() async throws {
+        let (root, cache) = try await probedLibrary(reason: "current text", version: LibraryIndex.reasonsVersion)
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.rescan()
+        let items = try #require(index.snapshot.folders.first?.items)
+        #expect(items.map(\.status) == [.playable, .unreadable])
+        #expect(items[1].reason == "current text")
+    }
+
+    /// B220: the cache file of an older build, without the version field, still decodes.
+    @Test func cacheEntriesWithoutAVersionDecode() throws {
+        let old = #"{"k":{"status":"unreadable","reason":"Cannot Open"},"p":{"status":"playable"}}"#
+        let cache = try JSONDecoder().decode([String: LibraryIndex.CacheEntry].self, from: Data(old.utf8))
+        #expect(cache["k"]?.reason == "Cannot Open" && cache["k"]?.reasonsVersion == nil && cache["p"]?.status == .playable)
+        let written = try JSONEncoder().encode(cache["k"])
+        #expect(try JSONDecoder().decode(LibraryIndex.CacheEntry.self, from: written).reason == "Cannot Open")
+    }
 }
 
 /// The LibraryIndexTests that need the GPU or a decoder: local and self-hosted runs only (scripts/test.sh --hosted leaves them out).
