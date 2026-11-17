@@ -13,7 +13,7 @@ the decisions in [`adr/`](adr/README.md), the mapping proposal
 [`feature-gaps.md`](feature-gaps.md) and the chip table [`hardware.md`](hardware.md).
 
 
-Requirements: Apple Silicon Mac with a ProRes engine, macOS 15+, Swift 6.2+
+Requirements: Apple Silicon Mac with a ProRes engine, macOS 15+, Swift 6.2.3+
 (Command Line Tools are enough: the Metal shaders are compiled at engine start
 from source), Node 26 for the web UI. The "Supported hardware" readiness item
 goes by the chip name (only `Apple M1` fails); CI's VM reports `Apple M1

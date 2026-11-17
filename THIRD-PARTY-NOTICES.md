@@ -5,7 +5,7 @@ specifications. Full license texts are in the linked files or packages.
 
 | Component | License | Notes |
 |---|---|---|
-| apple/swift-log 1.16.2 | Apache-2.0 | Swift package dependency |
+| apple/swift-log 1.17.0 | Apache-2.0 | Swift package dependency |
 | Vidvox hap (hap.c/hap.h) | BSD-2-Clause | vendored in `Sources/CHap` (commit d847f6b); license in `Sources/CHap/LICENSE` |
 | google/snappy 1.3.1 | BSD-3-Clause | vendored in `Sources/CSnappy`; license in `Sources/CSnappy/LICENSE` |
 | Syphon-Framework (Metal server/client) | Syphon Framework License (BSD-3-Clause style) | vendored in `Sources/Syphon` (commit f476167); copyright 2010 bangnoise (Tom Butterworth) & vade (Anton Marini); license in `Sources/Syphon/LICENSE` |

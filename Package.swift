@@ -14,7 +14,7 @@ let package = Package(
         .executable(name: "fanous-bench", targets: ["fanous-bench"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-log.git", exact: "1.16.2"),
+        .package(url: "https://github.com/apple/swift-log.git", exact: "1.17.0"),
     ],
     targets: [
         // Pure Swift, Foundation only. Enforced by scripts/core-purity.sh.
