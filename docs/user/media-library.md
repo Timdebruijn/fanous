@@ -110,7 +110,7 @@ cannot open .webm files". Convert it on another
 machine. A file with an extension after `.mxf` in the list above never takes
 a number from a `.mov`, `.mp4`, `.m4v`, `.avi`, `.mkv` or `.mxf` file, a
 still or a sequence folder in the same folder: on a shared number it is the
-duplicate. A file that needs a transcode has no thumbnail: its tile is
+duplicate. A movie in a codec Fanous cannot decode (H.264, HEVC) has no thumbnail: its tile is
 black.
 
 <img src="images/media-needs-transcode.png" width="218" alt="A tile with the yellow needs transcode badge, the line H.264 · 720p25, the codec list reading HAP Q and the Transcode button">
@@ -234,12 +234,14 @@ the number is not a duplicate.
 The engine reads each new file once (codec, size, frame rate, duration,
 alpha, audio), makes a thumbnail (a playable movie's middle frame, 320
 pixels wide; a still's longest side at 320; a sequence's first frame; none
-for a file that needs a transcode) and caches both under
+for a movie in a codec Fanous cannot decode, such as H.264) and caches both under
 `~/Library/Application Support/Fanous/cache/`. A tile reads "probing…" until
 then, and a layer pointing at the file shows "no file" until the probe is
 done. The same thumbnails go to a console over CITP and stand in on the
 Layers screen for a layer that shows nothing. A file that changes, moves or
-is renamed is probed again.
+is renamed is probed again. After an update that rewords the reasons, every
+file that is not playable (needs transcode, unreadable) is probed again once
+and shows "probing…" until then; playable files are not touched.
 
 ## Audio
 

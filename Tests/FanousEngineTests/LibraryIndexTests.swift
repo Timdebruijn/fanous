@@ -219,7 +219,7 @@ struct LibraryIndexTests {
 
     /// A probed library (one playable PNG, one empty `.mov` that cannot be opened) and its cache file; the cache holds the
     /// unreadable entry with `reason` and `version` as given (nil version = as a build from before B220 wrote it).
-    private func probedLibrary(reason: String, version: Int?) async throws -> (root: URL, cache: URL) {
+    private func probedLibrary(reason: String, version: Int?) async throws -> (root: URL, cache: URL, probed: String?) {
         let root = try tempDir("fanous-library")
         try Self.png(root.appending(path: "001_Show/001_still.png"))
         try Self.touch(root.appending(path: "001_Show/002_broken.mov"), bytes: 0)
@@ -230,18 +230,20 @@ struct LibraryIndexTests {
         first.stop()
         let file = cache.appending(path: "library-index.json")
         var entries = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: [String: Any]])
+        let probed = first.snapshot.folders.first?.items.last?.reason  // what the first run wrote: the current text
         for (key, var entry) in entries where entry["reason"] != nil {
             entry["reason"] = reason
             entry["reasonsVersion"] = version
             entries[key] = entry
         }
         try JSONSerialization.data(withJSONObject: entries).write(to: file)
-        return (root, cache)
+        return (root, cache, probed)
     }
 
     /// B220: a reason cached by an older build is stale, a playable entry is not.
     @Test func staleReasonsAreProbedAgainAndPlayableEntriesAreNot() async throws {
-        let (root, cache) = try await probedLibrary(reason: "old text", version: nil)
+        let (root, cache, current) = try await probedLibrary(reason: "old text", version: nil)
+        #expect(current != nil && current != "old text")
         let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
         final class Thumbnails: Sendable { let count = Atomic<Int>(0) }
         let thumbnails = Thumbnails()
@@ -254,13 +256,13 @@ struct LibraryIndexTests {
         #expect(await waitUntil(every: .milliseconds(50)) { index.snapshot.folders.first?.items.allSatisfy { $0.status != .probing } == true })
         items = try #require(index.snapshot.folders.first?.items)
         #expect(items.map(\.status) == [.playable, .unreadable])
-        #expect(items[1].reason != "old text" && items[1].reason != nil, "the re-probe wrote the current text")
+        #expect(items[1].reason == current, "the re-probe wrote the current text")
         #expect(thumbnails.count.load(ordering: .relaxed) == 0, "a cache hit is not thumbnailed again")
     }
 
     /// B220: written by this version, nothing is probed again.
     @Test func currentReasonsAreCacheHits() async throws {
-        let (root, cache) = try await probedLibrary(reason: "current text", version: LibraryIndex.reasonsVersion)
+        let (root, cache, _) = try await probedLibrary(reason: "current text", version: LibraryIndex.reasonsVersion)
         let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
         index.rescan()
         let items = try #require(index.snapshot.folders.first?.items)

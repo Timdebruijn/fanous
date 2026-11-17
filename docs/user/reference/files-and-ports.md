@@ -37,7 +37,7 @@ Everything below is in `~/Library/Application Support/Fanous/` (mode 0700).
 | `show-state.json`, `restart-pending` | Show mode across a crash or restart | The first is written every 30 s while show mode is on: show mode resumes when the engine starts within two hours of the last write, after a crash, a Force Quit or a power cut (an ordinary quit of `fanousd` leaves show mode); an older file is ignored and removed; a planned Restart or Shut Down of the Mac removes it. The second is written by the app right before Engine › Restart Engine and honoured for 60 s. |
 | `display-modes.json` | The display modes to put back after show mode | Only while modes are switched |
 | `ingest-queue.json` | The ingest queue | Survives an engine restart; done jobs leave the list after a minute |
-| `cache/library-index.json`, `cache/thumbnails/*.jpg` | Media metadata and thumbnails | Keyed by path, size and modification time; a changed file is probed again |
+| `cache/library-index.json`, `cache/thumbnails/*.jpg` | Media metadata and thumbnails | Keyed by path, size and modification time; a changed file is probed again, and after an update that rewords the reasons so is every file that is not playable, once |
 | `tls/` | The engine's certificate and `fingerprint.sha256` | An ad-hoc build keeps the private key here (mode 0600); a signed build keeps it in the keychain. `fanousd reset-tls` makes a new one |
 
 ### Logs

@@ -94,9 +94,9 @@ public final class LibraryIndex: @unchecked Sendable {
     ]
     /// The containers AVFoundation reads: a "Cannot Open" in one of these is a damaged file, not the container.
     static let avFoundationContainers: Set<String> = ["mov", "mp4", "m4v"]
-    /// Why `url` did not open, as a client may see it (B220: a reworded text needs `reasonsVersion` bumped): "Cannot Open" for a container AVFoundation has no reader for told
+    /// Why `url` did not open, as a client may see it: "Cannot Open" for a container AVFoundation has no reader for told
     /// nothing (B161); the library and a failed ingest job say the same (B194). `/api/library` and `live.ingest` reach
-    /// monitors: no file path (B25).
+    /// monitors: no file path (B25). The library caches this text: reword it and bump `reasonsVersion` (B220).
     static func openFailureText(_ error: Error, _ url: URL) -> String {
         let ext = url.pathExtension.lowercased()
         if let error = error as? AVError, error.code == .fileFormatNotRecognized, !ext.isEmpty, !avFoundationContainers.contains(ext) {
