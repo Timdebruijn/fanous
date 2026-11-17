@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+## 1.0.0-rc.12 — 2026-11-17
+
 - Tests (B245): the show-mode tests' held readiness checks no longer release themselves after 10 s, so a starved
   CI machine makes them slow, not wrong (PR #367).
 - Engine (B243): a project change made less than 2 s before a clean stop (Stop Engine, Stop Engine and Quit,
