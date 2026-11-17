@@ -194,8 +194,9 @@ struct ReadinessLedger {
     private(set) var acknowledged: Set<String> = []
     private(set) var checkedAt: Double = 0
 
-    /// Run numbers (B187): runs overlap (the readiness queue and a show-mode entry on the control queue), so a run
-    /// that started later may land first; an older one then stores nothing.
+    /// Run numbers (B187): runs overlap (the readiness queue and a show-mode entry on the caller's thread, on the
+    /// engine's show-entry queue with the control queue free, B200), so a run that started later may land first; an
+    /// older one then stores nothing.
     private var started = 0
     private var stored = 0
 
@@ -311,8 +312,9 @@ public struct ReadinessContext: Sendable {
 
 public enum Readiness {
     /// All items; the slow probes (power, disk, volume, Spotlight, Time Machine, updates, display sleep) run here too,
-    /// each external tool and the library volume's read for at most `toolTimeout`. The engine runs it on its readiness queue, and on the control queue
-    /// only to enter show mode, which needs the answer (B187).
+    /// each external tool and the library volume's read for at most `toolTimeout`. The engine runs it on its readiness
+    /// queue, and on the caller's thread (on its show-entry queue, the control queue free; B200) only to enter show
+    /// mode, which needs the answer (B187).
     public static func check(_ context: ReadinessContext, acknowledged: Set<String>) -> [ReadinessItem] {
         var items: [ReadinessItem] = []
         /// `failing`: the state when not ok (`warn` never blocks, `hard` cannot be acknowledged).

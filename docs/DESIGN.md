@@ -4569,8 +4569,10 @@ handed from there to the engine's command queue (B198, `Engine.handOver`), the
 same serial queue as MIDI's cue actions, and run there one at a time in arrival
 order, so the DMX queue never waits on the control queue or the readiness
 checks; a repeated `show.mode true` is dropped while one is queued or running (a
-stale clear lets at most one more through). A command still waits behind a running
-show-mode entry on the control queue (B200). OSC feedback
+stale clear lets at most one more through). `show.mode` commands have a serial
+queue of their own (B200), so cue commands never wait for an entry's checks;
+each line keeps its order, the order between a `show.mode` and a cue command is
+not kept. OSC feedback
 (query/notify) is later; the design keeps every OSC-settable value in `live`
 so a feedback sender is a subscriber like any client.
 
@@ -4760,8 +4762,13 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   `beginActivity` (latency critical, no App Nap), ingest paused. Readiness
   runs the §14 items (15 with display modes) on entering and every 30 s while on
   (`readiness.run`, `readiness.acknowledge`); `show.mode` is refused with the
-  blocking ids (`notReady`). Entering runs the checks on the control queue (the
-  refusal needs them); the 30 s timer, `readiness.run` and the display syncs
+  blocking ids (`notReady`). Entering runs the checks in the command's
+  `prepare` (B200): on the caller's thread with the control queue free, one
+  entry at a time, and decides on the control queue (show mode still off, no
+  library root change started since the checks began, no leave since the entry
+  arrived; a leave from another client or source during an entry wins and the
+  entry answers ok without entering). The entering client's
+  own later commands still wait, its connection's queue being serial; the 30 s timer, `readiness.run` and the display syncs
   queue them on a serial readiness queue, off the feed queue, and a run's items
   are stored only if no later-started run stored first (B187). Desired display modes are applied on entering
   and restored on leaving (B33, `DisplayModeSwitcher`, matching in
