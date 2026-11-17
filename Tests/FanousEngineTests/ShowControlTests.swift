@@ -692,7 +692,7 @@ struct ShowControlTests {
         #expect(await waitUntil { checks.load(ordering: .relaxed) == 1 }, "the entry started")
         for _ in 0..<100 { engine.handOver(.showMode(true), to: store) }
         engine.handOver(.cueGo, to: store)
-        #expect(await waitUntil(.seconds(2)) { cues.load(ordering: .relaxed) == 1 }, "the cue go waited for the entry")
+        #expect(await waitUntil(.seconds(5)) { cues.load(ordering: .relaxed) == 1 }, "the cue go waited for the entry")
         gate.signal()
         try await Task.sleep(for: .milliseconds(200))  // what the entries queued behind the first would take
         #expect(checks.load(ordering: .relaxed) <= 2, "\(checks.load(ordering: .relaxed)) readiness runs for 101 entries")
@@ -733,9 +733,18 @@ struct ShowControlTests {
         }
         /// `show.mode true` as a WebSocket connection runs it, on its own queue; true when it was answered ok.
         func enter(in group: DispatchGroup, _ answered: @escaping @Sendable (Bool) -> Void) {
-            DispatchQueue.global().async(group: group) { [self] in
-                answered((try? store.execute("show.mode", args: ["on": true], role: .operator).get()) != nil)
-            }
+            ShowControlTests.onThread(group) { [self] in answered((try? store.execute("show.mode", args: ["on": true], role: .operator).get()) != nil) }
+        }
+    }
+
+    /// Runs `body` on a thread of its own, as a WebSocket connection's queue runs a command. Not the global queue: under
+    /// the full parallel suite its pool can be used up for seconds by blocked blocks (on CI a `cue.go` queued there did
+    /// not start within 1 s; reproduced locally by holding about 64 global blocks for 5 s).
+    private static func onThread(_ group: DispatchGroup, _ body: @escaping @Sendable () -> Void) {
+        group.enter()
+        Thread.detachNewThread {
+            body()
+            group.leave()
         }
     }
 
@@ -755,10 +764,11 @@ struct ShowControlTests {
         }
         #expect(await waitUntil { held.checks.load(ordering: .relaxed) == 1 }, "the entry's check started")
         held.engine.handOver(.cueGo, to: held.store)
-        #expect(await waitUntil(.seconds(1)) { held.gos.load(ordering: .relaxed) == 1 }, "the OSC cue go waited for the entry")
+        // the bounds are generous: the old code waits until the gate opens, which happens only after them
+        #expect(await waitUntil(.seconds(5)) { held.gos.load(ordering: .relaxed) == 1 }, "the OSC cue go waited for the entry")
         let webSocket = DispatchGroup()
-        DispatchQueue.global().async(group: webSocket) { _ = held.store.execute("cue.go", role: .operator) }
-        #expect(try await offPool { webSocket.wait(timeout: .now() + 1) } == .success, "the WebSocket cue go waited for the entry")
+        Self.onThread(webSocket) { _ = held.store.execute("cue.go", role: .operator) }
+        #expect(try await offPool { webSocket.wait(timeout: .now() + 5) } == .success, "the WebSocket cue go waited for the entry")
         #expect(held.gos.load(ordering: .relaxed) == 2 && !held.engine.showMode.isOn && answers.withLock { $0 }.isEmpty)
         held.gate.signal()
         #expect(await waitUntil { held.engine.showMode.isOn }, "the entry did not enter once its check passed")
@@ -791,8 +801,8 @@ struct ShowControlTests {
         held.enter(in: entry) { ok in answers.withLock { $0.append(ok) } }
         #expect(await waitUntil { held.checks.load(ordering: .relaxed) == 1 })
         let leave = DispatchGroup()
-        DispatchQueue.global().async(group: leave) { _ = held.store.execute("show.mode", args: ["on": false], role: .operator) }
-        #expect(try await offPool { leave.wait(timeout: .now() + 1) } == .success, "the leave waited for the entry")
+        Self.onThread(leave) { _ = held.store.execute("show.mode", args: ["on": false], role: .operator) }
+        #expect(try await offPool { leave.wait(timeout: .now() + 5) } == .success, "the leave waited for the entry")
         held.gate.signal()
         #expect(try await offPool { entry.wait(timeout: .now() + 5) } == .success)
         #expect(answers.withLock { $0 } == [true] && held.changes.withLock { $0 }.isEmpty, "the entry entered after the leave")
@@ -823,7 +833,7 @@ struct ShowControlTests {
         defer { held.done() }
         let entry = DispatchGroup()
         let answer = Mutex<Result<CommandResult, CommandError>?>(nil)
-        DispatchQueue.global().async(group: entry) {
+        Self.onThread(entry) {
             let result = held.store.execute("show.mode", args: ["on": true], role: .operator)
             answer.withLock { $0 = result }
         }
