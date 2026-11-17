@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Tests (B260): `scripts/test.sh` runs the suite in a fresh temporary `FANOUS_HOME`, so no test engine can write the real install's files (PR #NNN).
+
 ## 1.0.0-rc.14 — 2026-11-17
 
 - Fix: a trigger text with a long run of whitespace after `@` no longer freezes the cue editor for seconds; the rate part of the trigger regex is linear now (PR #377).

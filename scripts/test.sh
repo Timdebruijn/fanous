@@ -24,8 +24,14 @@ if [[ "${1:-}" == "--hosted" ]]; then
   hosted+='|UniverseSettingsEngineTests|WallCommandsTests|WebSocketHandshakeTests|WebSocketSessionTests'
   set -- --filter "FanousCoreTests|FanousEngineTests\.($hosted)/" "$@"
 fi
+# Test engines get a throwaway FANOUS_HOME, so an AppPaths write lands there and not in the real install (B240); a
+# FANOUS_HOME already set is kept.
+if [[ -z "${FANOUS_HOME:-}" ]]; then
+  export FANOUS_HOME="$(mktemp -d -t fanous-test-home)"
+  trap 'rm -rf "$FANOUS_HOME"' EXIT
+fi
 plugins="$(xcode-select -p)/usr/lib/swift/host/plugins/testing"
 if [[ -d "$plugins" ]]; then
-  exec swift test -Xswiftc -plugin-path -Xswiftc "$plugins" "$@"
+  set -- -Xswiftc -plugin-path -Xswiftc "$plugins" "$@"
 fi
-exec swift test "$@"
+swift test "$@"

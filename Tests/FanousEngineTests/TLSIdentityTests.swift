@@ -13,7 +13,7 @@ import Testing
 @Suite(.cleansTempFiles) struct TLSIdentityTests {
     /// The file storage is what an unsigned build (this test binary) gets: the data-protection keychain refuses a new key
     /// (errSecMissingEntitlement). Probed with a key under a tag of its own, removed again if the keychain took it; the
-    /// tests are then skipped rather than add a key under the production tag (`loadOrCreate` here has no FANOUS_HOME).
+    /// tests are then skipped rather than add a key under the production tag (a bare `swift test` has no FANOUS_HOME).
     static let fileStorage: Bool = {
         let tag = Data("org.fanous.tls.probe.\(UUID())".utf8)
         let attributes: [String: Any] = [

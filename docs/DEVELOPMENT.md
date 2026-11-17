@@ -46,6 +46,11 @@ every role open):
 FANOUS_HOME=$(mktemp -d) .build/debug/fanousd --foreground --no-network --port 18443
 ```
 
+`scripts/test.sh` runs the suite the same way: it sets `FANOUS_HOME` to a fresh
+temporary directory and removes it afterwards, so a test engine never writes the
+real install's files (B240, B260). A `FANOUS_HOME` already set is kept, and
+not removed.
+
 Multi-server sync on one Mac (DESIGN.md §23): two such engines, each with its
 own sync port in `settings.json` and the other's port as a unicast target (a
 unicast datagram reaches only one of two sockets sharing a port, and
