@@ -1212,8 +1212,8 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
-    /// Runs the checks and stores their items, unless a run that started later stored first: a show-mode entry on the
-    /// control queue can overlap a run on the readiness queue (B187). Returns this run's items, flagged by the
+    /// Runs the checks and stores their items, unless a run that started later stored first: a show-mode entry (on the
+    /// caller's thread, on `showEntryQueue`, B200) can overlap a run on the readiness queue (B187). Returns this run's items, flagged by the
     /// acknowledgements as they are when it lands (B163). `entering`: the run of `show.mode true`, show mode still off.
     private func checkReadiness(_ context: ReadinessContext, entering: Bool = false) -> [ReadinessItem] {
         let (run, acknowledged) = readiness.withLock { $0.begin() }
@@ -1511,7 +1511,7 @@ public final class Engine: @unchecked Sendable {
                 return old
             }
             if root != previous, !stopping.load(ordering: .relaxed) {
-                // here on the control queue, like show.mode: from now on show mode and new ingest jobs are refused
+                // here on the control queue, like show.mode's decision: from now on show mode and new ingest jobs are refused
                 librarySwitches.wrappingAdd(1, ordering: .relaxed)
                 librarySwitchesStarted.wrappingAdd(1, ordering: .relaxed)
                 ingestAPI?.holdEnqueue("the library root is changing; try again in a moment")
