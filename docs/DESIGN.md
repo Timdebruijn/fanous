@@ -3914,7 +3914,8 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   configuration travels as a `stream` text message (base64 avcC) whenever the
   parameter sets change.
 - Documents: `project` (schema, name, showLock, layerCount, patch, policy,
-  library.root, ui) autosaved to `project.json` 2 s after the last command;
+  library.root, ui) autosaved to `project.json` 2 s after the last command,
+  and a change not yet saved is written last in a clean stop (B243);
   `live` (engine, metrics, dmx, layers, ingest, library, clients, security)
   rebuilt at 10 Hz and diffed, so one patch per 100 ms carries only changes.
   Commands are diffed into forward/inverse patches (`StateStore`), which gives

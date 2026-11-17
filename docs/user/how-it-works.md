@@ -108,8 +108,8 @@ Three things the rule leaves out:
 Everything you set up is one **project** per Mac: the patch and the number of
 layers, Who controls, canvases, outputs, walls and mapping presets, the cue
 list, timecode and MIDI settings, the universe settings. Fanous saves it two
-seconds after your last change, and every setup change can be undone (⌘Z)
-and redone.
+seconds after your last change and at once when the engine stops, and every
+setup change can be undone (⌘Z) and redone.
 
 The engine also keeps **versions** of the project: one at every start and on
 entering show mode (unless nothing changed since the last one), one every 10

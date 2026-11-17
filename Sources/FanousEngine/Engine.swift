@@ -2020,7 +2020,8 @@ public final class Engine: @unchecked Sendable {
         dmx?.stop()
         // B243: last, once the server, the live feed, the library queue and queued OSC/MIDI commands change the project no
         // more; the control-queue turn lets a change being committed finish first, so its document is the one written.
-        // Not waited for: a command already running (B198) and an OSC project load on the versions queue (B244)
+        // Not waited for (B244): a command already running (B198), an OSC project load on the versions queue and the MIDI
+        // map id correction
         store?.queue.sync {}
         flushProjectSave()
         logger.info("fanousd stopped")

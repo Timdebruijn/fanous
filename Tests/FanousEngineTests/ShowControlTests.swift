@@ -955,8 +955,8 @@ struct ShowControlTests {
     }
 
     /// B243: saves still queued on the feed queue when the flush starts (here two show-lock changes, the first one
-    /// cancelled by the second) run before it, and nothing older lands after it. The old flush kept this order too: a
-    /// guard, not a reproduction.
+    /// cancelled by the second) run before it, and nothing older lands after it. The old flush cancelled the queued save
+    /// and wrote nothing.
     @Test func theFlushAtStopRunsAfterTheSavesInFlight() {
         let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger, showStateURL: nil)
         let file = tempFile("b243-inflight", ext: "json")
