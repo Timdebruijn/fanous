@@ -548,7 +548,7 @@ struct ShowControlTests {
     /// acknowledgement of an item that passes at that moment, so it blocked again at its next failure. Show mode is
     /// entered for real (power assertions for the test's duration), with no state file.
     @Test func aRepeatedShowModeEntryKeepsTheAcknowledgements() async throws {
-        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger, showStateURL: nil)
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
         let calls = Atomic<Int>(0)
         let state = Mutex(ReadinessItem.State.fail)
         engine.readinessCheck = { _, acknowledged in  // flagged as `Readiness.check` does
@@ -786,7 +786,7 @@ struct ShowControlTests {
     /// `start`; the readiness check passes once `gate` opens (a turnstile), or after `checkTime`. Show mode is entered
     /// for real (power assertions for the test's duration), with no state file; `changes` records enters and leaves.
     private final class HeldEntry: Sendable {
-        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger, showStateURL: nil)
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
         let store = StateStore(project: [:], logger: testLogger)
         let gate = Hold()
         let checks = Atomic<Int>(0)
@@ -934,7 +934,7 @@ struct ShowControlTests {
     /// of a started engine hold: the first change is written at once, a later one waits for the debounce, and a
     /// show-lock change is written at once.
     @Test func aNeverStartedEngineSavesNoProject() throws {
-        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger, showStateURL: nil)
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
         engine.projectChanged(["name": "b240"])
         engine.projectChanged(["name": "b240", "showLock": true])
         engine.feedQueue.sync {}
@@ -955,10 +955,35 @@ struct ShowControlTests {
         #expect(savedName() == "locked", "the show-lock change was not written at once")
     }
 
+    /// B241, B242: an engine that never started knows no show-state file and no restart marker, so entering show mode
+    /// writes no state and a stop removes no marker. The old code used `AppPaths.showStateFile` and
+    /// `AppPaths.restartPendingFile`: without FANOUS_HOME, the installed engine's. The `#require`s end the test before
+    /// it enters or stops if the engine knows a file; the files themselves are checked only with FANOUS_HOME set, so a
+    /// run without it reads, writes or removes nothing under the real home.
+    @Test func aNeverStartedEngineTouchesNoShowStateOrRestartMarker() throws {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
+        try #require(engine.showMode.stateFile == nil)
+        try #require(engine.restartPendingFile == nil)
+        let isolated = AppPaths.homeOverride != nil
+        if isolated {
+            try FileManager.default.createDirectory(at: AppPaths.applicationSupport, withIntermediateDirectories: true)
+            try Data().write(to: AppPaths.restartPendingFile)
+        }
+        defer { if isolated { try? FileManager.default.removeItem(at: AppPaths.restartPendingFile) } }
+        engine.showMode.enter()
+        if isolated { #expect(!FileManager.default.fileExists(atPath: AppPaths.showStateFile.path), "entering wrote show-state.json") }
+        engine.stop()
+        #expect(!engine.showMode.isOn)
+        if isolated {
+            #expect(FileManager.default.fileExists(atPath: AppPaths.restartPendingFile.path), "the stop took the restart marker")
+            #expect(!FileManager.default.fileExists(atPath: AppPaths.showStateFile.path), "the stop wrote show-state.json")
+        }
+    }
+
     /// B243: the flush at stop writes the newest change the 2 s autosave has not written yet, at once and once; the
     /// debounced save firing afterwards (`perform()` stands in for its timer) and a second flush write nothing.
     @Test func theFlushAtStopWritesTheUnsavedChangeOnce() throws {
-        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger, showStateURL: nil)
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
         let file = tempFile("b243-project", ext: "json")
         engine.projectFile = file
         defer { engine.autosave?.cancel() }
@@ -983,7 +1008,7 @@ struct ShowControlTests {
     /// flush and stays there. The pass does not depend on when the gate opens; the old flush's failure here does (it
     /// cancelled the queued newer save when it ran before the gate opened).
     @Test func theFlushAtStopRunsAfterTheSavesInFlight() {
-        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger, showStateURL: nil)
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
         let file = tempFile("b243-inflight", ext: "json")
         engine.projectFile = file
         defer { engine.autosave?.cancel() }
@@ -1113,7 +1138,7 @@ struct ShowControlTests {
     /// through `runCommand`), and it does not come back when show mode is left. Show mode is entered for real (power
     /// assertions for the test's duration), with no state file.
     @Test func aShowModeRefusalGoesWhenShowModeIsOn() async throws {
-        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger, showStateURL: nil)
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
         engine.readinessCheck = { _, _ in [] }
         let store = StateStore(project: [:], logger: testLogger)
         store.register(CommandSpec(name: "show.mode", role: .operator, mutatesConfig: false, undoable: false, summary: "") { _, _ in
