@@ -18,14 +18,21 @@ export const BANNER_MS = 10_000;
 /** an Undo toast stays this long */
 export const TOAST_MS = 8_000;
 
-/** The next step for a command refusal code (engine `CommandError` codes), or '' for an unknown one. */
-export function errorHint(code: string): string {
+/** Why show mode is refused while the library root switches (B51): not a readiness item, it passes by itself. */
+export const ROOT_SWITCH_WHY = 'the library root is being switched; send it again in a few seconds';
+
+/**
+ * The next step for a command refusal code (engine `CommandError` codes), or '' for an unknown one. `message` is the
+ * engine's text: a `notReady` for `libraryRootChanging` is the root switch (B239), not a failed readiness check.
+ */
+export function errorHint(code: string, message = ''): string {
   switch (code) {
     case 'showLocked':
       return 'Show lock is on — press L or the Locked tag in the status bar to unlock (programmer).';
     case 'forbidden':
       return 'Not allowed for this role — click the role tag in the status bar and log in as programmer.';
     case 'notReady':
+      if (message === 'readiness: libraryRootChanging') return `Show mode was refused: ${ROOT_SWITCH_WHY}.`;
       return 'Show mode is blocked by failed readiness checks — open System to fix or acknowledge them.';
     case 'nothingToUndo':
       return 'Nothing left to undo.';

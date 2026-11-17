@@ -133,6 +133,9 @@ On an iPad in either orientation everything is there.
     as programmer."
   - "Show mode is blocked by failed readiness checks — open System to fix or
     acknowledge them."
+  - "Show mode was refused: the library root is being switched; send it again
+    in a few seconds." (entering show mode while a library root change is
+    still scanning; it needs nothing fixed)
   - "Nothing left to undo."
   - "Something changed since — undo no longer applies. Check the current
     values and redo the edit by hand." (another browser changed the same thing

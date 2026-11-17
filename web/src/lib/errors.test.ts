@@ -11,4 +11,14 @@ describe('errors', () => {
     expect(errorHint('notReady')).toContain('System');
     expect(errorHint('whatever')).toBe('');
   });
+  it('keeps the readiness hint byte for byte for a real readiness refusal', () => {
+    const hint = 'Show mode is blocked by failed readiness checks — open System to fix or acknowledge them.';
+    expect(errorHint('notReady')).toBe(hint);
+    expect(errorHint('notReady', 'readiness: outputs, spotlight')).toBe(hint);
+  });
+  it('does not send a library root switch to System (B239)', () => {
+    const hint = errorHint('notReady', 'readiness: libraryRootChanging');
+    expect(hint).toBe('Show mode was refused: the library root is being switched; send it again in a few seconds.');
+    expect(hint).not.toContain('readiness');
+  });
 });
