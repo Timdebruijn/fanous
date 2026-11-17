@@ -621,6 +621,63 @@ struct ShowControlTests {
         #expect(seenByThirdRun.withLock { $0 } == ["new"], "the older run stored its items over the show-mode entry's")
     }
 
+    /// B197: a library volume that stops answering (a stalled network mount) holds the checks for the volume timeout
+    /// only: disk and library fail, Spotlight is manual, and a second check joins the hung read instead of starting
+    /// another thread. Once the read returns, the next check reads the volume again.
+    @Test func aHungLibraryVolumeReadTimesOut() throws {
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        let reads = Atomic<Int>(0)
+        var context = ReadinessContext()
+        context.libraryRoot = "/b197-\(UUID().uuidString)"
+        context.volumeTimeout = 0.2
+        context.readVolume = { _ in
+            reads.add(1, ordering: .relaxed)
+            _ = gate.wait(timeout: .now() + 10)
+            gate.signal()  // a turnstile: once open, every later read passes at once
+            return Readiness.libraryVolume(NSHomeDirectory())
+        }
+        for _ in 0..<2 {
+            let start = ContinuousClock.now
+            let items = Readiness.check(context, acknowledged: [])
+            #expect(ContinuousClock.now - start < .seconds(2), "the check waited for the hung volume read")
+            let item = { (id: String) in items.first { $0.id == id } }
+            #expect(item("disk")?.state == .fail && item("disk")?.detail == "library volume not answering")
+            #expect(item("library")?.state == .fail && item("library")?.detail == "library volume not answering")
+            #expect(item("spotlight")?.state == .manual && item("spotlight")?.detail == "library volume not answering")
+        }
+        #expect(reads.load(ordering: .relaxed) == 1, "a second check started another read of the hung volume")
+        gate.signal()
+        #expect(Readiness.check(context, acknowledged: []).first { $0.id == "disk" }?.detail != "library volume not answering")
+    }
+
+    /// B197: readiness requests behind a hung run (the 30 s timer, Run checks) coalesce into one waiting run, and a
+    /// request while that run is running still leads to one more run after it.
+    @Test func readinessRequestsBehindAHungRunCoalesce() async throws {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
+        let first = DispatchSemaphore(value: 0), second = DispatchSemaphore(value: 0)
+        let calls = Atomic<Int>(0)
+        engine.readinessCheck = { _, _ in
+            switch calls.add(1, ordering: .relaxed).newValue {
+            case 1: _ = first.wait(timeout: .now() + 10)
+            case 2: _ = second.wait(timeout: .now() + 10)
+            default: break
+            }
+            return []
+        }
+        defer { first.signal(); second.signal() }
+        engine.runReadiness()
+        #expect(await waitUntil { calls.load(ordering: .relaxed) == 1 }, "the first run started")
+        for _ in 0..<50 { engine.runReadiness() }
+        first.signal()
+        #expect(await waitUntil { calls.load(ordering: .relaxed) == 2 }, "no run after the hung one")
+        engine.runReadiness()  // a click while the coalesced run runs
+        second.signal()
+        #expect(await waitUntil { calls.load(ordering: .relaxed) >= 3 }, "the click during a run led to no run")
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(calls.load(ordering: .relaxed) == 3, "\(calls.load(ordering: .relaxed)) runs for 52 requests")
+    }
+
     /// B198: an OSC command reaches the engine on the DMX queue; a show-mode entry whose readiness checks hang must not
     /// hold that queue (Art-Net, sACN, OSC parameters), and commands still run one after another in arrival order.
     /// Wires `onCommand` to the hand-over the way `Engine.start` does; the UDP receive and `start` itself are not run.
