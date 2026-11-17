@@ -303,12 +303,15 @@ public struct ReadinessContext: Sendable {
     /// permission LTC needs (B137, as the camera's).
     public var ltcInUse = false
     public var microphonePermission = "granted"
+    /// The library volume's read and how long a check waits for it (B197); a test replaces them with a read that hangs.
+    var readVolume: @Sendable (String) -> Readiness.LibraryVolume = Readiness.libraryVolume
+    var volumeTimeout = Readiness.toolTimeout
     public init() {}
 }
 
 public enum Readiness {
     /// All items; the slow probes (power, disk, volume, Spotlight, Time Machine, updates, display sleep) run here too,
-    /// each external tool for at most `toolTimeout`. The engine runs it on its readiness queue, and on the control queue
+    /// each external tool and the library volume's read for at most `toolTimeout`. The engine runs it on its readiness queue, and on the control queue
     /// only to enter show mode, which needs the answer (B187).
     public static func check(_ context: ReadinessContext, acknowledged: Set<String>) -> [ReadinessItem] {
         var items: [ReadinessItem] = []
@@ -321,8 +324,12 @@ public enum Readiness {
         add("power", "On AC power", power.onAC, power.detail, "Connect the power adapter")
         let thermal = ProcessInfo.processInfo.thermalState
         add("thermal", "Thermal state nominal", thermal == .nominal || thermal == .fair, thermal == .nominal ? "nominal" : "\(thermal)", "Let the machine cool down, improve airflow")
-        let disk = freeDisk(at: context.libraryRoot)
-        add("disk", "Free disk > 10 %", disk.fraction > 0.10, String(format: "%.0f %% free (%.1f GB)", disk.fraction * 100, disk.freeGB), "Free space on the library volume")
+        // nil: the volume has not answered in time (a stalled network mount, B197); disk and library fail, Spotlight is manual
+        let volume = readVolume(context.libraryRoot, timeout: context.volumeTimeout, read: context.readVolume)
+        add(
+            "disk", "Free disk > 10 %", volume.map { $0.disk.fraction > 0.10 } ?? false,
+            volume.map { String(format: "%.0f %% free (%.1f GB)", $0.disk.fraction * 100, $0.disk.freeGB) } ?? notAnswering,
+            volume == nil ? "Reconnect the library volume, or copy the library to the internal disk" : "Free space on the library volume")
         let memory = memoryHeadroom()
         add("memory", "Memory headroom", memory > 0.15, String(format: "%.0f %% free", memory * 100), "Quit other applications")
         add("dmx", "All patched universes receiving", context.universesSilent.isEmpty, context.universesSilent.isEmpty ? "all receiving" : "silent: \(context.universesSilent.joined(separator: ", "))", "Check the console's output and the network")
@@ -379,11 +386,13 @@ public enum Readiness {
             "maskimages", "Image masks found", context.maskImagesMissing.isEmpty,
             context.maskImagesMissing.isEmpty ? "found, or none in use" : "missing, covering nothing: \(context.maskImagesMissing.joined(separator: "; "))",
             "Put the greyscale file in the library under that folder and file number, or change the mask (Outputs › Warp & Slices › Mask)", failing: .warn)
-        let local = volumeIsLocal(context.libraryRoot)
-        add("library", "Library on a local volume", local, local ? "local" : "network or removable volume", "Copy the library to the internal disk")
+        let local = volume?.local ?? false
+        add("library", "Library on a local volume", local, volume == nil ? notAnswering : (local ? "local" : "network or removable volume"), "Copy the library to the internal disk")
         // Spotlight Privacy exclusions are root-only (`mdutil -P`, .Spotlight-V100), so the item reads the volume switch only (B182)
-        let spotlight = spotlightIndexing(context.libraryRoot)
-        add("spotlight", "Spotlight indexing off for the library volume", spotlight.map { !$0 }, spotlight == nil ? "unknown" : (spotlight! ? "indexing enabled" : "off"), "sudo mdutil -i off <volume>")
+        let spotlight = volume.flatMap { spotlightIndexing(volume: $0.volume) }
+        add(
+            "spotlight", "Spotlight indexing off for the library volume", spotlight.map { !$0 },
+            volume == nil ? notAnswering : (spotlight == nil ? "unknown" : (spotlight! ? "indexing enabled" : "off")), "sudo mdutil -i off <volume>")
         let updates = automaticUpdatesEnabled()
         add("updates", "Automatic macOS updates off", updates.map { !$0 }, updates == nil ? "unknown" : (updates! ? "automatic install enabled" : "off"), "System Settings › General › Software Update › Automatic updates")
         let backup = timeMachineRunning()
@@ -453,6 +462,57 @@ public enum Readiness {
         return (values.volumeIsLocal ?? true) && !(values.volumeIsRemovable ?? false)
     }
 
+    /// What the disk, library and Spotlight items read from the library's volume.
+    struct LibraryVolume: Sendable {
+        var disk: (fraction: Double, freeGB: Double)
+        var local: Bool
+        /// The volume's mount point, for `mdutil`.
+        var volume: String
+    }
+
+    static let notAnswering = "library volume not answering"
+
+    /// Every filesystem call the checks make on the library path; on a network mount that stopped answering each one
+    /// can block in the kernel for minutes.
+    static func libraryVolume(_ path: String) -> LibraryVolume {
+        let url = URL(fileURLWithPath: path.isEmpty ? NSHomeDirectory() : path)
+        let volume = (try? url.resourceValues(forKeys: [.volumeURLKey]))?.volume ?? URL(fileURLWithPath: "/")
+        return LibraryVolume(disk: freeDisk(at: path), local: volumeIsLocal(path), volume: volume.path)
+    }
+
+    /// A volume read in flight, which a later check of the same path joins instead of starting another.
+    final class VolumeRead: Sendable {
+        let done = DispatchGroup()
+        let result = Mutex<LibraryVolume?>(nil)
+    }
+
+    static let volumeReads = Mutex<[String: VolumeRead]>([:])
+
+    /// `read(path)` on a helper thread; nil when it has not returned within `timeout` (B197). A hung filesystem call
+    /// cannot be killed, so its thread stays until the kernel gives up; every later check of the same path joins that
+    /// read and waits at most `timeout` again rather than starting another. So at most one thread per library path is
+    /// ever stuck, however long show mode runs the checks every 30 s.
+    static func readVolume(_ path: String, timeout: Double, read: @escaping @Sendable (String) -> LibraryVolume) -> LibraryVolume? {
+        let (pending, start) = volumeReads.withLock { reads in
+            if let pending = reads[path] { return (pending, false) }
+            let pending = VolumeRead()
+            pending.done.enter()
+            reads[path] = pending
+            return (pending, true)
+        }
+        if start {
+            // its own thread, not the global queue: with the pool's threads blocked elsewhere a queued read never starts
+            Thread.detachNewThread {
+                let volume = read(path)
+                pending.result.withLock { $0 = volume }
+                volumeReads.withLock { $0[path] = nil }
+                pending.done.leave()
+            }
+        }
+        guard pending.done.wait(timeout: .now() + timeout) == .success else { return nil }
+        return pending.result.withLock { $0 }
+    }
+
     /// How long a probe tool may take (B187). Measured on an M1 Pro, 2026-11-16, 20 runs each at load average 6–11:
     /// `mdutil -s` 8–16 ms, `tmutil status` 5–10 ms, `pmset -g` 8–16 ms.
     static let toolTimeout: Double = 3
@@ -483,10 +543,8 @@ public enum Readiness {
     }
 
     /// `mdutil -s` for the library's volume; nil when it cannot be read.
-    static func spotlightIndexing(_ path: String) -> Bool? {
-        let url = URL(fileURLWithPath: path.isEmpty ? NSHomeDirectory() : path)
-        let volume = (try? url.resourceValues(forKeys: [.volumeURLKey]))?.volume ?? URL(fileURLWithPath: "/")
-        guard let output = run("/usr/bin/mdutil", ["-s", volume.path]) else { return nil }
+    static func spotlightIndexing(volume: String) -> Bool? {
+        guard let output = run("/usr/bin/mdutil", ["-s", volume]) else { return nil }
         if output.contains("Indexing enabled") { return true }
         if output.contains("Indexing disabled") || output.contains("No index") { return false }
         return nil

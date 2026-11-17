@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine: the readiness checks read the library volume for at most 3 s, so a network mount that stopped answering
+  reads "library volume not answering" instead of holding the checks and show mode's entry, and checks asked for
+  while one runs wait as one (B197) (PR #361).
 - Release: 1.0.0-rc.10 is on GitHub as a pre-release with the signed, notarized dmg, built from main 8531e6c
   (PR #359).
 

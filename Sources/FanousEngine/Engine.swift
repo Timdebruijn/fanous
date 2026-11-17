@@ -99,6 +99,8 @@ public final class Engine: @unchecked Sendable {
     /// The readiness runs of the timer, `readiness.run` and the display syncs, one at a time (B187): a probe at its
     /// timeout holds neither the feed queue (live publish, DMX monitor, autosave, `showMode.touch()`) nor the control queue.
     private let readinessQueue = DispatchQueue(label: "org.fanous.readiness", qos: .utility)
+    /// The context of the run waiting on `readinessQueue`, nil when none waits (B197).
+    private let readinessWaiting = Mutex<ReadinessContext?>(nil)
     /// The checks; a test replaces them with a probe that hangs.
     var readinessCheck: @Sendable (ReadinessContext, Set<String>) -> [ReadinessItem] = Readiness.check
     private var readinessTimer: DispatchSourceTimer?
@@ -1186,10 +1188,18 @@ public final class Engine: @unchecked Sendable {
         return context
     }
 
-    /// On the readiness queue: the probes shell out (mdutil, tmutil, pmset).
+    /// On the readiness queue: the probes shell out (mdutil, tmutil, pmset). Coalesced (B197): while a run waits on the
+    /// queue, a new request only replaces the context it will check, so a slow run has at most one run behind it, and
+    /// that one checks the context of the last request. A request while a run is running (none waiting) queues one.
     func runReadiness() {
         let context = readinessContext()
+        let waiting = readinessWaiting.withLock { waiting in
+            defer { waiting = context }
+            return waiting != nil
+        }
+        if waiting { return }
         readinessQueue.async { [self] in
+            guard let context = readinessWaiting.withLock({ waiting in defer { waiting = nil }; return waiting }) else { return }
             _ = checkReadiness(context)
             publishReadiness()
         }
