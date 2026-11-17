@@ -908,7 +908,8 @@ struct ShowControlTests {
     /// B200: a library root switch that starts and ends while an entry's checks run refuses the entry, which checked
     /// against the old root (B51); before, the checks held the control queue, where a switch starts. The switch is
     /// started as `project.set /library/root` starts it (`projectChanged` on the control queue); the engine has no
-    /// library, so it ends at once on the library queue, as a fast real switch would.
+    /// library, so it ends at once on the library queue, as a fast real switch would. The test waits for that end on the
+    /// library queue and checks no switch runs any more, so only the started count can refuse the entry (B258).
     @Test func aLibraryRootSwitchDuringAnEntryRefusesIt() async throws {
         let held = HeldEntry()
         defer { held.done() }
@@ -920,7 +921,8 @@ struct ShowControlTests {
         }
         #expect(await waitUntil { held.checks.load(ordering: .relaxed) == 1 })
         held.store.queue.sync { held.engine.projectChanged(["library": ["root": "/tmp/fanous-b200-root"]]) }
-        try await Task.sleep(for: .milliseconds(200))  // the switch runs to its end on the library queue
+        try await offPool { held.engine.libraryQueue.sync {} }  // the switch has run to its end
+        #expect(held.engine.librarySwitches.load(ordering: .relaxed) == 0, "a switch still runs: the refusal would not be the started count's")
         held.gate.signal()
         #expect(try await offPool { entry.wait(timeout: .now() + 5) } == .success)
         #expect(answer.withLock { $0 } == .failure(CommandError("notReady", "readiness: libraryRootChanging")), "the entry ignored the switch")
