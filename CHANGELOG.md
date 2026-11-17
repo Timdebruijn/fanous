@@ -12,6 +12,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Release: 1.0.0-rc.13 is on GitHub as a pre-release with the signed, notarized dmg, built from main 53387a2
   (PR #376).
+- Tests (B241, B242): an engine that never started writes no show-state file and removes no restart
+  marker; it knows both only once it has started (PR #N).
 
 ## 1.0.0-rc.13 — 2026-11-17
 
