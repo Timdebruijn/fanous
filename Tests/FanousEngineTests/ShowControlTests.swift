@@ -955,6 +955,53 @@ struct ShowControlTests {
         #expect(savedName() == "locked", "the show-lock change was not written at once")
     }
 
+    /// B243: the flush at stop writes the newest change the 2 s autosave has not written yet, at once and once; the
+    /// debounced save firing afterwards (`perform()` stands in for its timer) and a second flush write nothing.
+    @Test func theFlushAtStopWritesTheUnsavedChangeOnce() throws {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger, showStateURL: nil)
+        let file = tempFile("b243-project", ext: "json")
+        engine.projectFile = file
+        defer { engine.autosave?.cancel() }
+        let savedName = { (try? JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: file)))?["name"] }
+        engine.projectChanged(["name": "first", "showLock": false])  // the first save is at once (B240's test)
+        engine.feedQueue.sync {}
+        try FileManager.default.removeItem(at: file)
+        engine.flushProjectSave()
+        #expect(!FileManager.default.fileExists(atPath: file.path), "a flush with nothing unsaved wrote the project")
+        engine.projectChanged(["name": "older", "showLock": false])
+        engine.projectChanged(["name": "newer", "showLock": false])
+        engine.flushProjectSave()
+        #expect(savedName() == "newer", "the flush did not write the last unsaved change")
+        try FileManager.default.removeItem(at: file)
+        engine.autosave?.perform()
+        engine.flushProjectSave()
+        #expect(!FileManager.default.fileExists(atPath: file.path), "the change was written again after the flush")
+    }
+
+    /// B243: with saves still queued on the feed queue when the flush starts (two show-lock changes; the second cancels
+    /// the first before it runs, so no older save is truly in flight here), the newest document is on disk after the
+    /// flush and stays there. The pass does not depend on when the gate opens; the old flush's failure here does (it
+    /// cancelled the queued newer save when it ran before the gate opened).
+    @Test func theFlushAtStopRunsAfterTheSavesInFlight() {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger, showStateURL: nil)
+        let file = tempFile("b243-inflight", ext: "json")
+        engine.projectFile = file
+        defer { engine.autosave?.cancel() }
+        let savedName = { (try? JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: file)))?["name"] }
+        engine.projectChanged(["name": "first", "showLock": false])
+        engine.feedQueue.sync {}
+        let gate = DispatchSemaphore(value: 0)
+        engine.feedQueue.async { _ = gate.wait(timeout: .now() + 10) }  // holds the queue: the saves below wait behind it
+        engine.projectChanged(["name": "locked", "showLock": true])
+        engine.projectChanged(["name": "newer", "showLock": true])
+        // opens once the flush below waits on the queue too; the order holds whenever it opens
+        DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(50)) { gate.signal() }
+        engine.flushProjectSave()
+        #expect(savedName() == "newer", "the flush did not end with the newest document on disk")
+        engine.feedQueue.sync {}
+        #expect(savedName() == "newer", "an older document landed after the flush")
+    }
+
     /// B198: `1, 0, 1` ends on, also when it arrives while an entry runs; a `1` during that entry is dropped (it answers
     /// for it). The store's `show.mode` only records here, so show mode is not really entered.
     @Test func showModeOnOffOnDuringARunningEntryEndsOn() async throws {

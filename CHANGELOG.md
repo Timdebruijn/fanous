@@ -12,6 +12,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Tests (B245): the show-mode tests' held readiness checks no longer release themselves after 10 s, so a starved
   CI machine makes them slow, not wrong (PR #367).
+- Engine (B243): a project change made less than 2 s before a clean stop (Stop Engine, Stop Engine and Quit,
+  Restart Engine, logout) is saved; the flush at stop never wrote anything (PR #366).
 - Tests (B240): an engine that never started writes no project file; `scripts/test.sh` no longer overwrites
   the project of an installed Fanous (PR #365).
 - Release: 1.0.0-rc.11 is on GitHub as a pre-release with the signed, notarized dmg, built from main 3471202
