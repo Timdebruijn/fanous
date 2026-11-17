@@ -904,6 +904,28 @@ struct ShowControlTests {
         #expect(!held.engine.showMode.isOn)
     }
 
+    /// B240: an engine that never started knows no project file, so a project change (a show-lock change, saved at
+    /// once, or any other, saved after 2 s) schedules no save. The old code saved to `AppPaths.projectFile`: without
+    /// FANOUS_HOME, the installed engine's project, 2 s after the test above. With a file, as after `start`, a lock
+    /// change is written at once and another change waits for the debounce.
+    @Test func aNeverStartedEngineSavesNoProject() throws {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger, showStateURL: nil)
+        engine.projectChanged(["name": "b240"])
+        engine.projectChanged(["name": "b240", "showLock": true])
+        engine.feedQueue.sync {}
+        #expect(engine.autosave == nil, "a never-started engine scheduled a project save")
+        let file = tempFile("b240-project", ext: "json")
+        engine.projectFile = file
+        defer { engine.autosave?.cancel() }  // the debounced save below would land after the temp file is removed
+        let savedName = { (try? JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: file)))?["name"] }
+        engine.projectChanged(["name": "locked", "showLock": true])
+        engine.feedQueue.sync {}
+        #expect(savedName() == "locked", "the lock change was not written at once")
+        engine.projectChanged(["name": "renamed", "showLock": true])
+        engine.feedQueue.sync {}
+        #expect(engine.autosave != nil && savedName() == "locked", "not debounced")
+    }
+
     /// B198: `1, 0, 1` ends on, also when it arrives while an entry runs; a `1` during that entry is dropped (it answers
     /// for it). The store's `show.mode` only records here, so show mode is not really entered.
     @Test func showModeOnOffOnDuringARunningEntryEndsOn() async throws {

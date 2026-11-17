@@ -139,7 +139,10 @@ public final class Engine: @unchecked Sendable {
     private var stateServer: StateServer?
     private var liveTimer: DispatchSourceTimer?
     private var dmxTimer: DispatchSourceTimer?
-    private var autosave: DispatchWorkItem?
+    private(set) var autosave: DispatchWorkItem?
+    /// The file `start` loaded the project from; nil before, so an engine that never started (a test) writes no
+    /// project file (B240). A test sets a temporary one.
+    var projectFile: URL?
     /// B23: project versions; their file work (start, show mode, 10-minute timer, OSC load) runs on `versionsQueue`.
     private var versions: ProjectVersions?
     private var versionTimer: DispatchSourceTimer?
@@ -223,6 +226,7 @@ public final class Engine: @unchecked Sendable {
         // count, canvas, source policy and library root (DESIGN.md §2.4); a scene file (development, bench) wins,
         // and its canvas is mirrored into the project so the UI shows what renders.
         var loadedProject = ProjectDocument.load(from: AppPaths.projectFile)
+        projectFile = AppPaths.projectFile
         if loadedProject == nil {
             // keep an unreadable file (damaged, another schema) before the new project's autosave writes over it
             do {
@@ -1604,11 +1608,12 @@ public final class Engine: @unchecked Sendable {
             Task { @MainActor in self.applyCanvasUse(rebuildLayerPreviews: layersChanged) }
         }
         autosave?.cancel()
+        guard let projectFile else { return }  // never started: no file to write (B240)
         let logger = logger
         let showLock = document["showLock"]?.bool ?? false
         let work = DispatchWorkItem { [weak self] in
             do {
-                try ProjectDocument.save(document, to: AppPaths.projectFile)
+                try ProjectDocument.save(document, to: projectFile)
                 self?.savedShowLock.withLock { $0 = showLock }
             } catch { logger.error("autosave failed", metadata: ["error": "\(error)"]) }
         }
