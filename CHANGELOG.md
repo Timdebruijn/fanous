@@ -12,7 +12,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Release: 1.0.0-rc.12 is on GitHub as a pre-release with the signed, notarized dmg, built from main 5b0bf6a
   (PR #369).
-- Dependencies: swift-log 1.16.2 to 1.17.0 (PR #N); Swift 6.2.3 is now the minimum, as 1.17.0 uses `@nonexhaustive`.
+- Dependencies: swift-log 1.16.2 to 1.17.0 (PR #373); Swift 6.2.3 is now the minimum, as 1.17.0 uses `@nonexhaustive`.
 
 ## 1.0.0-rc.12 — 2026-11-17
 
