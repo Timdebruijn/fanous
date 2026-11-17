@@ -58,7 +58,8 @@ public final class Engine: @unchecked Sendable {
     private var library: LibraryIndex? { libraryBox.withLock { $0 } }
     private var ingest: IngestQueue?
     private var auth: RoleAuth?
-    private var store: StateStore?
+    /// Internal: a test sets it so a show-mode entry decides on that store's queue, as after `start` (B200).
+    var store: StateStore?
     private var coordinator: OutputCoordinator?
     private var displayManager: DisplayManager?
     private let displays = Mutex<[DisplayInfo]>([])
@@ -93,7 +94,8 @@ public final class Engine: @unchecked Sendable {
     private var lastMIDISettings = MIDISettings()
     private var cues: CueRunner?
     private var lastCues = CueList()
-    private let showMode: ShowModeController
+    /// Internal: a test reads and watches it (B200).
+    let showMode: ShowModeController
     /// The last run's items, the acknowledgements (B163) and the run numbers (B187).
     let readiness = Mutex(ReadinessLedger())
     /// The readiness runs of the timer, `readiness.run` and the display syncs, one at a time (B187): a probe at its
@@ -152,6 +154,14 @@ public final class Engine: @unchecked Sendable {
     private let commandsStopped = Atomic<Bool>(false)
     /// A `show.mode true` from OSC or MIDI is queued or running; a repeat meanwhile is dropped (B198).
     private let showEntryPending = Atomic<Bool>(false)
+    /// B200: OSC and MIDI `show.mode` commands run here, in their arrival order, so an entry's checks do not hold the
+    /// cue commands on `commandQueue`.
+    private let showModeQueue = DispatchQueue(label: "org.fanous.commands.show", qos: .userInitiated)
+    /// B200: show-mode entries run one at a time, whatever their source: one that waited finds show mode on and runs
+    /// no checks (B163).
+    private let showEntryQueue = DispatchQueue(label: "org.fanous.show.entry", qos: .userInitiated)
+    /// B200: leaves so far; an entry that arrived before a leave does not enter after it.
+    private let showLeaves = Atomic<Int>(0)
     public let metrics = MetricsRing()
 
     /// The command registry as `fanousd protocol-dts` sees it: no engine needed.
@@ -821,7 +831,8 @@ public final class Engine: @unchecked Sendable {
         ]
     }
 
-    /// B198: the DMX and MIDI queues hand a command over and go on; it runs on `commandQueue` after the ones before it.
+    /// B198: the DMX and MIDI queues hand a command over and go on; it runs on `commandQueue` after the ones before it,
+    /// a `show.mode` on `showModeQueue` after the `show.mode`s before it (B200).
     /// Measured in a release build: 3 allocations per command on the handing queue, at operator rate; the synchronous
     /// `store.execute` before allocated 4 for a refused command. Parameter values never get here.
     /// A refused `show.mode true` costs a whole readiness run, so a console repeating it would queue faster than it
@@ -829,13 +840,17 @@ public final class Engine: @unchecked Sendable {
     /// so `1, 0, 1` still ends on; the finished entry's clear can be stale and let one more through. Cue, lock and
     /// timecode commands are never dropped.
     func handOver(_ command: OSCCommand, to store: StateStore) {
+        var queue = commandQueue
         switch command {
         case .showMode(true):
             guard showEntryPending.compareExchange(expected: false, desired: true, ordering: .relaxed).exchanged else { return }
-        case .showMode(false): showEntryPending.store(false, ordering: .relaxed)
+            queue = showModeQueue
+        case .showMode(false):
+            showEntryPending.store(false, ordering: .relaxed)
+            queue = showModeQueue
         default: break
         }
-        commandQueue.async { [weak self] in
+        queue.async { [weak self] in
             guard let self, !self.commandsStopped.load(ordering: .relaxed) else { return }
             self.runCommand(command, on: store)
             if case .showMode(true) = command { self.showEntryPending.store(false, ordering: .relaxed) }
@@ -1233,25 +1248,40 @@ public final class Engine: @unchecked Sendable {
         store?.setLive(showLive(), at: JSONPointer(tokens: ["show"]))
     }
 
-    /// `show.mode`: entering runs the checks synchronously and refuses with the blocking item ids.
+    /// `show.mode`. Leaving runs on the control queue. Entering (B200) is called off it, by the command's `prepare` or on
+    /// `showModeQueue`: one entry at a time, the checks with the control queue free, the decision on it; refused with the
+    /// blocking item ids. A leave that arrives during an entry wins: the entry answers nil without entering, as if it had
+    /// entered and been left (a refusal still answers as one).
     func setShowMode(_ on: Bool) -> [String]? {
         if !on {
+            showLeaves.add(1, ordering: .relaxed)
             if showMode.isOn { readiness.withLock { $0.leaveShow() } }  // B163: an acknowledgement holds for one show
             showMode.leave()
             publishReadiness()
             return nil
         }
-        // already on: a console that repeats /fanous/show/mode 1 must not run the entry checks again, which drop an
-        // acknowledgement on a pass as if show mode were off
-        if showMode.isOn { return nil }
-        if librarySwitches.load(ordering: .relaxed) > 0 { return ["libraryRootChanging"] }  // B51: a moment, not a readiness item
-        // decided on this run's items as the acknowledgements are when it lands (a run on the readiness queue may have
-        // stored meanwhile); show mode is still off here, so an item that passes now drops its acknowledgement: it
-        // needs none to enter
-        let blocking = checkReadiness(readinessContext(), entering: true).filter(\.blocks).map(\.id)
-        if !blocking.isEmpty { return blocking }
-        showMode.enter()
-        return nil
+        let arrived = showLeaves.load(ordering: .relaxed)
+        if let store { dispatchPrecondition(condition: .notOnQueue(store.queue)) }
+        return showEntryQueue.sync {
+            if showLeaves.load(ordering: .relaxed) != arrived { return nil }  // left while this one waited
+            // already on: a console that repeats /fanous/show/mode 1 must not run the entry checks again, which drop an
+            // acknowledgement on a pass as if show mode were off
+            if showMode.isOn { return nil }
+            if librarySwitches.load(ordering: .relaxed) > 0 { return ["libraryRootChanging"] }  // B51: a moment, not a readiness item
+            // decided on this run's items as the acknowledgements are when it lands (a run on the readiness queue may
+            // have stored meanwhile); show mode is still off here (only an entry enters, and this is the only one), so an
+            // item that passes now drops its acknowledgement: it needs none to enter
+            let blocking = checkReadiness(readinessContext(), entering: true).filter(\.blocks).map(\.id)
+            // on the control queue, where a library root change starts (B51) and a leave counts
+            let decide = { [self] () -> [String]? in
+                if librarySwitches.load(ordering: .relaxed) > 0 { return ["libraryRootChanging"] }
+                if !blocking.isEmpty { return blocking }
+                if showLeaves.load(ordering: .relaxed) != arrived || showMode.isOn { return nil }
+                showMode.enter()
+                return nil
+            }
+            return store.map { $0.queue.sync(execute: decide) } ?? decide()  // no store: a test's engine that never started
+        }
     }
 
     /// Show mode on: the bound outputs' desired modes (first output per display wins); off: the previous modes back.

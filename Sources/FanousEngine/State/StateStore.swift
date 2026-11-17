@@ -26,6 +26,9 @@ public struct CommandSpec: Sendable {
     public var replayCheck: (@Sendable (JSONPatch, JSONPatch, JSONValue) throws -> Void)?
     /// What makes two calls "the same edit" for undo coalescing (a slider drag), with the args' `id`; nil = their `path`.
     public var coalesceKey: (@Sendable (JSONValue) -> String?)?
+    /// Runs before `run` on the caller's thread, with the control queue free, once the role is checked; what it returns
+    /// is `run`'s args. For a slow part that must not hold the queue: `show.mode`'s readiness checks (B200).
+    public var prepare: (@Sendable (JSONValue) throws -> JSONValue)?
     public var run: @Sendable (inout JSONValue, JSONValue) throws -> JSONValue?
 }
 
@@ -119,9 +122,23 @@ public final class StateStore: @unchecked Sendable {
 
     // MARK: Commands
 
-    /// Runs a command synchronously on the control queue.
+    /// Runs a command synchronously on the control queue; a command's `prepare` runs before, off it.
     public func execute(_ name: String, args: JSONValue = [:], role: Role, from client: AnyObject? = nil) -> Result<CommandResult, CommandError> {
-        queue.sync { executeLocked(name, args: args, role: role, client: client.map(ObjectIdentifier.init)) }
+        let client = client.map(ObjectIdentifier.init)
+        let (done, prepare) = queue.sync { () -> (Result<CommandResult, CommandError>?, (@Sendable (JSONValue) throws -> JSONValue)?) in
+            if let spec = commands[name], role >= spec.role, let prepare = spec.prepare { return (nil, prepare) }
+            return (executeLocked(name, args: args, role: role, client: client), nil)
+        }
+        guard let prepare else { return done! }
+        let prepared: JSONValue
+        do {
+            prepared = try prepare(args)
+        } catch let error as CommandError {
+            return .failure(error)
+        } catch {
+            return .failure(CommandError("failed", "\(error)"))
+        }
+        return queue.sync { executeLocked(name, args: prepared, role: role, client: client) }
     }
 
     private func executeLocked(_ name: String, args: JSONValue, role: Role, client: ObjectIdentifier? = nil) -> Result<CommandResult, CommandError> {

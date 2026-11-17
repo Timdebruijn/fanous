@@ -622,7 +622,7 @@ struct ShowControlTests {
     }
 
     /// B198: an OSC command reaches the engine on the DMX queue; a show-mode entry whose readiness checks hang must not
-    /// hold that queue (Art-Net, sACN, OSC parameters), and commands still run one after another in arrival order.
+    /// hold that queue (Art-Net, sACN, OSC parameters). The cue commands run in their order meanwhile (B200).
     /// Wires `onCommand` to the hand-over the way `Engine.start` does; the UDP receive and `start` itself are not run.
     @Test func anOSCCommandDoesNotHoldTheDMXQueue() async throws {
         let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
@@ -636,8 +636,11 @@ struct ShowControlTests {
         defer { release.signal() }
         let ran = Mutex<[String]>([])
         let store = StateStore(project: [:], logger: testLogger)
-        store.register(CommandSpec(name: "show.mode", role: .operator, mutatesConfig: false, undoable: false, summary: "") { [weak engine] _, _ in
+        // the entry runs in `prepare`, off the control queue, as the real command's does (B200)
+        store.register(CommandSpec(name: "show.mode", role: .operator, mutatesConfig: false, undoable: false, summary: "", prepare: { [weak engine] args in
             _ = engine?.setShowMode(true)
+            return args
+        }) { _, _ in
             ran.withLock { $0.append("show.mode") }
             return nil
         })
@@ -656,13 +659,14 @@ struct ShowControlTests {
         let free = DispatchGroup()
         dmx.queue.async(group: free) {}
         #expect(try await offPool { free.wait(timeout: .now() + 1) } == .success, "the DMX queue waited for the readiness check")
+        #expect(await waitUntil { ran.withLock { $0.count } == 3 }, "the cue commands waited for the entry")
         release.signal()
         #expect(await waitUntil { ran.withLock { $0.count } == 4 })
-        #expect(ran.withLock { $0 } == ["show.mode", "cue.go", "cue.goto 2.0", "cue.go"])
+        #expect(ran.withLock { $0 } == ["cue.go", "cue.goto 2.0", "cue.go", "show.mode"])
     }
 
     /// B198: a console repeating `/fanous/show/mode 1` while the entry's checks hang queues no backlog: the repeats are
-    /// dropped while one entry is queued or running, and a cue go sent after them fires once, right after that entry.
+    /// dropped while one entry is queued or running, and a cue go sent after them fires once, without waiting (B200).
     @Test func repeatedShowModeEntriesAreCoalescedButACueGoIsNot() async throws {
         let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
         let gate = DispatchSemaphore(value: 0)
@@ -676,10 +680,10 @@ struct ShowControlTests {
         defer { gate.signal() }
         let cues = Atomic<Int>(0)
         let store = StateStore(project: [:], logger: testLogger)
-        store.register(CommandSpec(name: "show.mode", role: .operator, mutatesConfig: false, undoable: false, summary: "") { [weak engine] _, _ in
+        store.register(CommandSpec(name: "show.mode", role: .operator, mutatesConfig: false, undoable: false, summary: "", prepare: { [weak engine] args in
             _ = engine?.setShowMode(true)
-            return nil
-        })
+            return args
+        }) { _, _ in nil })
         store.register(CommandSpec(name: "cue.go", role: .operator, mutatesConfig: false, undoable: false, summary: "") { _, _ in
             cues.add(1, ordering: .relaxed)
             return nil
@@ -688,12 +692,122 @@ struct ShowControlTests {
         #expect(await waitUntil { checks.load(ordering: .relaxed) == 1 }, "the entry started")
         for _ in 0..<100 { engine.handOver(.showMode(true), to: store) }
         engine.handOver(.cueGo, to: store)
+        #expect(await waitUntil(.seconds(2)) { cues.load(ordering: .relaxed) == 1 }, "the cue go waited for the entry")
         gate.signal()
-        // the cue go runs after every entry queued before it: once it fired, those have run
-        #expect(await waitUntil(.seconds(2)) { cues.load(ordering: .relaxed) == 1 }, "the cue go waited behind queued entries")
+        try await Task.sleep(for: .milliseconds(200))  // what the entries queued behind the first would take
         #expect(checks.load(ordering: .relaxed) <= 2, "\(checks.load(ordering: .relaxed)) readiness runs for 101 entries")
-        try await Task.sleep(for: .milliseconds(100))
         #expect(cues.load(ordering: .relaxed) == 1)
+    }
+
+    /// B200: an engine whose `show.mode` and `cue.go` are the real commands on `store`, decided on its queue as after
+    /// `start`; the readiness check passes once `gate` opens (a turnstile), or after `checkTime`. Show mode is entered
+    /// for real (power assertions for the test's duration), with no state file; `changes` records enters and leaves.
+    private final class HeldEntry: Sendable {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger, showStateURL: nil)
+        let store = StateStore(project: [:], logger: testLogger)
+        let gate = DispatchSemaphore(value: 0)
+        let checks = Atomic<Int>(0)
+        let gos = Atomic<Int>(0)
+        let changes = Mutex<[Bool]>([])
+        init(checkTime: TimeInterval? = nil) {
+            engine.store = store
+            engine.readinessCheck = { [weak self] _, _ in
+                guard let self else { return [] }
+                checks.add(1, ordering: .relaxed)
+                if let checkTime {
+                    Thread.sleep(forTimeInterval: checkTime)
+                } else {
+                    _ = gate.wait(timeout: .now() + 10)
+                    gate.signal()
+                }
+                return []
+            }
+            engine.showMode.onChange = { [weak self] on in self?.changes.withLock { $0.append(on) } }
+            ShowCommands.register(on: store, hooks: ShowCommands.Hooks(
+                go: { [weak self] in self?.gos.add(1, ordering: .relaxed) }, back: {}, goto: { _ in },
+                showMode: { [weak self] in self?.engine.setShowMode($0) }, acknowledge: { _, _ in }, runReadiness: {}))
+        }
+        func done() {
+            gate.signal()
+            _ = store.execute("show.mode", args: ["on": false], role: .operator)
+        }
+        /// `show.mode true` as a WebSocket connection runs it, on its own queue; true when it was answered ok.
+        func enter(in group: DispatchGroup, _ answered: @escaping @Sendable (Bool) -> Void) {
+            DispatchQueue.global().async(group: group) { [self] in
+                answered((try? store.execute("show.mode", args: ["on": true], role: .operator).get()) != nil)
+            }
+        }
+    }
+
+    /// B200: a cue command from OSC/MIDI (the hand-over) and one from the WebSocket (`store.execute`) both run while a
+    /// show-mode entry's readiness check is held, whether OSC or the WebSocket started that entry; before, the entry
+    /// held the control queue (and, from OSC, the command queue) until its checks were done.
+    @Test(arguments: [true, false])
+    func aCueCommandDoesNotWaitForAShowModeEntry(fromOSC: Bool) async throws {
+        let held = HeldEntry()
+        defer { held.done() }
+        let entry = DispatchGroup()
+        let answers = Mutex<[Bool]>([])
+        if fromOSC {
+            held.engine.handOver(.showMode(true), to: held.store)
+        } else {
+            held.enter(in: entry) { ok in answers.withLock { $0.append(ok) } }
+        }
+        #expect(await waitUntil { held.checks.load(ordering: .relaxed) == 1 }, "the entry's check started")
+        held.engine.handOver(.cueGo, to: held.store)
+        #expect(await waitUntil(.seconds(1)) { held.gos.load(ordering: .relaxed) == 1 }, "the OSC cue go waited for the entry")
+        let webSocket = DispatchGroup()
+        DispatchQueue.global().async(group: webSocket) { _ = held.store.execute("cue.go", role: .operator) }
+        #expect(try await offPool { webSocket.wait(timeout: .now() + 1) } == .success, "the WebSocket cue go waited for the entry")
+        #expect(held.gos.load(ordering: .relaxed) == 2 && !held.engine.showMode.isOn && answers.withLock { $0 }.isEmpty)
+        held.gate.signal()
+        #expect(await waitUntil { held.engine.showMode.isOn }, "the entry did not enter once its check passed")
+        #expect(try await offPool { entry.wait(timeout: .now() + 5) } == .success)
+        #expect(answers.withLock { $0 } == (fromOSC ? [] : [true]) && held.checks.load(ordering: .relaxed) == 1)
+    }
+
+    /// B200: `show.mode`s from one console keep their order while an entry's check is held, now that the entry is off
+    /// the command queue: `1, 0, 1` ends on, `1, 0` ends off.
+    @Test(arguments: [[true, false, true], [true, false]])
+    func showModeFromOneConsoleKeepsItsOrder(sequence: [Bool]) async throws {
+        let held = HeldEntry()
+        defer { held.done() }
+        held.engine.handOver(.showMode(true), to: held.store)
+        #expect(await waitUntil { held.checks.load(ordering: .relaxed) == 1 })
+        for on in sequence.dropFirst() { held.engine.handOver(.showMode(on), to: held.store) }
+        held.gate.signal()
+        #expect(await waitUntil { held.changes.withLock { $0 } == sequence })
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(held.changes.withLock { $0 } == sequence && held.engine.showMode.isOn == sequence.last)
+    }
+
+    /// B200: a `show.mode false` during an entry runs at once and wins: the entry answers ok without entering. A second
+    /// `show.mode true` during an entry waits for it and, the first having entered, answers ok without checks (B163).
+    @Test func aLeaveDuringAnEntryWinsAndASecondEntryWaitsForTheFirst() async throws {
+        let held = HeldEntry()
+        defer { held.done() }
+        let entry = DispatchGroup()
+        let answers = Mutex<[Bool]>([])
+        held.enter(in: entry) { ok in answers.withLock { $0.append(ok) } }
+        #expect(await waitUntil { held.checks.load(ordering: .relaxed) == 1 })
+        let leave = DispatchGroup()
+        DispatchQueue.global().async(group: leave) { _ = held.store.execute("show.mode", args: ["on": false], role: .operator) }
+        #expect(try await offPool { leave.wait(timeout: .now() + 1) } == .success, "the leave waited for the entry")
+        held.gate.signal()
+        #expect(try await offPool { entry.wait(timeout: .now() + 5) } == .success)
+        #expect(answers.withLock { $0 } == [true] && held.changes.withLock { $0 }.isEmpty, "the entry entered after the leave")
+
+        let second = HeldEntry()
+        defer { second.done() }
+        let both = DispatchGroup()
+        let results = Mutex<[Bool]>([])
+        for _ in 0..<2 { second.enter(in: both) { ok in results.withLock { $0.append(ok) } } }
+        #expect(await waitUntil { second.checks.load(ordering: .relaxed) == 1 })
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(second.checks.load(ordering: .relaxed) == 1, "the second entry ran its checks alongside the first")
+        second.gate.signal()
+        #expect(try await offPool { both.wait(timeout: .now() + 5) } == .success)
+        #expect(results.withLock { $0 } == [true, true] && second.changes.withLock { $0 } == [true] && second.checks.load(ordering: .relaxed) == 1)
     }
 
     /// B198: `1, 0, 1` ends on, also when it arrives while an entry runs; a `1` during that entry is dropped (it answers

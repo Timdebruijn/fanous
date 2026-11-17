@@ -112,6 +112,7 @@ public enum ShowCommands {
         public var back: @Sendable () -> Void
         public var goto: @Sendable (Double) -> Void
         /// Enter (true) or leave show mode; returns the ids of the readiness items that block, or nil when it happened.
+        /// Entering is called off the control queue (B200).
         public var showMode: @Sendable (Bool) -> [String]?
         /// Acknowledge (true) or take back (false) a readiness item's acknowledgement.
         public var acknowledge: @Sendable (_ id: String, _ on: Bool) -> Void
@@ -184,9 +185,18 @@ public enum ShowCommands {
                 return nil
             })
         store.register(
-            CommandSpec(name: "show.mode", role: .operator, mutatesConfig: false, undoable: false, summary: "Enter (true) or leave show mode; refused with the blocking readiness items.", argsType: "{ on: boolean }") { _, args in
+            CommandSpec(
+                name: "show.mode", role: .operator, mutatesConfig: false, undoable: false, summary: "Enter (true) or leave show mode; refused with the blocking readiness items.", argsType: "{ on: boolean }",
+                // B200: the entry runs here, off the control queue (its readiness checks take up to seconds); `run`
+                // answers with its outcome. A `blocking` sent by the client is overwritten.
+                prepare: { args in
+                    guard args["on"]?.bool == true else { return args }
+                    return ["on": true, "blocking": .array((hooks.showMode(true) ?? []).map { .string($0) })]
+                }
+            ) { _, args in
                 guard let on = args["on"]?.bool else { throw CommandError.invalidArgs("args: { on }") }
-                if let blocking = hooks.showMode(on) { throw CommandError("notReady", "readiness: \(blocking.joined(separator: ", "))") }
+                let blocking = on ? (args["blocking"]?.array ?? []).compactMap(\.string) : hooks.showMode(false) ?? []
+                if !blocking.isEmpty { throw CommandError("notReady", "readiness: \(blocking.joined(separator: ", "))") }
                 return nil
             })
         store.register(CommandSpec(name: "readiness.run", role: .operator, mutatesConfig: false, undoable: false, summary: "Run the readiness checks now.") { _, _ in
