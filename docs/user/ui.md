@@ -73,7 +73,7 @@ browser's. From the left:
 | Item | Says |
 |---|---|
 | **Unlocked** / **Locked** | The show lock. Press it, or L (programmer). A padlock shows while locked |
-| **Show mode: on / off** | Show mode (operator or programmer). Entering runs the readiness list first; when an item blocks, a popover **Cannot enter show mode** lists the items with their fix and offers **Open System**. After the engine restarted while show mode was on, "Show mode resumed after the engine restarted at HH:MM" appears next to it, as a link to System. While show mode is on and a readiness item blocks (failing and not acknowledged, or hard), a red "not ready: " with the item's title appears before the buttons on the right, "+ 2 more" when there are more, cut off with an ellipsis when long, as a link to System; the auto version item makes room while it shows, and a phone shows "not ready" alone. An acknowledged item does not show there |
+| **Show mode: on / off** | Show mode (operator or programmer). Entering runs the readiness list first; when an item blocks, a popover **Cannot enter show mode** lists the items with their fix and offers **Open System**; while a library root change is in progress it says "The library root is being switched; try again in a few seconds." instead, with **Close** only. After the engine restarted while show mode was on, "Show mode resumed after the engine restarted at HH:MM" appears next to it, as a link to System. While show mode is on and a readiness item blocks (failing and not acknowledged, or hard), a red "not ready: " with the item's title appears before the buttons on the right, "+ 2 more" when there are more, cut off with an ellipsis when long, as a link to System; the auto version item makes room while it shows, and a phone shows "not ready" alone. An acknowledged item does not show there |
 | fps and ms | Frames per second and the GPU time of the slowest frame in a hundred (p99), with "gpu p99 · cpu N ms" under it. "no outputs rendering: add or assign one (Outputs)" while nothing renders |
 | dropped | Missed and late frames in the last second. Red when above 0 while the show is locked |
 | One pill per universe | `A 0.0.0`, `S 1`, … with a dot and a word; the colours are below. "no DMX received" instead of pills while no universe is patched and none was heard |
@@ -133,6 +133,9 @@ On an iPad in either orientation everything is there.
     as programmer."
   - "Show mode is blocked by failed readiness checks — open System to fix or
     acknowledge them."
+  - "Show mode was refused: the library root is being switched; try again
+    in a few seconds." (entering show mode while a library root change is
+    in progress; it needs nothing fixed)
   - "Nothing left to undo."
   - "Something changed since — undo no longer applies. Check the current
     values and redo the edit by hand." (another browser changed the same thing

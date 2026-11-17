@@ -11,6 +11,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Fix: a trigger text with a long run of whitespace after `@` no longer freezes the cue editor for seconds; the rate part of the trigger regex is linear now (PR #377).
+- Web: a show mode entry refused during a library root switch no longer tells the operator to fix readiness checks in
+  System; the banner and the Cannot enter show mode popover say the root is being switched and to try again (B239, PR #378).
 - Release: 1.0.0-rc.13 is on GitHub as a pre-release with the signed, notarized dmg, built from main 53387a2
   (PR #376).
 

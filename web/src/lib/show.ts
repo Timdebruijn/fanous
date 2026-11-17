@@ -4,6 +4,7 @@
 // Pure logic of the Show control screen: cue numbering and reordering, trigger text, fixture and parameter
 // choices for cue values, value controls from the channel map, timecode wording, MIDI map wording.
 import type { AudioInputDoc, CueDoc, CueValueDoc, LiveDoc, MIDIMappingDoc, OSCRefusalDoc, PatchEntry, ReadinessItemDoc, TimecodeSettingsDoc } from './docs';
+import { ROOT_SWITCH_CAUSE } from './errors';
 import { clamp01 } from './outputs';
 import { LOCKED_TITLE, type ChannelMap, type FixtureType, type ParamSpec } from './patch-screen';
 import { blockingNote, pad2, plural, stampText } from './system';
@@ -348,7 +349,7 @@ export function refusalNote(r: OSCRefusalDoc | null | undefined, readiness: read
   let why = r.reason;
   if (r.code === 'notReady') {
     const ids = r.reason.replace(/^readiness: /, '').split(', ');
-    if (ids.length === 1 && ids[0] === 'libraryRootChanging') why = 'the library root is being switched; send it again in a few seconds';
+    if (ids.length === 1 && ids[0] === 'libraryRootChanging') why = `${ROOT_SWITCH_CAUSE}; send it again in a few seconds`;
     else why = `not ready: ${blockingNote(true, ids.map((id) => ({ title: readiness.find((i) => i.id === id)?.title || id })))} (System › Readiness)`;
   }
   return `Refused at ${stampText(r.at)}: ${r.command}, ${why}`;

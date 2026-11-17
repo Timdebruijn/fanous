@@ -8,6 +8,7 @@
   import SystemRoles from '../components/SystemRoles.svelte';
   import SystemSync from '../components/SystemSync.svelte';
   import SystemVersions from '../components/SystemVersions.svelte';
+  import { isRootSwitch } from '../lib/errors';
   import { modeText } from '../lib/outputs';
   import { LOCKED_TITLE } from '../lib/patch-screen';
   import { app, can, cmd } from '../lib/state.svelte';
@@ -39,7 +40,8 @@
     const on = input.checked;
     if ((await cmd('show.mode', { on })) !== undefined) return;
     input.checked = show.mode;
-    if (on) readinessPanel?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    // a root switch (B51) names no readiness item: nothing to scroll to
+    if (on && !isRootSwitch(app.lastError?.message ?? '')) readinessPanel?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
   }
 
   let rootDraft = $state<string | null>(null);

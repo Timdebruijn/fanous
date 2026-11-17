@@ -78,7 +78,9 @@ change is in progress.
 | Red banner "Show mode is on with blocking items: …" | Show mode is on and an item fails unacknowledged: after a resume (acknowledgements are lost), or an item that turned red during the show |
 
 The status bar's **Show mode** tag shows "Cannot enter show mode" with the
-blocking items and their fix hints when it refuses, with **Open System**;
+blocking items and their fix hints when it refuses, with **Open System**
+(during a library root change it says "The library root is being switched; try
+again in a few seconds." and offers only **Close**);
 the yellow banner at the top names the items by id. While show mode is on
 and an item blocks (it fails and is not acknowledged, or it is a hard
 failure), the status bar reads "not ready: " and the first item's title,

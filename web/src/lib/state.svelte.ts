@@ -160,7 +160,7 @@ export async function cmd<N extends CommandName>(name: N, args?: CommandArgs[N])
     app.lastError = refusal;
     const { code, message } = refusal;
     // newest first, at most 20
-    app.messages = [{ id: ++messageId, at: Date.now(), code, message, hint: errorHint(code) }, ...app.messages].slice(0, 20);
+    app.messages = [{ id: ++messageId, at: Date.now(), code, message, hint: errorHint(code, message) }, ...app.messages].slice(0, 20);
     return undefined;
   }
 }
