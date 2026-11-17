@@ -10,7 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Tests (B246): the readiness-run tests' held probes no longer release themselves after 10 s; the library root switch test's missing seam is B258 (PR #N).
+- Tests (B246): the readiness-run tests' held probes no longer release themselves after 10 s; the library root switch test's missing seam is B258 (PR #379).
 - Release: 1.0.0-rc.13 is on GitHub as a pre-release with the signed, notarized dmg, built from main 53387a2
   (PR #376).
 
