@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+## 1.0.0-rc.13 — 2026-11-17
+
 - Tests (B230): the OSC "Last received" order test sends its probe and burst from one socket; the flake was two new
   UDP flows set up at once, where a few datagrams came out of the other flow's connection, now row B252 and a
   known limitation (PR #374).
