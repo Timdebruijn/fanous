@@ -593,13 +593,13 @@ struct ShowControlTests {
     /// and its result, when it comes, does not replace that of a show-mode entry that started after it.
     @Test func aHungReadinessRunHoldsNeitherTheFeedQueueNorANewerResult() async throws {
         let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
-        let release = DispatchSemaphore(value: 0)
+        let release = Hold()
         let calls = Atomic<Int>(0)
         let seenByThirdRun = Mutex<[String]?>(nil)
         engine.readinessCheck = { [weak engine] _, _ in
             switch calls.add(1, ordering: .relaxed).newValue {
             case 1:
-                _ = release.wait(timeout: .now() + 10)
+                release.wait()
                 return [ReadinessItem(id: "old", title: "", state: .ok, detail: "", fix: "")]
             case 2: return [ReadinessItem(id: "new", title: "", state: .hard, detail: "", fix: "")]
             default:
@@ -608,7 +608,7 @@ struct ShowControlTests {
                 return []
             }
         }
-        defer { release.signal() }
+        defer { release.done() }
         engine.feedQueue.sync { engine.runReadiness() }  // as the 30 s timer does
         #expect(await waitUntil { calls.load(ordering: .relaxed) == 1 }, "the run started")
         let free = DispatchGroup()
@@ -625,16 +625,15 @@ struct ShowControlTests {
     /// only: disk and library fail, Spotlight is manual, and a second check joins the hung read instead of starting
     /// another thread. Once the read returns, the next check reads the volume again.
     @Test func aHungLibraryVolumeReadTimesOut() throws {
-        let gate = DispatchSemaphore(value: 0)
-        defer { gate.signal() }
+        let gate = Hold()
+        defer { gate.done() }
         let reads = Atomic<Int>(0)
         var context = ReadinessContext()
         context.libraryRoot = "/b197-\(UUID().uuidString)"
         context.volumeTimeout = 0.2
         context.readVolume = { _ in
             reads.add(1, ordering: .relaxed)
-            _ = gate.wait(timeout: .now() + 10)
-            gate.signal()  // a turnstile: once open, every later read passes at once
+            gate.wait(turnstile: true)  // once open, every later read passes at once
             return Readiness.libraryVolume(NSHomeDirectory())
         }
         for _ in 0..<2 {
@@ -656,17 +655,17 @@ struct ShowControlTests {
     /// request while that run is running still leads to one more run after it.
     @Test func readinessRequestsBehindAHungRunCoalesce() async throws {
         let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
-        let first = DispatchSemaphore(value: 0), second = DispatchSemaphore(value: 0)
+        let first = Hold(), second = Hold()
         let calls = Atomic<Int>(0)
         engine.readinessCheck = { _, _ in
             switch calls.add(1, ordering: .relaxed).newValue {
-            case 1: _ = first.wait(timeout: .now() + 10)
-            case 2: _ = second.wait(timeout: .now() + 10)
+            case 1: first.wait()
+            case 2: second.wait()
             default: break
             }
             return []
         }
-        defer { first.signal(); second.signal() }
+        defer { first.done(); second.done() }
         engine.runReadiness()
         #expect(await waitUntil { calls.load(ordering: .relaxed) == 1 }, "the first run started")
         for _ in 0..<50 { engine.runReadiness() }
