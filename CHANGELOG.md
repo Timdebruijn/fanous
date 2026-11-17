@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+## 1.0.0-rc.11 — 2026-11-17
+
 - Engine: the readiness checks read the library volume for at most 3 s, so a network mount that stopped answering
   reads "library volume not answering" instead of holding the checks and show mode's entry, and checks asked for
   while one runs wait as one (B197) (PR #361).
