@@ -109,7 +109,7 @@ Everything you set up is one **project** per Mac: the patch and the number of
 layers, Who controls, canvases, outputs, walls and mapping presets, the cue
 list, timecode and MIDI settings, the universe settings. Fanous saves it two
 seconds after your last change, and at once when the engine stops normally
-(Stop Engine, Quit with Stop Engine, Restart Engine, logging out); after a
+(Stop Engine, Stop Engine and Quit, Restart Engine, logging out); after a
 crash, a force quit or a power cut the last two seconds of changes can be
 lost. Every setup change can be undone (⌘Z) and redone.
 
