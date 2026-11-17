@@ -648,6 +648,7 @@ struct ShowControlTests {
         }
         #expect(reads.load(ordering: .relaxed) == 1, "a second check started another read of the hung volume")
         gate.signal()
+        context.volumeTimeout = 5  // the deadline was proven above; this proves the recovery, also on a slow CI VM
         #expect(Readiness.check(context, acknowledged: []).first { $0.id == "disk" }?.detail != "library volume not answering")
     }
 
