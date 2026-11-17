@@ -10,7 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- The show-mode library-switch test waits for the switch to end instead of 200 ms and checks it is on the started-count branch, B258 (PR #384)
+- Tests (B258): the library root switch test waits on the library queue for the switch to end instead of sleeping
+  200 ms, and asserts no switch runs, so only the started count can refuse the entry (PR #384).
 
 ## 1.0.0-rc.14 — 2026-11-17
 
