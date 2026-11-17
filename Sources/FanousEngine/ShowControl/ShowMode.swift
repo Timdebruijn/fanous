@@ -501,7 +501,8 @@ public enum Readiness {
             return (pending, true)
         }
         if start {
-            DispatchQueue.global(qos: .utility).async {
+            // its own thread, not the global queue: with the pool's threads blocked elsewhere a queued read never starts
+            Thread.detachNewThread {
                 let volume = read(path)
                 pending.result.withLock { $0 = volume }
                 volumeReads.withLock { $0[path] = nil }
