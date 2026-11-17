@@ -23,8 +23,14 @@ when it is not acknowledged (below). The Spotlight, Time
 Machine and display sleep rows ask macOS tools (`mdutil`, `tmutil`,
 `pmset`); a tool that has not answered within 3 seconds is stopped: the
 Spotlight and Time Machine rows then read "unknown" and are yours to check,
-the display sleep row reads "unknown" and passes. Each hanging tool adds
-at most 3 seconds to turning show mode on. The last column is
+the display sleep row reads "unknown" and passes. The free disk, library
+and Spotlight rows read the library's volume, also for at most 3 seconds: a
+volume that has not answered (a network mount that stopped responding)
+reads "library volume not answering", free disk and library fail, Spotlight
+is manual. Each hanging tool and a volume that does not answer add at most
+3 seconds each to turning show mode on. Checks asked for while one runs
+(Run checks, the 30-second timer) wait as one: a single check follows the
+running one. The last column is
 the id the API's `readiness.acknowledge` and `readiness.unacknowledge` take and the yellow banner names
 ("readiness: dmx, spotlight").
 
@@ -32,7 +38,7 @@ the id the API's `readiness.acknowledge` and `readiness.unacknowledge` take and 
 |---|---|---|---|---|---|
 | On AC power | The first power source is not mains; a Mac without a battery passes | "AC power (battery N %)", "on battery, N %", "no battery" | Connect the power adapter | Fails | `power` |
 | Thermal state nominal | macOS reports serious or critical; nominal and fair pass | "nominal", "fair", "serious", "critical" | Let the machine cool down, improve airflow | Fails | `thermal` |
-| Free disk > 10 % | The library's volume has 10 % or less free; the home volume with the project and the log is not checked | "N % free (X GB)" | Free space on the library volume | Fails | `disk` |
+| Free disk > 10 % | The library's volume has 10 % or less free; the home volume with the project and the log is not checked | "N % free (X GB)", "library volume not answering" | Free space on the library volume; when not answering: reconnect the library volume, or copy the library to the internal disk | Fails | `disk` |
 | Memory headroom | 15 % or less of the memory is free, inactive or purgeable | "N % free" | Quit other applications | Fails | `memory` |
 | All patched universes receiving | A patched universe has had no packet within its Signal lost after time (2.5 s to start), or none ever | "all receiving", "silent: artnet:0.0.1" | Check the console's output and the network | Fails | `dmx` |
 | Universe interfaces usable | A universe is set to an interface this Mac lacks, or one without sACN multicast | "present, or any interface", "not usable: …" | Connect the network adapter, or pick another interface for the universe (Patch › Interface) | Warns | `interfaces` |
@@ -47,8 +53,8 @@ the id the API's `readiness.acknowledge` and `readiness.unacknowledge` take and 
 | Microphone permission granted | The timecode Source is LTC and the permission is not granted, whatever the timecode switch says | "timecode not on LTC", "microphone: denied" | Inputs › Authorize microphone, or System Settings › Privacy & Security › Microphone | Fails | `microphone` |
 | No decoder errors | A layer shows an error: a missing file, a decoder error, a live input that is not running | "none", "Layer 3: no file 4 in folder 2" | Fix or replace the failing media | Fails | `decoders` |
 | Image masks found | An image mask, in the edited mapping or a stored preset, points at a file that is not a still in the library | "found, or none in use", "missing, covering nothing: Output 2 slice 1: folder 3 file 5" | Put the greyscale file in the library under that folder and file number, or change the mask (Outputs › Warp & Slices › Mask) | Warns | `maskimages` |
-| Library on a local volume | The library's volume is a network or removable one | "local", "network or removable volume" | Copy the library to the internal disk | Fails | `library` |
-| Spotlight indexing off for the library volume | `mdutil -s` says indexing is enabled on the library's volume. It reads the volume's switch only: macOS lets only an administrator read Spotlight Privacy, so a library folder excluded there still fails | "off", "indexing enabled", "unknown" | `sudo mdutil -i off <volume>` (`/` for the internal disk), or acknowledge | Fails; manual when unreadable | `spotlight` |
+| Library on a local volume | The library's volume is a network or removable one | "local", "network or removable volume", "library volume not answering" | Copy the library to the internal disk | Fails | `library` |
+| Spotlight indexing off for the library volume | `mdutil -s` says indexing is enabled on the library's volume. It reads the volume's switch only: macOS lets only an administrator read Spotlight Privacy, so a library folder excluded there still fails | "off", "indexing enabled", "unknown", "library volume not answering" | `sudo mdutil -i off <volume>` (`/` for the internal disk), or acknowledge | Fails; manual when unreadable | `spotlight` |
 | Automatic macOS updates off | macOS is set to install updates by itself; the other update switches are not read | "off", "automatic install enabled", "unknown" | System Settings › General › Software Update › Automatic updates | Fails; manual when unreadable | `updates` |
 | Time Machine not backing up | A backup is running now | "idle", "backup running", "unknown" | Stop the backup or disable Time Machine for the show | Fails; manual when unreadable | `timemachine` |
 | Focus / Do Not Disturb on | Always manual: macOS does not tell | "cannot be read; check the menu bar" | Turn on a Focus so notifications stay off the outputs | Manual | `focus` |
