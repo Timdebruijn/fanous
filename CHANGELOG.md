@@ -16,6 +16,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   200 ms, and asserts no switch runs, so only the started count can refuse the entry (PR #384).
 - Fix (B220): a file the library cached as not playable is probed once again after an update that rewords the reasons, so an
   old "Cannot Open" no longer stays; playable files keep their cache hit and thumbnail (PR #385).
+- Tests (B260): `scripts/test.sh` runs the suite in a fresh temporary `FANOUS_HOME`, so no test engine can write the real install's files (PR #386).
 
 ## 1.0.0-rc.14 — 2026-11-17
 
