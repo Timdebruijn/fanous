@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs (B253): the PreviewHub fallback test flake is an engine ordering defect, a released encoder that a stale rebalance gives
+  to a younger fallback viewer; the row now holds the interleaving, the trace and a proposed fix (PR #N).
 - Release: 1.0.0-rc.13 is on GitHub as a pre-release with the signed, notarized dmg, built from main 53387a2
   (PR #376).
 
