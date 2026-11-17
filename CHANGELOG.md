@@ -11,7 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Tests (B240): an engine that never started writes no project file; `scripts/test.sh` no longer overwrites
-  the project of an installed Fanous (PR #N).
+  the project of an installed Fanous (PR #365).
 - Release: 1.0.0-rc.11 is on GitHub as a pre-release with the signed, notarized dmg, built from main 3471202
   (PR #364).
 
