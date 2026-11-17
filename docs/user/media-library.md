@@ -41,7 +41,7 @@ Fanous Library/
 |---|---|
 | The number | The first one to three digits of the folder or file name, 1 to 255. Anything may follow: `001_Name`, `12-Show`, `7 intro.mov` |
 | Invalid names | No digits in front, 0, above 255, four or more digits, or a duplicate number in the same folder (the name that sorts first keeps the number). Such items are listed with a red **invalid name** badge and the reason, and cannot be reached from the console: rename them in Finder. Every file in a folder with an invalid number is invalid with it |
-| Unreadable | A file macOS cannot open at all (a `.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`, `.f4v` or `.divx`, whose reason reads "AVFoundation cannot open .webm files", or "Cannot Open" for an `.mkv` or `.mxf` an older Fanous version read and that has not changed since; a damaged file; a sub-folder that is no image sequence) shows a red **unreadable** badge with the reason and no Transcode button: convert it on another machine |
+| Unreadable | A file macOS cannot open at all (a `.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`, `.f4v` or `.divx`, whose reason reads "AVFoundation cannot open .webm files"; a damaged file; a sub-folder that is no image sequence) shows a red **unreadable** badge with the reason and no Transcode button: convert it on another machine |
 | Ignored | Folders and files whose names start with `_` or `.`, and files that are not media: a file is media when it is a still or has one of these extensions: `.mov`, `.mp4`, `.m4v`, `.avi`, `.mkv`, `.mxf`, `.webm`, `.mpg`, `.mpeg`, `.m2ts`, `.mts`, `.ts`, `.wmv`, `.flv`, `.3gp`, `.3g2`, `.ogv`, `.vob`, `.dv`, `.qt`, `.m2v`, `.f4v`, `.asf`, `.divx` (a TypeScript `.ts` file therefore shows as unreadable). The list is the same on every Mac |
 | Watched | A change in Finder shows up within a moment; **Rescan** on the Media screen forces it |
 | Folder 0 | Not on disk: built-in content and live inputs ([Built-in content](reference/built-in-content.md)) |
@@ -106,12 +106,11 @@ image sequences. Long-GOP codecs such as H.264 are refused on purpose: they
 cannot scrub, run in reverse or chase timecode reliably. A container macOS
 cannot open (`.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`,
 `.f4v`, `.divx`) is listed too and reads red **unreadable**, "AVFoundation
-cannot open .webm files" (an `.mkv` or `.mxf` read by an older Fanous
-version keeps "Cannot Open" until the file changes). Convert it on another
+cannot open .webm files". Convert it on another
 machine. A file with an extension after `.mxf` in the list above never takes
 a number from a `.mov`, `.mp4`, `.m4v`, `.avi`, `.mkv` or `.mxf` file, a
 still or a sequence folder in the same folder: on a shared number it is the
-duplicate. A file that needs a transcode has no thumbnail: its tile is
+duplicate. A movie in a codec Fanous cannot decode (H.264, HEVC) has no thumbnail: its tile is
 black.
 
 <img src="images/media-needs-transcode.png" width="218" alt="A tile with the yellow needs transcode badge, the line H.264 · 720p25, the codec list reading HAP Q and the Transcode button">
@@ -235,12 +234,14 @@ the number is not a duplicate.
 The engine reads each new file once (codec, size, frame rate, duration,
 alpha, audio), makes a thumbnail (a playable movie's middle frame, 320
 pixels wide; a still's longest side at 320; a sequence's first frame; none
-for a file that needs a transcode) and caches both under
+for a movie in a codec Fanous cannot decode, such as H.264) and caches both under
 `~/Library/Application Support/Fanous/cache/`. A tile reads "probing…" until
 then, and a layer pointing at the file shows "no file" until the probe is
 done. The same thumbnails go to a console over CITP and stand in on the
 Layers screen for a layer that shows nothing. A file that changes, moves or
-is renamed is probed again.
+is renamed is probed again. After an update that rewords the reasons, every
+file that is not playable (needs transcode, unreadable) is probed again once
+and shows "probing…" until then; playable files are not touched.
 
 ## Audio
 

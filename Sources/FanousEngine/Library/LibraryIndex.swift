@@ -96,7 +96,7 @@ public final class LibraryIndex: @unchecked Sendable {
     static let avFoundationContainers: Set<String> = ["mov", "mp4", "m4v"]
     /// Why `url` did not open, as a client may see it: "Cannot Open" for a container AVFoundation has no reader for told
     /// nothing (B161); the library and a failed ingest job say the same (B194). `/api/library` and `live.ingest` reach
-    /// monitors: no file path (B25).
+    /// monitors: no file path (B25). The library caches this text: reword it and bump `reasonsVersion` (B220).
     static func openFailureText(_ error: Error, _ url: URL) -> String {
         let ext = url.pathExtension.lowercased()
         if let error = error as? AVError, error.code == .fileFormatNotRecognized, !ext.isEmpty, !avFoundationContainers.contains(ext) {
@@ -129,7 +129,17 @@ public final class LibraryIndex: @unchecked Sendable {
         var pendingProbes: [String] = []
     }
 
-    struct CacheEntry: Codable { var metadata: MediaMetadata?; var thumbnail: String?; var status: LibraryItem.Status; var reason: String? }
+    /// B220: the wording of the probe's reason texts. A cached entry that carries a reason is probed again once when the
+    /// version it was written with is not this one (a cache from before this field has none); entries without a reason
+    /// are not stale and keep their hit and thumbnail. BUMP THIS whenever a reason text changes. The texts are made in
+    /// `probe` (still, movie, sequence and unknown-type reasons) and in `openFailureText` (the movie open failure, also
+    /// used by the ingest queue).
+    static let reasonsVersion = 1
+
+    struct CacheEntry: Codable {
+        var metadata: MediaMetadata?; var thumbnail: String?; var status: LibraryItem.Status; var reason: String?
+        var reasonsVersion: Int?  // nil = no reason, or written before B220
+    }
 
     public init(root: URL, cacheDirectory: URL, logger: Logger) {
         self.root = root
@@ -263,7 +273,7 @@ public final class LibraryIndex: @unchecked Sendable {
                 }
                 if item.status == .invalid {
                     invalidCount += 1
-                } else if let cached = cache[Self.cacheKey(item)] {
+                } else if let cached = cache[Self.cacheKey(item)], cached.reason == nil || cached.reasonsVersion == Self.reasonsVersion {
                     item.metadata = cached.metadata
                     item.thumbnail = cached.thumbnail
                     item.status = cached.status
@@ -315,6 +325,7 @@ public final class LibraryIndex: @unchecked Sendable {
     private func probe(_ url: URL) {
         guard let item = state.withLock({ s in s.snapshot.folders.lazy.flatMap(\.items).first { $0.path == url.path } }) else { return }
         var entry = CacheEntry(metadata: nil, thumbnail: nil, status: .unreadable, reason: nil)
+        // B220: every reason text below (and `openFailureText`) is cached; bump `reasonsVersion` when one is reworded
         switch item.kind {
         case .still:
             if let metadata = Self.probeStill(url) {
@@ -352,6 +363,7 @@ public final class LibraryIndex: @unchecked Sendable {
         case .other:
             entry.reason = "unknown type"
         }
+        if entry.reason != nil { entry.reasonsVersion = Self.reasonsVersion }
         if entry.status == .playable || entry.status == .needsTranscode, let metadata = entry.metadata, let thumbnailer {
             entry.thumbnail = thumbnailer(item.kind == .sequence ? ((try? SequenceIngest.frames(in: url))?[0] ?? url) : url, metadata, item.kind)
         }
