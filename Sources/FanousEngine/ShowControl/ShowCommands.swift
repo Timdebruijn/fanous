@@ -195,6 +195,8 @@ public enum ShowCommands {
                 }
             ) { _, args in
                 guard let on = args["on"]?.bool else { throw CommandError.invalidArgs("args: { on }") }
+                // no `blocking`: a caller that went around `execute`, so no entry ran
+                guard !on || args["blocking"] != nil else { throw CommandError("failed", "show mode entry did not run") }
                 let blocking = on ? (args["blocking"]?.array ?? []).compactMap(\.string) : hooks.showMode(false) ?? []
                 if !blocking.isEmpty { throw CommandError("notReady", "readiness: \(blocking.joined(separator: ", "))") }
                 return nil

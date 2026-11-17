@@ -4765,8 +4765,9 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   blocking ids (`notReady`). Entering runs the checks in the command's
   `prepare` (B200): on the caller's thread with the control queue free, one
   entry at a time, and decides on the control queue (show mode still off, no
-  library root change started, no leave since the entry arrived; a leave during
-  an entry wins and the entry answers ok without entering). The entering client's
+  library root change started since the checks began, no leave since the entry
+  arrived; a leave from another client or source during an entry wins and the
+  entry answers ok without entering). The entering client's
   own later commands still wait, its connection's queue being serial; the 30 s timer, `readiness.run` and the display syncs
   queue them on a serial readiness queue, off the feed queue, and a run's items
   are stored only if no later-started run stored first (B187). Desired display modes are applied on entering

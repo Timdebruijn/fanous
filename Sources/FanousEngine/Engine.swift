@@ -128,6 +128,8 @@ public final class Engine: @unchecked Sendable {
     private let libraryQueue = DispatchQueue(label: "org.fanous.library.switch", qos: .utility)
     /// Root switches queued or running; show mode is refused meanwhile.
     private let librarySwitches = Atomic<Int>(0)
+    /// Root switches started so far: a show-mode entry refuses one that started and ended during its checks (B200).
+    private let librarySwitchesStarted = Atomic<Int>(0)
     /// Set by `stop()`: a queued switch does nothing.
     private let stopping = Atomic<Bool>(false)
     private var ingestAPI: IngestAPI?
@@ -1250,8 +1252,9 @@ public final class Engine: @unchecked Sendable {
 
     /// `show.mode`. Leaving runs on the control queue. Entering (B200) is called off it, by the command's `prepare` or on
     /// `showModeQueue`: one entry at a time, the checks with the control queue free, the decision on it; refused with the
-    /// blocking item ids. A leave that arrives during an entry wins: the entry answers nil without entering, as if it had
-    /// entered and been left (a refusal still answers as one).
+    /// blocking item ids. A leave from another client or source that arrives during an entry wins: the entry answers nil
+    /// without entering, as if it had entered and been left (a refusal still answers as one). A leave from the same
+    /// connection, or an OSC/MIDI 0 behind its 1, comes after the entry (serial queues), as before.
     func setShowMode(_ on: Bool) -> [String]? {
         if !on {
             showLeaves.add(1, ordering: .relaxed)
@@ -1268,13 +1271,17 @@ public final class Engine: @unchecked Sendable {
             // acknowledgement on a pass as if show mode were off
             if showMode.isOn { return nil }
             if librarySwitches.load(ordering: .relaxed) > 0 { return ["libraryRootChanging"] }  // B51: a moment, not a readiness item
+            let switches = librarySwitchesStarted.load(ordering: .relaxed)
             // decided on this run's items as the acknowledgements are when it lands (a run on the readiness queue may
             // have stored meanwhile); show mode is still off here (only an entry enters, and this is the only one), so an
             // item that passes now drops its acknowledgement: it needs none to enter
             let blocking = checkReadiness(readinessContext(), entering: true).filter(\.blocks).map(\.id)
-            // on the control queue, where a library root change starts (B51) and a leave counts
+            // on the control queue, where a library root change starts (B51) and a leave counts; a switch that started
+            // during the checks refuses even when it has ended: they ran against the old root
             let decide = { [self] () -> [String]? in
-                if librarySwitches.load(ordering: .relaxed) > 0 { return ["libraryRootChanging"] }
+                if librarySwitches.load(ordering: .relaxed) > 0 || librarySwitchesStarted.load(ordering: .relaxed) != switches {
+                    return ["libraryRootChanging"]
+                }
                 if !blocking.isEmpty { return blocking }
                 if showLeaves.load(ordering: .relaxed) != arrived || showMode.isOn { return nil }
                 showMode.enter()
@@ -1475,7 +1482,8 @@ public final class Engine: @unchecked Sendable {
     }
 
     /// Control queue: re-applies the patch when it changed and schedules the autosave (2 s after the last change).
-    private func projectChanged(_ document: JSONValue) {
+    /// Internal: a test starts a library root switch with it (B200).
+    func projectChanged(_ document: JSONValue) {
         oscFacts(from: document)
         if document["showLock"]?.bool == true { endLeases() }
         // patch and per-universe settings (B28): applied on the DMX queue; sACN groups follow both
@@ -1505,6 +1513,7 @@ public final class Engine: @unchecked Sendable {
             if root != previous, !stopping.load(ordering: .relaxed) {
                 // here on the control queue, like show.mode: from now on show mode and new ingest jobs are refused
                 librarySwitches.wrappingAdd(1, ordering: .relaxed)
+                librarySwitchesStarted.wrappingAdd(1, ordering: .relaxed)
                 ingestAPI?.holdEnqueue("the library root is changing; try again in a moment")
                 libraryQueue.async { [self] in
                     switchLibrary(to: root)

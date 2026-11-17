@@ -27,7 +27,9 @@ public struct CommandSpec: Sendable {
     /// What makes two calls "the same edit" for undo coalescing (a slider drag), with the args' `id`; nil = their `path`.
     public var coalesceKey: (@Sendable (JSONValue) -> String?)?
     /// Runs before `run` on the caller's thread, with the control queue free, once the role is checked; what it returns
-    /// is `run`'s args. For a slow part that must not hold the queue: `show.mode`'s readiness checks (B200).
+    /// is `run`'s args. For a slow part that must not hold the queue: `show.mode`'s readiness checks (B200). It runs before
+    /// `executeLocked`'s own checks (show lock, and whatever the queue's state is by then), so it must do nothing those
+    /// could still refuse.
     public var prepare: (@Sendable (JSONValue) throws -> JSONValue)?
     public var run: @Sendable (inout JSONValue, JSONValue) throws -> JSONValue?
 }

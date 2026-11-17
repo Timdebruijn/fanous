@@ -808,6 +808,32 @@ struct ShowControlTests {
         second.gate.signal()
         #expect(try await offPool { both.wait(timeout: .now() + 5) } == .success)
         #expect(results.withLock { $0 } == [true, true] && second.changes.withLock { $0 } == [true] && second.checks.load(ordering: .relaxed) == 1)
+        // `run` called around `execute` (so without `prepare`'s entry) refuses instead of answering ok
+        let spec = try #require(second.store.commandSpecs.first { $0.name == "show.mode" })
+        var project: JSONValue = [:]
+        #expect(throws: CommandError("failed", "show mode entry did not run")) { _ = try spec.run(&project, ["on": true]) }
+    }
+
+    /// B200: a library root switch that starts and ends while an entry's checks run refuses the entry, which checked
+    /// against the old root (B51); before, the checks held the control queue, where a switch starts. The switch is
+    /// started as `project.set /library/root` starts it (`projectChanged` on the control queue); the engine has no
+    /// library, so it ends at once on the library queue, as a fast real switch would.
+    @Test func aLibraryRootSwitchDuringAnEntryRefusesIt() async throws {
+        let held = HeldEntry()
+        defer { held.done() }
+        let entry = DispatchGroup()
+        let answer = Mutex<Result<CommandResult, CommandError>?>(nil)
+        DispatchQueue.global().async(group: entry) {
+            let result = held.store.execute("show.mode", args: ["on": true], role: .operator)
+            answer.withLock { $0 = result }
+        }
+        #expect(await waitUntil { held.checks.load(ordering: .relaxed) == 1 })
+        held.store.queue.sync { held.engine.projectChanged(["library": ["root": "/tmp/fanous-b200-root"]]) }
+        try await Task.sleep(for: .milliseconds(200))  // the switch runs to its end on the library queue
+        held.gate.signal()
+        #expect(try await offPool { entry.wait(timeout: .now() + 5) } == .success)
+        #expect(answer.withLock { $0 } == .failure(CommandError("notReady", "readiness: libraryRootChanging")), "the entry ignored the switch")
+        #expect(!held.engine.showMode.isOn)
     }
 
     /// B198: `1, 0, 1` ends on, also when it arrives while an entry runs; a `1` during that entry is dropped (it answers
