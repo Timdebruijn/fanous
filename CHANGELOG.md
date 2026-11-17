@@ -10,7 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- The show-mode library-switch test waits for the switch to end instead of 200 ms and checks it is on the started-count branch, B258 (PR #N)
+- The show-mode library-switch test waits for the switch to end instead of 200 ms and checks it is on the started-count branch, B258 (PR #384)
 
 ## 1.0.0-rc.14 — 2026-11-17
 
