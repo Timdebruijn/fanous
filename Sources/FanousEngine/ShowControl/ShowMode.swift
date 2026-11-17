@@ -69,22 +69,28 @@ public final class ShowModeController: @unchecked Sendable {
         var activity: NSObjectProtocol?
         /// Set by `stop`: no enter after the engine began stopping.
         var stopping = false
+        /// Where the on/off state survives an unclean end; nil: not persisted.
+        var file: URL?
     }
 
     private let logger: Logger
-    private let stateURL: URL?
     /// The file is written inside this lock, so it never lags `isOn` out of order.
-    private let state = Mutex(State())
+    private let state: Mutex<State>
     /// Side effects owned by the engine (ingest pause, display modes, log level), run on enter/leave.
     nonisolated(unsafe) public var onChange: (@Sendable (Bool) -> Void)?
 
-    /// `stateURL`: where the on/off state survives an unclean end (nil: not persisted).
+    /// `stateURL`: where the on/off state survives an unclean end (nil: not persisted until `persist(to:)`).
     public init(logger: Logger, stateURL: URL? = nil) {
         self.logger = logger
-        self.stateURL = stateURL
+        state = Mutex(State(file: stateURL))
     }
 
     public var isOn: Bool { state.withLock { $0.on } }
+    var stateFile: URL? { state.withLock { $0.file } }
+
+    /// `Engine.start`: the state is persisted to `url` from here on, so an engine that never started writes and
+    /// removes no state file (B241).
+    public func persist(to url: URL) { state.withLock { $0.file = url } }
 
     /// `since`: the original entry time when show mode resumes after an unclean stop or a restart.
     public func enter(since: Date = Date()) {
@@ -158,7 +164,7 @@ public final class ShowModeController: @unchecked Sendable {
 
     /// Under the state lock: on → the file, off → no file (unless kept for a restart).
     private func persist(_ s: State, restart: Bool = false) {
-        guard let stateURL else { return }
+        guard let stateURL = s.file else { return }
         do {
             if s.on || restart {
                 let value = ShowModeState(since: s.since, written: Date().timeIntervalSince1970, restart: restart ? true : nil)

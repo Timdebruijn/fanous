@@ -143,6 +143,9 @@ public final class Engine: @unchecked Sendable {
     /// The file `start` loaded the project from; nil before, so an engine that never started (a test) writes no
     /// project file (B240). A test sets a temporary one.
     var projectFile: URL?
+    /// The shell's Engine › Restart Engine marker, which `stop` takes; nil before `start`, so a stop of an engine that
+    /// never started (a test) removes no marker (B242).
+    var restartPendingFile: URL?
     /// B243: the last project document no save has written yet, with its lock state and file. A save takes it out on the
     /// feed queue, so each document is written at most once and never after a newer one.
     private let unsavedProject = Mutex<(document: JSONValue, showLock: Bool, file: URL)?>(nil)
@@ -187,16 +190,11 @@ public final class Engine: @unchecked Sendable {
         return store.commandSpecs
     }
 
-    public convenience init(options: EngineOptions, logger: Logger) {
-        self.init(options: options, logger: logger, showStateURL: AppPaths.showStateFile)
-    }
-
-    /// `showStateURL` nil: show mode is not persisted, so a test that enters it leaves no file for the installed engine
-    /// to resume. `start` still reads `AppPaths.showStateFile`.
-    init(options: EngineOptions, logger: Logger, showStateURL: URL?) {
+    /// Show mode is persisted, and the restart marker taken, only once `start` has run (B241, B242).
+    public init(options: EngineOptions, logger: Logger) {
         self.options = options
         self.logger = logger
-        showMode = ShowModeController(logger: logger, stateURL: showStateURL)
+        showMode = ShowModeController(logger: logger)
     }
 
     public func start() throws {
@@ -218,6 +216,8 @@ public final class Engine: @unchecked Sendable {
             try? FileManager.default.removeItem(at: AppPaths.showStateFile)
         case .none: break
         }
+        showMode.persist(to: AppPaths.showStateFile)
+        restartPendingFile = AppPaths.restartPendingFile
         let host = SystemInfo.hostName
         var hostnames = ["localhost", host]
         if !host.hasSuffix(".local") { hostnames.append(host + ".local") }
@@ -1991,7 +1991,7 @@ public final class Engine: @unchecked Sendable {
         citp?.stop()
         // Engine › Restart Engine keeps show mode (and the switched display modes) for the next start; every other
         // stop leaves it. Either way no enter after this point.
-        let keepShow = showMode.stop(keepingState: ShowModeState.takeRestartMarker(at: AppPaths.restartPendingFile))
+        let keepShow = showMode.stop(keepingState: restartPendingFile.map { ShowModeState.takeRestartMarker(at: $0) } ?? false)
         ltc?.stop()
         mtc?.stop()
         midi?.stop()
