@@ -89,6 +89,10 @@ struct OSCReceiverTests {
     /// B176: every message the address map takes lands in `live.osc.recent` as it was sent, a command also when the
     /// engine then refuses it; unknown and malformed ones, a missing layer and the feedback requests do not, and a fader
     /// sweep on one address holds one row with its last value.
+    /// Probe and burst go out from one socket, as a console sends: the rows keep the order of one established flow. A
+    /// probe from a throwaway socket of its own was a second new flow, set up while the burst's flow was; then
+    /// Network.framework hands a few datagrams of the burst to the other flow's connection and they run ahead of the
+    /// rest (B230, B252): the order across two new flows is not kept.
     @Test func recentListsReceivedMessagesInTheirOSCSpelling() async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         store.onCommand = { _ in }
@@ -96,8 +100,13 @@ struct OSCReceiverTests {
         try receiver.start()
         defer { receiver.stop() }
         let port = try await listeningPort { receiver.boundUDPPort }
+        let fd = socket(AF_INET, SOCK_DGRAM, 0)
+        defer { close(fd) }
+        func send(_ messages: [OSCMessage]) {
+            for bytes in messages.map({ $0.encoded() }) { _ = withSockaddr(port: port, host: "127.0.0.1") { sendto(fd, bytes, bytes.count, 0, $0, $1) } }
+        }
         #expect(await waitUntil(every: .milliseconds(50)) {
-            sendUDP(OSCMessage("/fanous/cue/go").encoded(), to: port)
+            send([OSCMessage("/fanous/cue/go")])
             return !store.recentOSC().isEmpty
         })
 
@@ -111,7 +120,7 @@ struct OSCReceiverTests {
                 OSCMessage("/fanous/layer/1/intensity", [.string("x")]),  // no value
                 OSCMessage("/fanous/get"),  // answered (with a feedback server), never listed
             ] + sweep + [OSCMessage("/fanous/layer/1/media", [.int32(2), .int32(7)]), OSCMessage("/fanous/project/load", [.string("Show A")])]
-        sendUDP(messages.map { $0.encoded() }, to: port)
+        send(messages)
         await waitUntil { store.recentOSC().last?.text == "/fanous/project/load \"Show A\"" }
         // the probe's cue/go rows (one per probe sent) come first
         #expect(
