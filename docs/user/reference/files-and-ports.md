@@ -28,7 +28,7 @@ Everything below is in `~/Library/Application Support/Fanous/` (mode 0700).
 
 | File | What | Notes |
 |---|---|---|
-| `project.json` | The project: patch, layer count, Who controls, canvases, outputs, walls, presets, cues, timecode and MIDI settings, universe settings | Saved 2 s after the last change, and at once when the engine stops; a show-lock change is written at once. A file that does not read as a project is kept as `project.json.unreadable-<time>` and the engine starts with the standard patch |
+| `project.json` | The project: patch, layer count, Who controls, canvases, outputs, walls, presets, cues, timecode and MIDI settings, universe settings | Saved 2 s after the last change, and at once when the engine stops normally (Stop Engine, Quit, Restart Engine, logout); after a crash, a force quit or a power cut the last 2 s of changes can be lost. A show-lock change is written at once. A file that does not read as a project is kept as `project.json.unreadable-<time>` and the engine starts with the standard patch |
 | `versions/<time>-<name>.json` | Project versions | Automatic at every engine start, on entering show mode, every 10 minutes after a change (only when the project differs from the newest version) and before a revert; the newest 50 automatic ones are kept. Named versions never expire. See System › Project versions |
 | `settings.json` | Machine settings (mode 0600) | `passwords` (hashed, per role), `sync` (interface, port, target), `oscFeedback` (fixed OSC target). Unknown fields are kept. The engine rewrites it; see the hand-edit rule below |
 | `shell-token` | The app window's programmer token (mode 0600) | 64 hex characters, made at first start. The app opens the UI with it, so the window is always programmer |

@@ -1981,6 +1981,11 @@ public final class Engine: @unchecked Sendable {
             dmxTimer?.cancel()
             dmxTimer = nil
         }
+        // B243: the first of two flushes, before the steps below that can wait long (a display mode switch in flight, a
+        // root switch scanning a slow volume, an ingest job stuck in a read, a library probe), so a stop that launchd
+        // kills at its exit timeout still wrote what was changed before it began. The last flush, at the end, writes
+        // what changed in between; it finds nothing otherwise.
+        flushProjectSave()
         stopReadinessTimer()
         versionTimer?.cancel()
         citp?.stop()
@@ -2018,10 +2023,11 @@ public final class Engine: @unchecked Sendable {
         osc?.stop()
         oscFeedback?.stop()
         dmx?.stop()
-        // B243: last, once the server, the live feed, the library queue and queued OSC/MIDI commands change the project no
-        // more; the control-queue turn lets a change being committed finish first, so its document is the one written.
-        // Not waited for (B244): a command already running (B198), an OSC project load on the versions queue and the MIDI
-        // map id correction
+        // B243: the last flush, once the live feed, the library queue, the listener and queued OSC/MIDI commands change the
+        // project no more; the control-queue turn lets a change being committed finish first, so its document is the one
+        // written. Not covered (B244): a command on a WebSocket or REST connection still open (`server.stop()` cancels the
+        // listener only), a command already running (B198), an OSC project load on the versions queue and the MIDI map id
+        // correction, when they commit after this turn
         store?.queue.sync {}
         flushProjectSave()
         logger.info("fanousd stopped")

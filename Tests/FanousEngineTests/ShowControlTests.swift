@@ -954,9 +954,10 @@ struct ShowControlTests {
         #expect(!FileManager.default.fileExists(atPath: file.path), "the change was written again after the flush")
     }
 
-    /// B243: saves still queued on the feed queue when the flush starts (here two show-lock changes, the first one
-    /// cancelled by the second) run before it, and nothing older lands after it. The old flush cancelled the queued save
-    /// and wrote nothing.
+    /// B243: with saves still queued on the feed queue when the flush starts (two show-lock changes; the second cancels
+    /// the first before it runs, so no older save is truly in flight here), the newest document is on disk after the
+    /// flush and stays there. The pass does not depend on when the gate opens; the old flush's failure here does (it
+    /// cancelled the queued newer save when it ran before the gate opened).
     @Test func theFlushAtStopRunsAfterTheSavesInFlight() {
         let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger, showStateURL: nil)
         let file = tempFile("b243-inflight", ext: "json")
