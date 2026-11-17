@@ -104,7 +104,7 @@ export type TriggerResult = { ok: true; value: string | null } | { ok: false; er
 export function parseTrigger(text: string): TriggerResult {
   const trimmed = text.trim();
   if (trimmed === '') return { ok: true, value: null };
-  const match = /^(\d{1,2}):(\d{1,2}):(\d{1,2})[:;](\d{1,2})(?:\s*@\s*(.+))?$/.exec(trimmed);
+  const match = /^(\d{1,2}):(\d{1,2}):(\d{1,2})[:;](\d{1,2})(?:\s*@\s*(\S.*))?$/.exec(trimmed);
   if (!match) return { ok: false, error: `Use ${TRIGGER_HINT}` };
   const [h, m, s, f] = [match[1], match[2], match[3], match[4]].map(Number) as [number, number, number, number];
   const rateText = (match[5] ?? '25').toLowerCase().replace(/\s+/g, '');

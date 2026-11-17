@@ -143,6 +143,27 @@ describe('trigger spellings shared with the engine (B192)', () => {
 });
 
 describe('parseTrigger', () => {
+  // B225: whitespace after `@` with no name the pattern can end on used to backtrack quadratically (60,000 spaces: several seconds on the old regex).
+  it('answers in linear time on whitespace after @', () => {
+    const start = performance.now();
+    expect(parseTrigger(`00:00:10:00@${' '.repeat(60000)}x\ny`).ok).toBe(false);
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
+
+  it('keeps the verdict for the rate part spellings (B225)', () => {
+    const at = (rate: string) => parseTrigger(`00:00:10:00${rate}`);
+    expect(at('')).toEqual({ ok: true, value: '00:00:10:00@25' });
+    expect(at('@24')).toEqual({ ok: true, value: '00:00:10:00@24' });
+    expect(at(' @ 24 ')).toEqual({ ok: true, value: '00:00:10:00@24' });
+    expect(at('@ 29.97 d f')).toEqual({ ok: true, value: '00:00:10:00@29.97 DF' });
+    expect(at(' @ \n 24')).toEqual({ ok: true, value: '00:00:10:00@24' });
+    expect(at('@')).toMatchObject({ ok: false, error: expect.stringContaining('Use hh:mm') });
+    expect(at('@ \n ')).toMatchObject({ ok: false, error: expect.stringContaining('Use hh:mm') });
+    expect(at('@24@25')).toMatchObject({ ok: false, error: 'Unknown rate "24@25"; use 24, 25, 29.97df, 29.97ndf or 30' });
+    expect(at('@2\n4')).toMatchObject({ ok: false, error: expect.stringContaining('Use hh:mm') });
+    expect(at('@ \nx\ny')).toMatchObject({ ok: false, error: expect.stringContaining('Use hh:mm') });
+  });
+
   it('treats empty text as no trigger', () => {
     expect(parseTrigger('')).toEqual({ ok: true, value: null });
     expect(parseTrigger('   ')).toEqual({ ok: true, value: null });
