@@ -90,9 +90,9 @@ struct OSCReceiverTests {
     /// engine then refuses it; unknown and malformed ones, a missing layer and the feedback requests do not, and a fader
     /// sweep on one address holds one row with its last value.
     /// Probe and burst go out from one socket, as a console sends: the rows keep the order of one established flow. A
-    /// probe from a throwaway socket of its own was a second new flow, set up while the burst's flow was; then
-    /// Network.framework hands a few datagrams of the burst to the other flow's connection and they run ahead of the
-    /// rest (B230, B252): the order across two new flows is not kept.
+    /// probe from a throwaway socket of its own was a second new flow, set up while the burst's flow was; then a few
+    /// datagrams of the burst came out of the other flow's `NWConnection` and ran ahead of the rest (B230, B252): the
+    /// order across two flows that start at the same moment is not kept.
     @Test func recentListsReceivedMessagesInTheirOSCSpelling() async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         store.onCommand = { _ in }
