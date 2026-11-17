@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Release: 1.0.0-rc.13 is on GitHub as a pre-release with the signed, notarized dmg, built from main 53387a2
+  (PR #376).
+
 ## 1.0.0-rc.13 — 2026-11-17
 
 - Tests (B230): the OSC "Last received" order test sends its probe and burst from one socket; the flake was two new
