@@ -143,6 +143,9 @@ public final class Engine: @unchecked Sendable {
     /// The file `start` loaded the project from; nil before, so an engine that never started (a test) writes no
     /// project file (B240). A test sets a temporary one.
     var projectFile: URL?
+    /// B243: the last project document no save has written yet, with its lock state and file. A save takes it out on the
+    /// feed queue, so each document is written at most once and never after a newer one.
+    private let unsavedProject = Mutex<(document: JSONValue, showLock: Bool, file: URL)?>(nil)
     /// B23: project versions; their file work (start, show mode, 10-minute timer, OSC load) runs on `versionsQueue`.
     private var versions: ProjectVersions?
     private var versionTimer: DispatchSourceTimer?
@@ -1609,14 +1612,9 @@ public final class Engine: @unchecked Sendable {
         }
         autosave?.cancel()
         guard let projectFile else { return }  // never started: no file to write (B240)
-        let logger = logger
         let showLock = document["showLock"]?.bool ?? false
-        let work = DispatchWorkItem { [weak self] in
-            do {
-                try ProjectDocument.save(document, to: projectFile)
-                self?.savedShowLock.withLock { $0 = showLock }
-            } catch { logger.error("autosave failed", metadata: ["error": "\(error)"]) }
-        }
+        unsavedProject.withLock { $0 = (document, showLock, projectFile) }
+        let work = DispatchWorkItem { [weak self] in self?.saveUnsavedProject() }
         autosave = work
         // a crash must not unlock a locked show: a lock change is written now, on the same serial queue as the
         // debounced saves, so an older document cannot land after it
@@ -1626,6 +1624,22 @@ public final class Engine: @unchecked Sendable {
             feedQueue.asyncAfter(deadline: .now() + 2, execute: work)
         }
     }
+
+    /// Feed queue: writes the project document no save has written yet, if there is one (B243).
+    private func saveUnsavedProject() {
+        guard let (document, showLock, file) = unsavedProject.withLock({ unsaved in
+            defer { unsaved = nil }
+            return unsaved
+        }) else { return }
+        do {
+            try ProjectDocument.save(document, to: file)
+            savedShowLock.withLock { $0 = showLock }
+        } catch { logger.error("autosave failed", metadata: ["error": "\(error)"]) }
+    }
+
+    /// B243: writes the change the 2 s autosave has not written yet now, after any save in flight; the debounced save
+    /// then finds nothing left to write. `stop()` calls it last.
+    func flushProjectSave() { feedQueue.sync { saveUnsavedProject() } }
 
     /// Why the library root cannot change to `root` now (B51). Show lock is the store's (project.set is refused).
     /// Ingest jobs hold absolute paths into the old root, so the change waits until none is queued or running.
@@ -1991,10 +2005,6 @@ public final class Engine: @unchecked Sendable {
                 coordinator.stop()
             }
         }
-        if let autosave, !autosave.isCancelled {
-            autosave.cancel()
-            feedQueue.sync { autosave.perform() }  // after any save in flight
-        }
         server?.stop()
         // a queued root switch does nothing from here; one in progress finishes (or drops its new index) first
         stopping.store(true, ordering: .relaxed)
@@ -2008,6 +2018,11 @@ public final class Engine: @unchecked Sendable {
         osc?.stop()
         oscFeedback?.stop()
         dmx?.stop()
+        // B243: last, once the server, the live feed, the library queue and queued OSC/MIDI commands change the project no
+        // more; the control-queue turn lets a change being committed finish first, so its document is the one written.
+        // Not waited for: a command already running (B198) and an OSC project load on the versions queue (B244)
+        store?.queue.sync {}
+        flushProjectSave()
         logger.info("fanousd stopped")
     }
 }
