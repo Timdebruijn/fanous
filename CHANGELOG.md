@@ -69,6 +69,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   `--no-network` engine's "Fanous – Canvas" is found by no Syphon app); an engine with the network on announces it as
   before (PR #396).
 - Tests (B350): `aRunningFadeReportsNothing` no longer waits to see a 0.3 s fade in flight, which a held-up poll misses (red once on CI) (PR #404).
+- Tests (B351): the swift CI job also runs `DMXStateBoundsTests`, `HAPFrameBoundsTests`, `HTTPSPipeliningTests` and `MetricsMicrosTests`, which were added today and ran locally only (PR #405).
 
 ## 1.0.0-rc.14 — 2026-11-17
 
