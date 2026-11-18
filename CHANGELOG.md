@@ -68,7 +68,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   (folder 0, 150–169): their Syphon servers stay out of the Mac-wide Syphon directory (no test announces a server, and a
   `--no-network` engine's "Fanous – Canvas" is found by no Syphon app); an engine with the network on announces it as
   before (PR #396).
-- Tests (B350): `aRunningFadeReportsNothing` no longer waits to see a 0.3 s fade in flight, which a held-up poll misses (red once on CI) (PR #NNN).
+- Tests (B350): `aRunningFadeReportsNothing` no longer waits to see a 0.3 s fade in flight, which a held-up poll misses (red once on CI) (PR #404).
 
 ## 1.0.0-rc.14 — 2026-11-17
 
