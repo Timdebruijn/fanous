@@ -37,7 +37,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   track size needs is refused instead of read past its end (PR #394).
 - Fix (B337): `--no-network` keeps off the default sync port 8002, which the installed engine owns: a test instance
   binds no sync socket and sends no sync packet there, at start or after `sync.set`; a port named in `settings.json`
-  still syncs two engines on one Mac over 127.0.0.1, and an engine with the network on is unchanged (PR #N).
+  still syncs two engines on one Mac over 127.0.0.1, and an engine with the network on is unchanged (PR #395).
 
 ## 1.0.0-rc.14 — 2026-11-17
 
