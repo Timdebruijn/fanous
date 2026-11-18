@@ -96,7 +96,7 @@ public final class Engine: @unchecked Sendable {
     private var cues: CueRunner?
     private var lastCues = CueList()
     /// B284: the newest cue list state the feed queue has not written yet.
-    private let unsavedCueState = Mutex<(current: UUID?, targets: [UUID: [CueValue]])?>(nil)
+    private let unsavedCueState = Mutex<(current: Cue?, targets: [UUID: [CueValue]])?>(nil)
     /// Internal: a test reads and watches it (B200).
     let showMode: ShowModeController
     /// The last run's items, the acknowledgements (B163) and the run numbers (B187).
@@ -430,20 +430,24 @@ public final class Engine: @unchecked Sendable {
         // not on the cue queue; a burst of GOs writes only the newest
         cues.onStateChange = { [weak self] current, targets in self?.handOverCueState(current, targets) }
         let cueList = ShowCommands.cueList(from: project)
-        cues.replace(list: cueList)
+        // B284: a resumed show is back on its cue with the values the cues held, in the same step as the list (so the
+        // runner never reports the empty state in between); nothing fades or follows
+        let resumeCues = resumeShow.flatMap { $0.cue != nil || $0.held != nil ? $0 : nil }
+        cues.replace(list: cueList, resuming: resumeCues.map { ($0.cue, $0.cueNumber, $0.targets) })
         lastCues = cueList
         self.cues = cues
-        // B284: a resumed show is back on its cue with the values the cues held; nothing fades or follows
-        if let resumeShow, resumeShow.cue != nil || resumeShow.held != nil {
-            let targets = resumeShow.targets
-            cues.resume(current: resumeShow.cue, targets: targets)
-            showMode.setCue(resumeShow.cue, targets: targets)  // before the enter below writes the file
+        if let resumeCues {
+            // the enter below writes the file: with the stored state, not the controller's empty one
+            showMode.setCue(resumeCues.cue, number: resumeCues.cueNumber, targets: resumeCues.targets)
             let alive = Set(cueList.cues.map(\.id))
-            let values = "\(targets.filter { alive.contains($0.key) }.values.reduce(0) { $0 + $1.count })"
-            if let cue = cueList.cues.first(where: { $0.id == resumeShow.cue }) {
-                logger.warning("cue position resumed", metadata: ["cue": "\(cue.number)", "name": "\(cue.name)", "values": "\(values)"])
+            let values = "\(resumeCues.targets.filter { alive.contains($0.key) }.values.reduce(0) { $0 + $1.count })"
+            let stored = resumeCues.cueNumber.map { "\($0)" } ?? "?"
+            if let cue = cueList.resuming(id: resumeCues.cue, number: resumeCues.cueNumber) {
+                logger.warning(
+                    cue.id == resumeCues.cue ? "cue position resumed" : "cue position resumed on an earlier cue: the cue is no longer in the cue list",
+                    metadata: ["cue": "\(cue.number)", "name": "\(cue.name)", "stored": "\(stored)", "values": "\(values)"])
             } else {
-                logger.warning("cue position not resumed: the cue is no longer in the cue list", metadata: ["values": "\(values)"])
+                logger.warning("cue position not resumed: the cue is no longer in the cue list", metadata: ["stored": "\(stored)", "values": "\(values)"])
             }
         }
         timecodeClock.onFrame = { [weak self] timecode, _ in self?.cues?.timecode(timecode) }
@@ -1117,7 +1121,7 @@ public final class Engine: @unchecked Sendable {
     }
 
     /// B284, on the cue queue: keeps the newest state and queues one write on the feed queue unless one is pending.
-    private func handOverCueState(_ current: UUID?, _ targets: [UUID: [CueValue]]) {
+    private func handOverCueState(_ current: Cue?, _ targets: [UUID: [CueValue]]) {
         let queued = unsavedCueState.withLock { pending in
             defer { pending = (current, targets) }
             return pending != nil
@@ -1125,7 +1129,7 @@ public final class Engine: @unchecked Sendable {
         guard !queued else { return }
         feedQueue.async { [self] in
             guard let state = unsavedCueState.withLock({ pending in defer { pending = nil }; return pending }) else { return }
-            showMode.setCue(state.current, targets: state.targets)
+            showMode.setCue(state.current?.id, number: state.current?.number, targets: state.targets)
         }
     }
 

@@ -179,7 +179,8 @@ projectors may blank for a moment.
 
 The engine writes its show-mode state to disk every 30 seconds, with the
 current cue and the values the cues hold, which it also writes whenever
-the current cue changes (Go, Back, Go to, a follow, a timecode trigger).
+the cue list changes (Go, Back, Go to, a follow, a timecode trigger, an
+edit of the cue list).
 
 ```mermaid
 flowchart TD

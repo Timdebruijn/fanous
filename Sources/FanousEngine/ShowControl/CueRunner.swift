@@ -27,9 +27,9 @@ public final class CueRunner: @unchecked Sendable {
     private var timer: DispatchSourceTimer?
     public let status = Mutex(Status(current: nil, currentName: nil, next: nil, nextName: nil, fading: false, count: 0))
     /// B284: called on the cue queue when the current cue or the held values change (a fire, a list edit, a resume), not
-    /// per tick, with the current cue's id and `CueEngine.targets`; set before the first command. It must not block:
-    /// the engine hands them to the show-state file off this queue.
-    public var onStateChange: (@Sendable (UUID?, [UUID: [CueValue]]) -> Void)?
+    /// per tick, with the current cue and `CueEngine.targets`; set before the first command. It must not block: the
+    /// engine hands them to the show-state file off this queue.
+    public var onStateChange: (@Sendable (Cue?, [UUID: [CueValue]]) -> Void)?
     private var lastRevision = 0  // cue queue only
     private var stopped = false  // cue queue only: set by `stop`, after which nothing changes
 
@@ -37,20 +37,22 @@ public final class CueRunner: @unchecked Sendable {
         self.dmx = dmx
     }
 
-    public func replace(list: CueList) {
+    /// `resuming` (B284, at start when show mode resumes): the stored state, applied in the same step as the list, so
+    /// only the resumed state is ever reported. See `CueEngine.resume(current:number:targets:)`.
+    public func replace(list: CueList, resuming state: (current: UUID?, number: Double?, targets: [UUID: [CueValue]])? = nil) {
         queue.async { [self] in
             guard !stopped else { return }
-            engine.withLock { $0.replace(list: list) }
-            tick()  // pushes the released values to the resolvers
+            engine.withLock { e in
+                e.replace(list: list)
+                if let state { e.resume(current: state.current, number: state.number, targets: state.targets) }
+            }
+            tick()  // pushes the released (or resumed) values to the resolvers
         }
     }
 
     public func go() { queue.async { [self] in act { $0.go(at: CACurrentMediaTime()) } } }
     public func back() { queue.async { [self] in act { $0.back(at: CACurrentMediaTime()) } } }
     public func goto(_ number: Double) { queue.async { [self] in act { $0.goto(number: number, at: CACurrentMediaTime()) } } }
-
-    /// Show mode resumed (B284): see `CueEngine.resume(current:targets:)`.
-    public func resume(current: UUID?, targets: [UUID: [CueValue]]) { queue.async { [self] in act { $0.resume(current: current, targets: targets) } } }
 
     /// From the timecode clock (any thread): fires cues whose trigger was crossed.
     public func timecode(_ timecode: Timecode) {
@@ -83,11 +85,11 @@ public final class CueRunner: @unchecked Sendable {
 
     private func publish() {
         let last = lastRevision
-        let (s, changed) = engine.withLock { e -> (Status, (revision: Int, current: UUID?, targets: [UUID: [CueValue]])?) in
+        let (s, changed) = engine.withLock { e -> (Status, (revision: Int, current: Cue?, targets: [UUID: [CueValue]])?) in
             let status = Status(
                 current: e.current?.number, currentName: e.current?.name, next: e.next?.number, nextName: e.next?.name, fading: e.isFading,
                 count: e.list.cues.count)
-            return (status, e.revision == last ? nil : (e.revision, e.current?.id, e.targets))
+            return (status, e.revision == last ? nil : (e.revision, e.current, e.targets))
         }
         status.withLock { $0 = s }
         if let changed {

@@ -20,33 +20,52 @@ public struct ShowModeState: Codable, Equatable, Sendable {
     public var written: Double
     /// Written by the stop for Engine › Restart Engine: show mode kept on purpose.
     public var restart: Bool?
-    /// The cue list when written (B284): the current cue's id and the values the cues hold, by owning cue id,
-    /// `"Layer 1/intensity"` → raw (a running fade at its target). Absent in files of older builds, and ignored by them.
+    /// The cue list when written (B284): the current cue's id and number (the number finds the nearest earlier cue when
+    /// that one is gone) and the values the cues hold, by owning cue id, `"Layer 1/intensity"` → raw (a running fade at
+    /// its target). Absent in files of older builds, and ignored by them.
     public var cue: UUID?
+    public var cueNumber: Double?
     public var held: [String: [String: UInt16]]?
 
-    public init(on: Bool = true, since: Double, written: Double, restart: Bool? = nil, cue: UUID? = nil, held: [String: [String: UInt16]]? = nil) {
+    public init(
+        on: Bool = true, since: Double, written: Double, restart: Bool? = nil, cue: UUID? = nil, cueNumber: Double? = nil,
+        held: [String: [String: UInt16]]? = nil
+    ) {
         self.on = on
         self.since = since
         self.written = written
         self.restart = restart
         self.cue = cue
+        self.cueNumber = cueNumber
         self.held = held
     }
 
-    /// A `cue` or `held` that does not decode (a hand edit) means no cue list state, not no resume (B284).
+    private struct AnyKey: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+        init(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
+
+    /// A hand edit that does not decode loses only itself, never the resume (B284): a bad `cue` or `cueNumber` is no
+    /// current cue, a bad entry in `held` (a raw beyond 0–65535, not a number) is left out and the rest stays.
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         on = try c.decode(Bool.self, forKey: .on)
         since = try c.decode(Double.self, forKey: .since)
         written = try c.decode(Double.self, forKey: .written)
         restart = try c.decodeIfPresent(Bool.self, forKey: .restart)
-        do {
-            cue = try c.decodeIfPresent(UUID.self, forKey: .cue)
-            held = try c.decodeIfPresent([String: [String: UInt16]].self, forKey: .held)
-        } catch {
-            cue = nil
-            held = nil
+        cue = try? c.decodeIfPresent(UUID.self, forKey: .cue)
+        cueNumber = (try? c.decodeIfPresent(Double.self, forKey: .cueNumber)).flatMap { $0.isFinite ? $0 : nil }
+        if let cues = try? c.nestedContainer(keyedBy: AnyKey.self, forKey: .held) {
+            var held: [String: [String: UInt16]] = [:]
+            for cue in cues.allKeys {
+                guard let values = try? cues.nestedContainer(keyedBy: AnyKey.self, forKey: cue) else { continue }
+                for key in values.allKeys {
+                    if let raw = try? values.decode(UInt16.self, forKey: key) { held[cue.stringValue, default: [:]][key.stringValue] = raw }
+                }
+            }
+            self.held = held
         }
     }
 
@@ -115,6 +134,7 @@ public final class ShowModeController: @unchecked Sendable {
         var file: URL?
         /// The cue list's current cue and held values (B284), also while off, so entering writes them.
         var cue: UUID?
+        var cueNumber: Double?
         var held: [String: [String: UInt16]] = [:]
     }
 
@@ -170,11 +190,12 @@ public final class ShowModeController: @unchecked Sendable {
 
     /// The cue list's current cue or held values changed (B284): written at once while on. The engine calls it on the
     /// feed queue (and once at a resume, before entering), never on the cue queue (a timing path).
-    public func setCue(_ id: UUID?, targets: [UUID: [CueValue]]) {
+    public func setCue(_ id: UUID?, number: Double?, targets: [UUID: [CueValue]]) {
         let held = ShowModeState.encode(targets)
         state.withLock { s in
-            guard s.cue != id || s.held != held else { return }
+            guard s.cue != id || s.cueNumber != number || s.held != held else { return }
             s.cue = id
+            s.cueNumber = number
             s.held = held
             if s.on { persist(s) }
         }
@@ -224,7 +245,7 @@ public final class ShowModeController: @unchecked Sendable {
         guard let stateURL = s.file else { return }
         do {
             if s.on || restart {
-                let value = ShowModeState(since: s.since, written: Date().timeIntervalSince1970, restart: restart ? true : nil, cue: s.cue, held: s.held.isEmpty ? nil : s.held)
+                let value = ShowModeState(since: s.since, written: Date().timeIntervalSince1970, restart: restart ? true : nil, cue: s.cue, cueNumber: s.cueNumber, held: s.held.isEmpty ? nil : s.held)
                 try JSONEncoder().encode(value).write(to: stateURL, options: .atomic)
             } else if FileManager.default.fileExists(atPath: stateURL.path) {
                 try FileManager.default.removeItem(at: stateURL)

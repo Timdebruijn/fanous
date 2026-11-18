@@ -1329,53 +1329,63 @@ struct ShowControlTests {
             three: [CueValue(fixture: .layer(3), parameter: .layer(.intensity), raw: 40000)],
             four: [CueValue(fixture: .master, parameter: .master(.intensity), raw: 65535)],
         ]
-        show.setCue(three, targets: held)
+        show.setCue(three, number: 3, targets: held)
         #expect(!FileManager.default.fileExists(atPath: url.path), "off: no file")
         show.enter()
         let entered = try #require(ShowModeState.load(from: url))
-        #expect(entered.cue == three && entered.targets == held)
-        show.setCue(four, targets: [:])
+        #expect(entered.cue == three && entered.cueNumber == 3 && entered.targets == held)
+        show.setCue(four, number: 4, targets: [:])
         #expect(ShowModeState.load(from: url)?.cue == four && ShowModeState.load(from: url)?.held == nil)
-        show.setCue(four, targets: held)
+        show.setCue(four, number: 4, targets: held)
         show.stop(keepingState: true)
         let kept = try #require(ShowModeState.load(from: url))
-        #expect(kept.restart == true && kept.cue == four && kept.targets == held)
+        #expect(kept.restart == true && kept.cue == four && kept.cueNumber == 4 && kept.targets == held)
 
         let left = ShowModeController(logger: testLogger, stateURL: url)
-        left.setCue(four, targets: held)
+        left.setCue(four, number: 4, targets: held)
         left.enter()
         left.leave()
         #expect(!FileManager.default.fileExists(atPath: url.path), "leaving show mode removes the cue list state with it")
 
         try Data(#"{"on":true,"since":1,"written":2}"#.utf8).write(to: url)
         let old = try #require(ShowModeState.load(from: url))
-        #expect(old.cue == nil && old.targets.isEmpty)
+        #expect(old.cue == nil && old.cueNumber == nil && old.targets.isEmpty)
         var stale = kept
         stale.written -= ShowModeState.maxAge + 1
         #expect(ShowModeState.decide(stale, now: kept.written) == .stale, "a stale file resumes nothing, cue included")
     }
 
-    /// B284: a hand-edited `cue` or `held` that does not decode means no cue list state; show mode still resumes. An
-    /// entry that does not parse is left out of the targets.
+    /// B284: a hand edit loses only itself, never the resume: a bad `cue` is no current cue, a bad `held` is no held
+    /// values, and a bad entry in `held` (a raw beyond 0–65535 or not a number, a fixture or parameter that does not
+    /// parse) is left out while the cue and the other values stay.
     @Test func aBadCueListStateStillResumesShowMode() throws {
         let url = try tempDir("fanous-show").appending(path: "show-state.json")
         let id = UUID().uuidString
-        for json in [
-            #"{"on":true,"since":1,"written":2,"cue":"nope"}"#,
-            #"{"on":true,"since":1,"written":2,"cue":"\#(id)","held":{"\#(id)":{"Layer 1/intensity":-1}}}"#,
-            #"{"on":true,"since":1,"written":2,"cue":"\#(id)","held":[1]}"#,
+        let other = UUID().uuidString
+        let base = #"{"on":true,"since":1,"written":2"#
+        for (json, cue) in [
+            (base + #","cue":"nope","cueNumber":"x","held":[1]}"#, nil as UUID?),
+            (base + #","cue":"\#(id)","cueNumber":3,"held":"x"}"#, UUID(uuidString: id)),
         ] {
             try Data(json.utf8).write(to: url)
             let state = try #require(ShowModeState.load(from: url), "\(json)")
-            #expect(state.on && state.cue == nil && state.held == nil, "\(json)")
+            #expect(state.on && state.cue == cue && state.targets.isEmpty, "\(json)")
         }
-        try Data(#"{"on":true,"since":1,"written":2,"cue":"\#(id)","held":{"\#(id)":{"Layer 1/intensity":7,"Layer 1/nope":1,"Moon/x":2},"x":{"Master/intensity":3}}}"#.utf8).write(to: url)
+        let entries = #""\#(id)":{"Layer 1/intensity":7,"Layer 2/intensity":70000,"Layer 3/intensity":-1,"Layer 4/intensity":"x","Layer 1/nope":1,"Moon/x":2},"#
+            + #""\#(other)":{"Master/intensity":3},"x":{"Master/intensity":4}"#
+        try Data((base + #","cue":"\#(id)","cueNumber":3,"held":{"# + entries + "}}").utf8).write(to: url)
         let state = try #require(ShowModeState.load(from: url))
-        #expect(state.targets == [UUID(uuidString: id)!: [CueValue(fixture: .layer(1), parameter: .layer(.intensity), raw: 7)]])
+        #expect(state.cue == UUID(uuidString: id) && state.cueNumber == 3)
+        #expect(state.targets == [
+            UUID(uuidString: id)!: [CueValue(fixture: .layer(1), parameter: .layer(.intensity), raw: 7)],
+            UUID(uuidString: other)!: [CueValue(fixture: .master, parameter: .master(.intensity), raw: 3)],
+        ])
     }
 
-    /// B284: the runner's resume puts the held values back at once (no fade from 0) and reports the cue list state on a
-    /// change, not per tick; the next GO fires the cue after the resumed one. After `stop` nothing changes.
+    /// B284: the list and the resumed state go in as one step at start, so the runner reports only the resumed state,
+    /// never the empty one in between (a report of it could reach the file after the resumed one). The held values are
+    /// back at once (no fade from 0); a change is reported, not a tick; the next GO fires the cue after the resumed
+    /// one. After `stop` nothing changes.
     @Test func cueRunnerResumesTheStateAndReportsChanges() async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         store.setPolicy(.internal)
@@ -1383,25 +1393,43 @@ struct ShowControlTests {
         defer { runner.stop() }
         let reported = Mutex<[UUID?]>([])
         let lastTargets = Mutex<[UUID: [CueValue]]>([:])
-        runner.onStateChange = { id, targets in
-            reported.withLock { $0.append(id) }
+        runner.onStateChange = { cue, targets in
+            reported.withLock { $0.append(cue?.id) }
             lastTargets.withLock { $0 = targets }
         }
         let half = CueValue(fixture: .layer(1), parameter: .layer(.intensity), raw: 32768)
         let list = CueList(cues: [Cue(number: 1, fadeTime: 5, values: [half]), Cue(number: 2, fadeTime: 5), Cue(number: 3, fadeTime: 0)])
-        runner.replace(list: list)
-        runner.resume(current: list.cues[1].id, targets: [list.cues[0].id: [half]])
+        runner.replace(list: list, resuming: (list.cues[1].id, 2, [list.cues[0].id: [half]]))
         #expect(await waitUntil { runner.status.withLock { $0.current } == 2 })
+        #expect(reported.withLock { $0 } == [list.cues[1].id], "only the resumed state is reported at start")
         #expect(abs(store.snapshots.withLatest { $0.layers[0].intensity } - 0.5) < 0.01, "the held value at once, not fading from 0")
         #expect(!runner.status.withLock { $0.fading })
         runner.go()
         #expect(await waitUntil { runner.status.withLock { $0.current } == 3 })
-        #expect(await waitUntil { reported.withLock { $0 } == [nil, list.cues[1].id, list.cues[2].id] })
+        #expect(await waitUntil { reported.withLock { $0 } == [list.cues[1].id, list.cues[2].id] })
         #expect(lastTargets.withLock { $0 } == [list.cues[0].id: [half]])
         runner.stop()
         runner.back()
         runner.stop()  // waits for the queued back
-        #expect(runner.status.withLock { $0.current } == 3 && reported.withLock { $0.count } == 3, "a command after stop changed the state")
+        #expect(runner.status.withLock { $0.current } == 3 && reported.withLock { $0.count } == 2, "a command after stop changed the state")
+    }
+
+    /// B284: a running fade is ticked at 50 Hz but changes no target: it reports once, at the GO, not per tick or at its
+    /// end.
+    @Test func aRunningFadeReportsNothing() async throws {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
+        let runner = CueRunner(dmx: store)
+        defer { runner.stop() }
+        let reported = Mutex(0)
+        runner.onStateChange = { _, _ in reported.withLock { $0 += 1 } }
+        let full = CueValue(fixture: .layer(1), parameter: .layer(.intensity), raw: 65535)
+        runner.replace(list: CueList(cues: [Cue(number: 1, fadeTime: 0.3, values: [full])]))
+        #expect(await waitUntil { runner.status.withLock { $0.count } == 1 })
+        runner.go()
+        #expect(await waitUntil { runner.status.withLock { $0.fading } }, "the fade runs")
+        #expect(await waitUntil { runner.status.withLock { $0.current == 1 && !$0.fading } }, "the fade ends")
+        runner.stop()
+        #expect(reported.withLock { $0 } == 2, "the list and the GO, nothing for the fade's ticks or its end")
     }
 
     /// Resume only within 2 h of the last write, whether the engine died or the Mac (B186): a crash nobody restarted

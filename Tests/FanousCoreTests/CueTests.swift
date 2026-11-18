@@ -128,7 +128,7 @@ import Testing
     /// An engine started again from what `before` would have written: its targets and current cue.
     static func restarted(_ before: CueEngine, list: CueList? = nil, targets: [UUID: [CueValue]]? = nil) -> CueEngine {
         var after = CueEngine(list: list ?? before.list)
-        after.resume(current: before.current?.id, targets: targets ?? before.targets)
+        after.resume(current: before.current?.id, number: before.current?.number, targets: targets ?? before.targets)
         return after
     }
 
@@ -181,7 +181,7 @@ import Testing
     }
 
     /// A cue removed from the list: what it held is dropped, as `replace(list:)` releases it; a current cue that is
-    /// gone resumes with none.
+    /// gone resumes on the nearest earlier cue by number, where the list edit's fallback lands too.
     @Test func resumeDropsWhatARemovedCueHeld() {
         var before = CueEngine(list: Self.show)
         for at in [0.0, 5, 10] { before.go(at: at) }
@@ -193,9 +193,38 @@ import Testing
         #expect(after.tick(at: 0) == before.tick(at: 100) && after.current?.number == 3)
         without.remove(id: Self.show.cues[2].id)
         var gone = CueEngine(list: without)
-        gone.resume(current: Self.show.cues[2].id, targets: targets)
+        gone.resume(current: Self.show.cues[2].id, number: 3, targets: targets)
         before.replace(list: without)
-        #expect(gone.current == nil && gone.tick(at: 0) == before.tick(at: 100), "cue 3 held Layer 1 last: released, as a list edit does")
+        #expect(gone.current?.number == 1 && gone.current?.id == before.current?.id)
+        #expect(gone.tick(at: 0) == before.tick(at: 100), "cue 3 held Layer 1 last: released, as a list edit does")
+        var none = CueEngine(list: without)
+        none.resume(current: UUID(), number: 0.5, targets: [:])
+        #expect(none.current == nil, "nothing numbered before it")
+    }
+
+    /// GO to cue 5, a crash, and the restart loads an older project version without cue 5 (PR #399's fallback when
+    /// `project.json` is unreadable): the list is on cue 4, not on none, and GO fires cue 6, not cue 1.
+    @Test func resumeOnAnOlderVersionWithoutTheCurrentCue() {
+        let cues = (1...6).map { Cue(number: Double($0), values: [Self.value($0, 1000)]) }
+        var before = CueEngine(list: CueList(cues: cues))
+        for at in 0..<5 { before.go(at: Double(at)) }
+        #expect(before.current?.number == 5)
+        var older = CueList(cues: cues)
+        older.remove(id: cues[4].id)
+        var after = Self.restarted(before, list: older)
+        #expect(after.current?.number == 4)
+        #expect(after.tick(at: 0) == (1...4).map { Self.value($0, 1000) }, "cue 5's value left with it")
+        after.go(at: 10)
+        #expect(after.current?.number == 6)
+    }
+
+    /// A stored raw beyond its parameter's range (a hand edit; the file holds 0–65535) is clamped as a fire would.
+    @Test func resumeClampsARawBeyondTheRange() {
+        let mode = ChannelMap.spec(.layer(.playMode))
+        #expect(mode.clamped(65535) < 65535)
+        var engine = CueEngine(list: Self.show)
+        engine.resume(current: nil, number: nil, targets: [Self.show.cues[0].id: [CueValue(fixture: .layer(1), parameter: .layer(.playMode), raw: 65535)]])
+        #expect(engine.tick(at: 0) == [CueValue(fixture: .layer(1), parameter: .layer(.playMode), raw: mode.clamped(65535))])
     }
 
     /// The engine `resume` lands in need not be fresh: whatever it held, fades and follows is gone, and timecode is unarmed,
@@ -208,7 +237,7 @@ import Testing
         var after = CueEngine(list: list)
         after.go(at: 0)  // cue 1 fading, its follow pending
         after.timecode(Self.tc(9, 20), at: 0)  // timecode armed just before cue 2's trigger
-        after.resume(current: before.current?.id, targets: before.targets)
+        after.resume(current: before.current?.id, number: before.current?.number, targets: before.targets)
         #expect(!after.isFading && !after.hasPendingFollow)
         #expect(after.tick(at: 0) == before.tick(at: 100))
         after.timecode(Self.tc(10), at: 1)  // the trigger frame itself

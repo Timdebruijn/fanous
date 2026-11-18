@@ -55,6 +55,14 @@ public struct CueList: Codable, Equatable, Sendable {
     public mutating func remove(id: UUID) { cues.removeAll { $0.id == id } }
 
     public func index(ofNumber number: Double) -> Int? { cues.firstIndex { $0.number == number } }
+
+    /// The cue a resume lands on (B284): that cue if it is still in the list, else the nearest one numbered before it,
+    /// as `CueEngine.replace(list:)` falls back for a removed current cue; nil when there is none.
+    public func resuming(id: UUID?, number: Double?) -> Cue? {
+        if let id, let cue = cues.first(where: { $0.id == id }) { return cue }
+        guard let number else { return nil }
+        return cues.last { $0.number < number }
+    }
 }
 
 /// Go/back/goto with per-cue fades, timecode triggers and follows (DESIGN.md §15.2).
@@ -140,9 +148,9 @@ public struct CueEngine: Sendable {
 
     /// Show mode resumed (B284): `targets` back as the held values with their owners, at once (no fade); an entry whose
     /// cue left the list is dropped, as `replace(list:)` releases it. `current` stays current if it is still in the
-    /// list. Nothing of before survives: no fade, no follow, and timecode is unarmed until its next frame, so a trigger
-    /// already passed does not fire again.
-    public mutating func resume(current: UUID?, targets: [UUID: [CueValue]]) {
+    /// list, else the nearest earlier cue by `number` (`CueList.resuming`). Nothing of before survives: no fade, no
+    /// follow, and timecode is unarmed until its next frame, so a trigger already passed does not fire again.
+    public mutating func resume(current: UUID?, number: Double?, targets: [UUID: [CueValue]]) {
         held = [:]
         fades = [:]
         owner = [:]
@@ -156,7 +164,7 @@ public struct CueEngine: Sendable {
                 owner[key] = id
             }
         }
-        currentID = current.flatMap { alive.contains($0) ? $0 : nil }
+        currentID = list.resuming(id: current, number: number)?.id
         revision &+= 1
     }
 
