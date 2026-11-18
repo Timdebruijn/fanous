@@ -242,7 +242,12 @@ public final class Engine: @unchecked Sendable {
         // B281: an unreadable file is kept and the newest version that restores runs; readiness item `project` says so
         let versions = ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger)
         let start = versions.startProject(from: AppPaths.projectFile)
-        var loadedProject = start.project
+        // hand-written MIDI map entries and cues get an id on load (B346: before the start version is saved from it), so
+        // per-entry state, midi.map.remove and cue.set/remove can address them and the cue list parses the same every time
+        var loadedProject = start.project.map { project in
+            let project = MIDISettings.assigningIDs(project) ?? project
+            return ShowCommands.assigningCueIDs(project) ?? project
+        }
         projectFile = start.saves ? AppPaths.projectFile : nil
         projectNotice = ProjectVersions.noticeFile(for: AppPaths.projectFile)
         projectProblem.withLock { $0 = start.problem }
@@ -373,9 +378,7 @@ public final class Engine: @unchecked Sendable {
 
         // Phase 5: roles, the project and live documents and the WebSocket state server (DESIGN.md §11).
         let auth = RoleAuth(settingsURL: AppPaths.settingsFile, shellTokenURL: AppPaths.shellTokenFile, logger: logger)
-        var project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: startCanvas)
-        // hand-written MIDI map entries get an id on load, so per-entry state and midi.map.remove can address them
-        if let fixed = MIDISettings.assigningIDs(project) { project = fixed }
+        let project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: startCanvas)
         let store = StateStore(project: project, logger: logger)
         ProjectDocument.registerCommands(
             on: store, auth: auth, showModeOn: { [weak self] in self?.showMode.isOn ?? false },
@@ -1596,7 +1599,10 @@ public final class Engine: @unchecked Sendable {
                 }
             }
         }
-        let cueList = ShowCommands.cueList(from: document)
+        // B346: a loaded or reverted project's cues without ids get them once; the runner gets the list with the ids the
+        // correction below writes, so the correction's own change finds the same list and replaces nothing
+        let cuesWithIDs = ShowCommands.assigningCueIDs(document)
+        let cueList = ShowCommands.cueList(from: cuesWithIDs ?? document)
         if cueList != lastCues {
             lastCues = cueList
             cues?.replace(list: cueList)
@@ -1607,6 +1613,10 @@ public final class Engine: @unchecked Sendable {
             // a loaded or replaced project with hand-written entries; not from this queue (correct syncs on it).
             // ponytail: replaces the whole map, so a map edit landing in between is lost; ids then come on the next change
             DispatchQueue.global(qos: .utility).async { store.correct(map, at: "/midi/map") }
+        }
+        if let cues = cuesWithIDs?["cues"], let store {
+            // B346: the same for cues; ponytail: replaces the whole list, as above for the map
+            DispatchQueue.global(qos: .utility).async { store.correct(cues, at: "/cues") }
         }
         // the Syphon, capture and display numbering (B69, B73): a forget, undo, a loaded project; the live feed writes the catalogs back
         for catalog in liveCatalogs {

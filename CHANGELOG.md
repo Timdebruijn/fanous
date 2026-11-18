@@ -29,6 +29,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   moves or deletes no file; a job stopped after its result was in place is done and leaves its original where it was;
   a changed file or a re-queued job is tried again. A decode outside the library (a layer, a mask still cached as
   playable) is B348 (PR #401).
+- Engine (B346): cues of a hand-written or imported `project.json` without a UUID id get one when the project loads,
+  so a project change no longer drops the current cue and the values the cues hold, and `cue.set`/`cue.remove` find
+  them; the file has the ids from its next save (PR #403).
 - Engine (B265): decoding a corrupt HAP frame returns an error instead of reading outside the sample (a crash in
   the thumbnailer or on a layer); the vendored `hap.c` checks chunk offsets, sizes and section lengths (PR #392).
 - Release: 1.0.0-rc.14 is on GitHub as a pre-release with the signed, notarized dmg, built from main bcdb5f3

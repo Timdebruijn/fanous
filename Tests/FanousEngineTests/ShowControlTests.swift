@@ -31,6 +31,68 @@ struct ShowControlTests {
         #expect(ContinuousClock.now - started >= .milliseconds(600), "not before its follow time")
     }
 
+    /// B346: cues of a hand-written or imported `project.json` (no id, an id that is no UUID, a UUID an earlier cue
+    /// already has) get ids once, at load: the parse is stable from then on, so an unrelated project change keeps the
+    /// current cue and what the cues hold; `cue.set` and `cue.remove` find them; a save and a load keep the ids. Before,
+    /// every parse made new ids: every project change dropped the current cue and released the held values.
+    @Test func handWrittenCuesGetStableIDsAtLoad() throws {
+        let dup = UUID().uuidString
+        func value(_ layer: Int) -> JSONValue { ["fixture": .string("Layer \(layer)"), "parameter": "intensity", "raw": 30000] }
+        var project = testProject(layers: 4, outputs: 0)
+        try project.set(
+            [
+                ["number": 1, "name": "A", "values": [value(1)]],
+                ["number": 2, "name": "B", "id": "cue-2", "values": [value(2)]],
+                ["number": 3, "name": "C", "id": .string(dup), "values": [value(3)]],
+                ["number": 4, "name": "D", "id": .string(dup), "values": [value(4)]],
+            ], at: "/cues")
+        let fixed = try #require(ShowCommands.assigningCueIDs(project))
+        #expect(ShowCommands.assigningCueIDs(fixed) == nil, "once")
+        let ids = (fixed["cues"]?.array ?? []).compactMap { $0["id"]?.string }
+        #expect(ids.count == 4 && Set(ids).count == 4 && ids.allSatisfy { UUID(uuidString: $0) != nil })
+        #expect(ids[2] == dup, "the first holder of a duplicate keeps it")
+
+        // GO, GO, then an unrelated change (the name): the list parses the same, the cue and its values stay
+        var engine = CueEngine(list: ShowCommands.cueList(from: fixed))
+        engine.go(at: 0)
+        engine.go(at: 1)
+        var renamed = fixed
+        try renamed.set("Renamed", at: "/name")
+        #expect(ShowCommands.cueList(from: renamed) == engine.list, "the engine would replace the list at every change")
+        engine.replace(list: ShowCommands.cueList(from: renamed))
+        #expect(engine.current?.number == 2 && engine.tick(at: 2).count == 2)
+
+        let url = tempFile("b346-project", ext: "json")
+        try ProjectDocument.save(fixed, to: url)
+        let loaded = try #require(ProjectDocument.load(from: url))
+        #expect(ShowCommands.assigningCueIDs(loaded) == nil && loaded["cues"] == fixed["cues"], "a save and a load keep the ids")
+
+        let (store, _) = testStore(project: fixed)
+        ShowCommands.register(
+            on: store,
+            hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in nil }, acknowledge: { _, _ in }, runReadiness: {}))
+        _ = try store.execute("cue.set", args: ["id": .string(ids[0]), "cue": ["number": 1, "name": "A2"]], role: .programmer).get()
+        _ = try store.execute("cue.remove", args: ["id": .string(ids[1])], role: .programmer).get()
+        #expect(ShowCommands.cueList(from: store.project).cues.map(\.name) == ["A2", "C", "D"])
+    }
+
+    /// B346: a project loaded or reverted while the engine runs (here: `/cues` corrected to id-less cues from off the
+    /// store queue, as a load lands) gets its cue ids through `Engine.projectChanged`, once: the stored cues end with
+    /// unique UUIDs and parse the same twice. Never started, the engine has no cue runner, so this cannot see which list
+    /// the runner gets; that it gets the corrected one, and only once, is the live check's.
+    @Test func aLoadedProjectsCuesGetIDsThroughProjectChanged() async throws {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
+        let store = StateStore(project: testProject(layers: 2, outputs: 0), logger: testLogger)
+        engine.store = store
+        store.onProjectChanged = { [engine] in engine.projectChanged($0) }
+        let cues: JSONValue = [["number": 1, "name": "A"], ["number": 2, "name": "B", "id": "cue-2"], ["number": 3, "name": "C", "id": "cue-2"]]
+        try await offPool { store.correct(cues, at: "/cues") }
+        let ids = { @Sendable in (store.project["cues"]?.array ?? []).compactMap { $0["id"]?.string.flatMap(UUID.init(uuidString:)) } }
+        #expect(await waitUntil { Set(ids()).count == 3 }, "the cues did not get ids: \(store.project["cues"] ?? .null)")
+        #expect(ShowCommands.cueList(from: store.project) == ShowCommands.cueList(from: store.project))
+        #expect(ShowCommands.assigningCueIDs(store.project) == nil)
+    }
+
     /// B43: a cue's fade measured end to end in the engine, go() → CueRunner (50 Hz) → DMXStore → the published Layer 1
     /// intensity the compositor reads. Loose bounds (B67), held at load average 31; the sampler thread must keep up. Stops at the snapshot;
     /// nothing here measures light (no photon probe exists).
