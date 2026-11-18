@@ -1527,7 +1527,7 @@ struct ShowControlTests {
         runner.replace(list: CueList(cues: [Cue(number: 1, fadeTime: 0.3, values: [full])]))
         #expect(await waitUntil { runner.status.withLock { $0.count } == 1 })
         runner.go()
-        #expect(await waitUntil { runner.status.withLock { $0.fading } }, "the fade runs")
+        // only the end state: a poll that is held up for the 0.3 s of the fade never sees `fading` (seen on CI, B350)
         #expect(await waitUntil { runner.status.withLock { $0.current == 1 && !$0.fading } }, "the fade ends")
         runner.stop()
         #expect(reported.withLock { $0 } == 2, "the list and the GO, nothing for the fade's ticks or its end")
