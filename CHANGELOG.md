@@ -74,7 +74,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   before (PR #396).
 - Tests (B350): `aRunningFadeReportsNothing` no longer waits to see a 0.3 s fade in flight, which a held-up poll misses (red once on CI) (PR #404).
 - Tests (B351): the swift CI job also runs `DMXStateBoundsTests`, `HAPFrameBoundsTests`, `HTTPSPipeliningTests` and `MetricsMicrosTests`, which were added today and ran locally only (PR #405).
-- Tests (B353): tests that block or compute for long run off the cooperative pool (`@Test(.offPool)`), so they no longer stall every other async test on a 3-core CI runner; `scripts/test.sh` ends with the ten slowest tests (PR #N).
+- Tests (B353): tests that block or compute for long run off the cooperative pool (`@Test(.offPool)`), so they no longer stall every other async test on a 3-core CI runner; `scripts/test.sh` ends with the ten slowest tests (PR #406).
 
 ## 1.0.0-rc.14 — 2026-11-17
 
