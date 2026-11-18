@@ -372,6 +372,7 @@ public final class Engine: @unchecked Sendable {
         var project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: startCanvas)
         // hand-written MIDI map entries get an id on load, so per-entry state and midi.map.remove can address them
         if let fixed = MIDISettings.assigningIDs(project) { project = fixed }
+        if let fixed = ShowCommands.assigningCueIDs(project) { project = fixed }  // B346: and hand-written cues
         let store = StateStore(project: project, logger: logger)
         ProjectDocument.registerCommands(
             on: store, auth: auth, showModeOn: { [weak self] in self?.showMode.isOn ?? false },
@@ -1586,6 +1587,10 @@ public final class Engine: @unchecked Sendable {
             // a loaded or replaced project with hand-written entries; not from this queue (correct syncs on it).
             // ponytail: replaces the whole map, so a map edit landing in between is lost; ids then come on the next change
             DispatchQueue.global(qos: .utility).async { store.correct(map, at: "/midi/map") }
+        }
+        if let fixed = ShowCommands.assigningCueIDs(document), let cues = fixed["cues"], let store {
+            // B346: the same for cues; ponytail: replaces the whole list, as above for the map
+            DispatchQueue.global(qos: .utility).async { store.correct(cues, at: "/cues") }
         }
         // the Syphon, capture and display numbering (B69, B73): a forget, undo, a loaded project; the live feed writes the catalogs back
         for catalog in liveCatalogs {
