@@ -38,19 +38,20 @@ struct ReferenceSwapGPUTests {
         }
         clock.update(Timecode(frameCount: 100, rate: .fps25), at: 1000, source: "test")
         let done = Atomic(false)
-        async let swaps: Int = offPool {
-            var n = 0
+        let swaps = Atomic(0)
+        async let writer: Void = offPool {
             while !done.load(ordering: .acquiring) {
-                compositor.timecodeOffsets = TimecodeOffsets(project: Double(n % 3), layers: [1: 1])
-                n += 1
+                compositor.timecodeOffsets = TimecodeOffsets(project: Double(swaps.load(ordering: .relaxed) % 3), layers: [1: 1])
+                swaps.add(1, ordering: .relaxed)
             }
-            return n
         }
         try await offPool {
+            ReferenceSwapTests.spin { swaps.load(ordering: .relaxed) > 0 }  // the writer runs: the ticks overlap its swaps
             for _ in 0..<300 { compositor.tick(target: 1000, drawable: nil) }
             done.store(true, ordering: .releasing)
         }
-        #expect(try await swaps > 0)
+        try await writer
+        #expect(swaps.load(ordering: .relaxed) > 1)
         // the next tick chases with the offsets set last: (100 − 25 − 5) frames = frame 70, then (100 − 10 − 0) = 90
         compositor.timecodeOffsets = TimecodeOffsets(project: 25, layers: [1: 5])
         compositor.tick(target: 1000, drawable: nil)
@@ -126,15 +127,22 @@ struct ReferenceSwapTests {
             }
         }
         try await offPool {
+            Self.spin { reads.load(ordering: .relaxed) > 0 }  // the feed thread runs: the swaps overlap its reads
             for i in 0..<40 { engine.projectChanged(documents[i % 2]) }  // ends on off: no MTC input left open
             done.store(true, ordering: .releasing)
         }
         try await feed
-        #expect(reads.load(ordering: .relaxed) > 0)
+        #expect(reads.load(ordering: .relaxed) > 1)
         // the swapped input reaches the feed: an open MTC input reports its missing source, none reports nothing
         engine.projectChanged(documents[0])
         #expect(engine.timecodeLive()["error"] == .string(MTCInput.missing(nil)))
         engine.projectChanged(documents[1])
         #expect(engine.timecodeLive()["error"] == .null)
+    }
+
+    /// On a thread of the test's own: until `condition` holds, for 10 s at most (the expectations after it then fail).
+    static func spin(_ condition: () -> Bool) {
+        let end = ContinuousClock.now + .seconds(10)
+        while !condition(), ContinuousClock.now < end { sched_yield() }
     }
 }

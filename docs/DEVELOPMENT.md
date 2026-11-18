@@ -25,6 +25,7 @@ with `VTIsHardwareDecodeSupported` there stalled every engine after the first
 swift build                      # engine, shell, core
 scripts/test.sh                  # every test, engine included (CI's Core job: --filter FanousCoreTests; --hosted: the suites a hosted runner can run)
 scripts/check-mallocs.sh         # §4.6 zero-malloc rule, release build (before merging compositor changes)
+TSAN_OPTIONS=halt_on_error=0 swift test --sanitize=thread --filter ReferenceSwap   # B273: a swap while a render or feed thread reads; must report no race (before merging a change to a value another thread reads)
 (cd web && npm install && npm run build)   # web UI → web/dist
 .build/debug/fanousd --foreground        # https://127.0.0.1:8443 (self-signed; fingerprint in the log)
 swift run FanousShell          # native shell; starts fanousd as a child in development
