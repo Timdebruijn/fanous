@@ -249,6 +249,18 @@ extension LayerAudioChannel {
         }
     }
 
+    /// B264: a loop that is no whole number of frames in the 32 bits it is packed in is no loop. A loop end from a huge
+    /// frame count over a tiny frame rate trapped `Int(_:)` here, on the compositor thread; one over ~25 h overflowed the packing.
+    @Test func unrepresentableLoopIsNoLoop() {
+        let channel = LayerAudioChannel()
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: 0, loop: (0, 2))
+        #expect(channel.loopBits.load(ordering: .relaxed) == 96_000)
+        for loop in [(0, 1e15), (0, .nan), (0, 100_000), (-1, 2)] as [(Double, Double)] {
+            channel.setState(wantedPTS: 0, active: true, volume: 1, pan: 0, loop: loop)
+            #expect(channel.loopBits.load(ordering: .relaxed) == 0, "loop \(loop)")
+        }
+    }
+
     @Test func layerClockIsExtrapolatedWithTheHostClock() {
         let channel = LayerAudioChannel()
         channel.setState(wantedPTS: 5.0, active: true, volume: 1, pan: 0, atHostNanos: 1_000_000_000)

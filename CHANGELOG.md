@@ -19,7 +19,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Tests (B260): `scripts/test.sh` runs the suite in a fresh temporary `FANOUS_HOME`, so no test engine can write the real install's files (PR #386).
 - Docs: the stability review of 2026-11-18 is recorded as backlog rows B261 to B334 (74 rows; read in the code, nothing reproduced yet) (PR #387).
 - Fix (B264): a movie whose header gives no usable duration (a timescale of 0 reads as NaN) no longer crashes the engine at the
-  library probe and at every start after it; it is listed unreadable with "unknown duration", and ingest fails it, or a track claiming 2^31 fps, with a reason (PR #390).
+  library probe and at every start after it; it is listed unreadable with "unknown duration", as is one whose frame count would exceed Int32 (an edit list of 2^32 s), and
+  ingest fails both, or a track claiming 2^31 fps, with a reason; an audio loop too long to count in frames is no loop instead of a crash (PR #390).
 
 ## 1.0.0-rc.14 — 2026-11-17
 

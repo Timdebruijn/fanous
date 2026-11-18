@@ -151,8 +151,10 @@ public final class MovieSource: @unchecked Sendable {
         self.track = track
         let codec = CMFormatDescriptionGetMediaSubType(description)
         let dimensions = CMVideoFormatDescriptionGetDimensions(description)
-        // B264: a header timescale of 0 reads as a NaN duration; `Int(_:)` would trap on it (or on an absurd product)
-        guard let frameCount = Int(exactly: (duration * frameRate).rounded()) else { throw MovieError.unknownDuration }
+        // B264: a header timescale of 0 reads as a NaN duration, which `Int(_:)` trapped on; a count beyond Int32 (an edit
+        // list of 2^32 s) traps the modular frame arithmetic of playback (LayerDecoder, Playback, Compositor, LayerClock)
+        guard let frameCount = Int(exactly: (duration * frameRate).rounded()), (0...Int(Int32.max)).contains(frameCount)
+        else { throw MovieError.unknownDuration }
         info = MovieInfo(
             width: Int(dimensions.width), height: Int(dimensions.height), pixelAspect: Self.pixelAspect(of: description), frameRate: frameRate,
             frameCount: max(1, frameCount), codec: codec)

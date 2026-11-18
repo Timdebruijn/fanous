@@ -386,7 +386,7 @@ public enum Transcoder {
             // rate, else the smallest frame duration as it is. Fall back to the nominal rate without a usable minimum.
             var frameDuration: CMTime
             if !minimum.isNumeric || minimum.seconds <= 0 {
-                guard nominal > 0, let timescale = CMTimeScale(exactly: nominal.rounded()) else { throw TranscodeError.reader("unknown frame rate") }
+                guard nominal > 0, let timescale = CMTimeScale(exactly: nominal.rounded()), timescale > 0 else { throw TranscodeError.reader("unknown frame rate") }
                 frameDuration = Transcoder.standardFrameDuration(nearest: Double(nominal)) ?? CMTime(value: 1, timescale: timescale)
             } else if abs(minimum.seconds * Double(nominal) - 1) > max(0.01, Double(nominal) / Double(minimum.timescale) + 1e-9) {
                 // (over 1 %, or over one tick of the track's timescale: 29.97 on a 1 ms timescale reports 33 ms, 1.1 % off)
@@ -405,9 +405,10 @@ public enum Transcoder {
             } else {
                 frameDuration = minimum
             }
-            // B264: a header timescale of 0 reads as a NaN duration, a huge one overflows the frame counts of `run`; both trapped
-            guard Int(exactly: (range.duration.seconds / frameDuration.seconds).rounded()) != nil,
-                Int(exactly: (range.end.seconds / frameDuration.seconds).rounded()) != nil
+            // B264: a header timescale of 0 reads as a NaN duration, a huge one overflows the frame counts of `run`; both
+            // trapped. The library's bound: a longer result would not play.
+            let frames = 0...Double(Int32.max)
+            guard frames.contains((range.duration.seconds / frameDuration.seconds).rounded()), frames.contains((range.end.seconds / frameDuration.seconds).rounded())
             else { throw TranscodeError.reader("unknown duration") }
             let alpha = formats.contains { description in
                 let flag = CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_ContainsAlphaChannel)

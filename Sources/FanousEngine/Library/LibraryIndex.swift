@@ -421,8 +421,10 @@ public final class LibraryIndex: @unchecked Sendable {
                 metadata.width = Int(upright.width.rounded())
                 metadata.height = Int(upright.height.rounded())
                 metadata.frameRate = Double(frameRate)
-                // B264: a header timescale of 0 reads as a NaN duration; `Int(_:)` would trap on it at every start
-                guard let frameCount = Int(exactly: (duration * Double(frameRate)).rounded()) else { throw MovieError.unknownDuration }
+                // B264: a header timescale of 0 reads as a NaN duration, which `Int(_:)` trapped on at every start; an edit list
+                // can make the count huge, which traps playback's frame arithmetic. The same bound as `MovieSource`.
+                guard let frameCount = Int(exactly: (duration * Double(frameRate)).rounded()), (0...Int(Int32.max)).contains(frameCount)
+                else { throw MovieError.unknownDuration }
                 metadata.frameCount = frameCount
                 if let description = descriptions.first {
                     let codec = CMFormatDescriptionGetMediaSubType(description)

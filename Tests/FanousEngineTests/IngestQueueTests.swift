@@ -1140,6 +1140,7 @@ extension IngestQueueTests {
         for (source, text) in [(noDuration, "unknown duration"), (tooFast, "unknown frame rate")] {
             let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_\(source.lastPathComponent)"), kind: .transcode(codec: .proRes422HQ)))
             #expect(await Self.wait(for: job.id, in: queue) == .failed("cannot read the source: \(text)"))
+            #expect(FileManager.default.fileExists(atPath: source.path), "the source survives a failed job")
         }
     }
 
