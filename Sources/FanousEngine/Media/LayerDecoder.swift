@@ -138,7 +138,7 @@ public final class LayerDecoder: @unchecked Sendable {
                 failing?(error.clientText)
                 lastStatus = now
             }
-            if let held = stateLines.take(every: reportEvery, now: now) {
+            if let held = stateLines.take(every: reportEvery, now: now, counts: false) {
                 logger.warning("decode still failing", metadata: ["file": "\(file)", "skipped": "\(run)", "linesHeldBack": "\(held)", "error": "\(error)"])
             }
         } else if runStart.duration(to: now) >= .seconds(failingAfter) {
@@ -185,14 +185,15 @@ public final class LayerDecoder: @unchecked Sendable {
 }
 
 /// At most one log line per `every` seconds (B278): `take` answers how many lines it held back since the last one, or
-/// nil when this one is held back too.
+/// nil when this one is held back too. A line that is only due when the budget allows it (a periodic count) passes
+/// `counts: false`, so a held-back try of it is not a held-back line.
 struct LineBudget {
     private var last: ContinuousClock.Instant?
     private var held = 0
 
-    mutating func take(every: Double, now: ContinuousClock.Instant = .now) -> Int? {
+    mutating func take(every: Double, now: ContinuousClock.Instant = .now, counts: Bool = true) -> Int? {
         if let last, last.duration(to: now) < .seconds(every) {
-            held += 1
+            if counts { held += 1 }
             return nil
         }
         defer { (last, held) = (now, 0) }

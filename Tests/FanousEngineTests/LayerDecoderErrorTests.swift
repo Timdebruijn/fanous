@@ -124,6 +124,8 @@ import VideoToolbox
         #expect(await waitUntil { Self.decodeLines(lines).contains { $0.hasPrefix("decode still failing") } })
         #expect(reports.withLock { $0.first } == "HapDecode failed (3)")
         #expect(Self.decodeLines(lines).filter { $0.hasPrefix("decode failing") }.count == 1)
+        let still = Self.decodeLines(lines).first { $0.hasPrefix("decode still failing") } ?? ""
+        #expect(still.contains("linesHeldBack=0"), "a count line held back nothing: \(still)")
         decoder.request(frame: 10, direction: 1)
         #expect(await waitUntil { reports.withLock { $0.last } == .some(nil) }, "a good frame clears the error")
         #expect(await waitUntil { Self.frames(ring).contains(10) }, "the good frame is there to show: \(Self.frames(ring))")
