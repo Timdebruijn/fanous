@@ -13,10 +13,10 @@ public final class ArtNetReceiver: @unchecked Sendable {
     private let store: DMXStore
     private let logger: Logger
     private let nodeName: String
-    private var listener: NWListener?
     private let port: UInt16
-    private let failed = Mutex<String?>(nil)
     let flows: UDPFlows
+    /// Made again when it fails (B272); its flows go with the failed one.
+    private(set) var listener: RecoveringListener!
 
     public init(store: DMXStore, logger: Logger, nodeName: String, port: UInt16 = ArtNet.port) {
         self.store = store
@@ -24,39 +24,34 @@ public final class ArtNetReceiver: @unchecked Sendable {
         self.nodeName = nodeName
         self.port = port
         flows = UDPFlows(queue: store.queue, logger: logger, name: "Art-Net")
+        listener = RecoveringListener(name: "Art-Net listener", queue: store.queue, logger: logger) { [weak self] in
+            let parameters = NWParameters.udp
+            parameters.allowLocalEndpointReuse = true
+            let listener = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
+            listener.newConnectionHandler = { [weak self] connection in
+                guard let self else { return connection.cancel() }
+                connection.start(queue: store.queue)
+                receive(on: flows.adopt(connection))
+            }
+            return listener
+        } onState: { [logger, port, flows] state, listener in
+            if case .ready = state { logger.info("Art-Net listening", metadata: ["port": "\(listener.port?.rawValue ?? port)"]) }
+            if case .failed = state { flows.stop() }
+        }
     }
 
     /// The port listened on, once the listener is ready (nil or 0 before). Differs from the one given only for port 0
     /// (tests only: the kernel picks one).
-    public var boundPort: UInt16? { listener?.port?.rawValue }
+    public var boundPort: UInt16? { listener.listener?.port?.rawValue }
 
-    /// Why the listener failed (a program that holds UDP 6454 exclusively), for readiness (B167); nil while it runs.
-    public var failure: String? { failed.withLock { $0 } }
+    /// Why the listener is down (a program that holds UDP 6454 exclusively, B167; a network gone, B272), for readiness;
+    /// nil while it listens.
+    public var failure: String? { listener.failure }
 
-    public func start() throws {
-        let parameters = NWParameters.udp
-        parameters.allowLocalEndpointReuse = true
-        let listener = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
-        listener.stateUpdateHandler = { [logger, port, weak self, weak listener] state in
-            switch state {
-            case .ready: logger.info("Art-Net listening", metadata: ["port": "\(listener?.port?.rawValue ?? port)"])
-            case .failed(let error):
-                logger.error("Art-Net listener failed", metadata: ["error": "\(error)"])
-                self?.failed.withLock { $0 = "\(error)" }
-            default: break
-            }
-        }
-        listener.newConnectionHandler = { [weak self] connection in
-            guard let self else { return connection.cancel() }
-            connection.start(queue: store.queue)
-            receive(on: flows.adopt(connection))
-        }
-        listener.start(queue: store.queue)
-        self.listener = listener
-    }
+    public func start() throws { try listener.start() }
 
     public func stop() {
-        listener?.cancel()
+        listener.stop()
         flows.stop()
     }
 
@@ -272,8 +267,6 @@ public final class OSCReceiver: @unchecked Sendable {
     private let store: DMXStore
     private let logger: Logger
     private let port: UInt16
-    private var udp: NWListener?
-    private var tcp: NWListener?
     /// B36: `get`, `subscribe`, `unsubscribe` and `ping`; nil ignores them.
     private let feedback: OSCFeedbackServer?
     let flows: UDPFlows
@@ -290,54 +283,66 @@ public final class OSCReceiver: @unchecked Sendable {
         // a live subscription keeps its flow: a hop to the DMX queue per change of the subscriber set (subscribe, ack,
         // unsubscribe, expiry), never per datagram
         feedback?.onPins = { [flows, queue = store.queue] keys in queue.async { flows.pinnedKeys = keys } }
+        udp = RecoveringListener(name: "OSC UDP", queue: store.queue, logger: logger) { [weak self, feedback, store] in
+            let parameters = NWParameters.udp
+            parameters.allowLocalEndpointReuse = true
+            let udp = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
+            udp.newConnectionHandler = { [weak self] connection in
+                guard let self else { return connection.cancel() }
+                connection.start(queue: store.queue)
+                let source = Self.source(connection) { connection.send(content: Data($0), completion: .idempotent) }
+                // the fixed feedback target's own flow carries its feedback: kept however long it is silent (B268); a
+                // cancelled flow is no longer a subscriber's reply path
+                let fixed = feedback?.adopt(source) ?? false
+                let flow = flows.adopt(connection, pinned: fixed, key: .init(host: source.host, port: source.port)) { [feedback] in
+                    feedback?.release(source)
+                }
+                receiveDatagrams(on: flow, from: source)
+            }
+            return udp
+        } onState: { [logger, port, flows] state, udp in
+            if case .ready = state { logger.info("OSC listening", metadata: ["udp": "\(udp.port?.rawValue ?? port)", "tcp": "\(port)"]) }
+            // a subscriber's or the fixed target's reply path goes too: its next datagram makes a new flow (`adopt`)
+            if case .failed = state { flows.stop() }
+        }
+        tcp = RecoveringListener(name: "OSC TCP", queue: store.queue, logger: logger) { [weak self, store] in
+            let parameters = NWParameters.tcp
+            parameters.allowLocalEndpointReuse = true
+            let tcp = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
+            tcp.newConnectionHandler = { [weak self] connection in
+                guard let self else { return connection.cancel() }
+                connection.start(queue: store.queue)
+                receiveStream(
+                    on: connection, decoder: SLIPDecoder(), from: Self.source(connection) { connection.send(content: Data(SLIPDecoder.encode($0)), completion: .idempotent) })
+            }
+            return tcp
+        } onState: { [logger, port] state, tcp in
+            if case .ready = state { logger.info("OSC TCP listening", metadata: ["tcp": "\(tcp.port?.rawValue ?? port)"]) }
+        }
     }
+
+    /// Made again when they fail (B272). An accepted TCP connection outlives its listener; UDP flows go with theirs.
+    private(set) var udp: RecoveringListener!
+    private(set) var tcp: RecoveringListener!
 
     /// The UDP port listened on, once the listener is ready (nil or 0 before). Differs from the one given only for port 0
     /// (tests only), where the kernel picks one for UDP and another for TCP.
-    public var boundUDPPort: UInt16? { udp?.port?.rawValue }
+    public var boundUDPPort: UInt16? { udp.listener?.port?.rawValue }
+
+    /// Why a listener is down ("UDP: …; TCP: …"), for readiness; nil while both listen.
+    public var failure: String? {
+        let down = [udp.failure.map { "UDP: \($0)" }, tcp.failure.map { "TCP: \($0)" }].compactMap { $0 }
+        return down.isEmpty ? nil : down.joined(separator: "; ")
+    }
 
     public func start() throws {
-        let udpParameters = NWParameters.udp
-        udpParameters.allowLocalEndpointReuse = true
-        let udp = try NWListener(using: udpParameters, on: NWEndpoint.Port(rawValue: port)!)
-        udp.stateUpdateHandler = { [logger, port, weak udp] state in
-            if case .ready = state { logger.info("OSC listening", metadata: ["udp": "\(udp?.port?.rawValue ?? port)", "tcp": "\(port)"]) }
-            if case .failed(let error) = state { logger.error("OSC UDP failed", metadata: ["error": "\(error)"]) }
-        }
-        udp.newConnectionHandler = { [weak self] connection in
-            guard let self else { return connection.cancel() }
-            connection.start(queue: store.queue)
-            let source = Self.source(connection) { connection.send(content: Data($0), completion: .idempotent) }
-            // the fixed feedback target's own flow carries its feedback: kept however long it is silent (B268); a
-            // cancelled flow is no longer a subscriber's reply path
-            let fixed = feedback?.adopt(source) ?? false
-            let flow = flows.adopt(connection, pinned: fixed, key: .init(host: source.host, port: source.port)) { [feedback] in
-                feedback?.release(source)
-            }
-            receiveDatagrams(on: flow, from: source)
-        }
-        udp.start(queue: store.queue)
-        self.udp = udp
-
-        let tcpParameters = NWParameters.tcp
-        tcpParameters.allowLocalEndpointReuse = true
-        let tcp = try NWListener(using: tcpParameters, on: NWEndpoint.Port(rawValue: port)!)
-        tcp.stateUpdateHandler = { [logger] state in
-            if case .failed(let error) = state { logger.error("OSC TCP failed", metadata: ["error": "\(error)"]) }
-        }
-        tcp.newConnectionHandler = { [weak self] connection in
-            guard let self else { return connection.cancel() }
-            connection.start(queue: store.queue)
-            receiveStream(
-                on: connection, decoder: SLIPDecoder(), from: Self.source(connection) { connection.send(content: Data(SLIPDecoder.encode($0)), completion: .idempotent) })
-        }
-        tcp.start(queue: store.queue)
-        self.tcp = tcp
+        try udp.start()
+        try tcp.start()
     }
 
     public func stop() {
-        udp?.cancel()
-        tcp?.cancel()
+        udp.stop()
+        tcp.stop()
         flows.stop()
     }
 

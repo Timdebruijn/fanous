@@ -15,6 +15,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   fills the ring with the frames ahead in play direction. The layer advances at most one frame per tick, so after a
   skipped or unseen tick it stays that many frames late until it is retriggered or the ring drains, and at two or
   more frames per tick it stalls and jumps (B372) (PR #413).
+- Engine (B272): an Art-Net, OSC, HTTPS or CITP listener that fails (a port another program holds, the network gone)
+  is made again on its port 1, 2 and 4 s later and then every 5 s until it listens, logged once per change; the
+  failed UDP listener's flows go with it, and readiness shows the live state of Art-Net and, in a new item "OSC port
+  8000 available", of OSC (PR #408)
 - Engine (B270): an HTTPS connection reads and parses the next request only once the previous response has left, so
   a client that pipelines requests and never reads no longer makes the engine queue responses without bound
   (PR #397).
