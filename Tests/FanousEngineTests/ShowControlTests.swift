@@ -1464,7 +1464,11 @@ struct ShowControlTests {
         runner.replace(list: list, resuming: (list.cues[1].id, 2, [list.cues[0].id: [half]]))
         #expect(await waitUntil { runner.status.withLock { $0.current } == 2 })
         #expect(reported.withLock { $0 } == [list.cues[1].id], "only the resumed state is reported at start")
-        #expect(abs(store.snapshots.withLatest { $0.layers[0].intensity } - 0.5) < 0.01, "the held value at once, not fading from 0")
+        // the status is set in the runner's tick, the snapshot is written later on the DMX queue: wait for it (B354), but
+        // for less than the 5 s a fade from 0 would take
+        #expect(
+            await waitUntil(.seconds(2)) { abs(store.snapshots.withLatest { $0.layers[0].intensity } - 0.5) < 0.01 },
+            "the held value at once, not fading from 0")
         #expect(!runner.status.withLock { $0.fading })
         runner.go()
         #expect(await waitUntil { runner.status.withLock { $0.current } == 3 })
