@@ -85,25 +85,50 @@ import Testing
         let flows = UDPFlows(queue: queue, logger: testLogger, name: "test")
         flows.cap = 3
         defer { flows.stop() }
-        let second: UInt64 = 1_000_000_000
-        func flow(_ port: UInt16, pinned: Bool = false, silent seconds: UInt64 = 0) -> UDPFlows.Flow {
-            let flow = flows.adopt(NWConnection(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!, using: .udp), pinned: pinned)
-            flows.touch(flow)
-            flow.lastSeen -= seconds * second
-            return flow
-        }
         queue.sync {
-            let pinned = flow(1, pinned: true, silent: 3600)
-            let a = flow(2, silent: 10)
-            let b = flow(3, silent: 20)
+            let pinned = Self.flow(1, in: flows, pinned: true, silent: 100)
+            let a = Self.flow(2, in: flows, silent: 10)
+            let b = Self.flow(3, in: flows, silent: 20)
             #expect(flows.flows.count == 3)
-            let c = flow(4)  // over the cap: b goes (silent longest; the pinned one never)
+            let c = Self.flow(4, in: flows)  // over the cap: b goes (silent longest; the pinned one never)
             #expect(flows.flows.map(ObjectIdentifier.init) == [pinned, a, c].map(ObjectIdentifier.init))
-            let d = flow(5)  // then a
+            let d = Self.flow(5, in: flows)  // then a
             #expect(flows.flows.map(ObjectIdentifier.init) == [pinned, c, d].map(ObjectIdentifier.init))
             _ = b
-            let e = flow(6)  // c, d and e inside the floor: nothing may go, the table runs over
+            let e = Self.flow(6, in: flows)  // c, d and e inside the floor: nothing may go, the table runs over
             #expect(flows.flows.map(ObjectIdentifier.init) == [pinned, c, d, e].map(ObjectIdentifier.init))
+        }
+    }
+
+    /// A flow on an unstarted connection that has delivered a datagram, silent for `seconds` (the clock is uptime
+    /// without sleep: a time before boot becomes 0, never an underflow). On the table's queue.
+    static func flow(_ port: UInt16, in flows: UDPFlows, pinned: Bool = false, silent seconds: UInt64 = 0, read: Bool = true) -> UDPFlows.Flow {
+        let flow = flows.adopt(NWConnection(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!, using: .udp), pinned: pinned)
+        if read { flows.touch(flow) }
+        let back = seconds * 1_000_000_000
+        flow.lastSeen = flow.lastSeen > back ? flow.lastSeen - back : 0
+        return flow
+    }
+
+    /// The ceiling: over the cap with every flow inside the floor the table runs over, but above `ceiling` the flow
+    /// silent longest goes at once, inside the floor and unread too (a flood); a pinned one never.
+    @Test func ceilingDropsTheOldestEvenInsideTheFloor() {
+        let queue = DispatchQueue(label: "test.flows")
+        let flows = UDPFlows(queue: queue, logger: testLogger, name: "test")
+        flows.cap = 2
+        flows.ceiling = 4
+        defer { flows.stop() }
+        queue.sync {
+            let pinned = Self.flow(1, in: flows, pinned: true, silent: 100)
+            let x = Self.flow(2, in: flows, silent: 2)
+            let y = Self.flow(3, in: flows, silent: 1)
+            let z = Self.flow(4, in: flows)
+            #expect(flows.flows.count == 4)  // over the cap of 2, nobody outside the floor
+            let w = Self.flow(5, in: flows, read: false)  // a fifth, not even read yet: x goes, inside the floor
+            #expect(flows.flows.map(ObjectIdentifier.init) == [pinned, y, z, w].map(ObjectIdentifier.init))
+            _ = x
+            let v = Self.flow(6, in: flows, read: false)  // then y
+            #expect(flows.flows.map(ObjectIdentifier.init) == [pinned, z, w, v].map(ObjectIdentifier.init))
         }
     }
 
@@ -220,8 +245,8 @@ import Testing
         let box = OSCFeedbackServerTests.StateBox()
         box.state.withLock { $0 = ["/fanous/cue/current": [.float32(1)]] }
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
-        // idle 1.5 s: longer than subscribe plus ack take (about 0.6 s), so the handshake itself is never swept
-        let (receiver, feedback, port) = try await OSCFeedbackServerTests.start(store: store, flowIdle: 1.5) { box.state.withLock { $0 } }
+        // idle 3 s: longer than subscribe plus ack take (about 0.6 s) and than the pin's way to the DMX queue
+        let (receiver, feedback, port) = try await OSCFeedbackServerTests.start(store: store, flowIdle: 3) { box.state.withLock { $0 } }
         defer {
             receiver.stop()
             feedback.stop()
@@ -243,7 +268,7 @@ import Testing
         }
         q.send(OSCMessage("/fanous/ping"), to: port)  // the host renews from Q
         #expect(q.messages(for: 0.3) == [OSCMessage("/fanous/pong")])
-        try await Task.sleep(for: .seconds(4))  // P silent for more than two idle times, about ten sweeps
+        try await Task.sleep(for: .seconds(7))  // P silent for more than two idle times, about ten sweeps
         #expect(flowOf(p))
         box.state.withLock { $0["/fanous/cue/current"] = [.float32(2)] }
         #expect(p.messages(for: 0.3) == [OSCMessage("/fanous/cue/current", [.float32(2)])])
@@ -275,5 +300,51 @@ import Testing
         }
         #expect(await waitUntil { store.queue.sync { receiver.flows.pinnedKeys.count } == OSCSubscriptions.limit })
         #expect(store.queue.sync { receiver.flows.pinnedKeys.count } == OSCSubscriptions.limit)
+    }
+
+    /// The rebind in `adopt`: a subscriber confirmed for port P from another port Q (P has never sent) is reached on a
+    /// connection of the server's own; once P sends anything, its new inbound flow becomes the reply path, so feedback
+    /// then comes from the OSC port itself.
+    @Test func aConfirmedSubscribersNewFlowBecomesItsReplyPath() async throws {
+        let box = OSCFeedbackServerTests.StateBox()
+        box.state.withLock { $0 = ["/fanous/cue/current": [.float32(1)]] }
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
+        let (receiver, feedback, port) = try await OSCFeedbackServerTests.start(store: store) { box.state.withLock { $0 } }
+        defer {
+            receiver.stop()
+            feedback.stop()
+        }
+        let p = try OSCFeedbackServerTests.Client()
+        defer { p.close() }
+        let q = try OSCFeedbackServerTests.Client()
+        defer { q.close() }
+        /// The next datagram at P and the port it came from.
+        func next() -> (OSCPacket, UInt16)? {
+            setReceiveTimeout(p.fd, 5)
+            var buffer = [UInt8](repeating: 0, count: 65_536)
+            var from = sockaddr_in()
+            var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let n = withUnsafeMutablePointer(to: &from) { f in
+                f.withMemoryRebound(to: sockaddr.self, capacity: 1) { recvfrom(p.fd, &buffer, buffer.count, 0, $0, &length) }
+            }
+            guard n > 0, let packet = try? OSCPacket.parse(Array(buffer[0..<n])) else { return nil }
+            return (packet, UInt16(bigEndian: from.sin_port))
+        }
+        // Q subscribes for P: the cookie goes to P, the ack comes from Q (the same host)
+        let cookie = try OSCFeedbackServerTests.subscribe(q, listener: p, prefix: "/fanous/cue", to: port)
+        q.send(OSCMessage("/fanous/subscribe/ack", [.string(cookie)]), to: port)
+        let sync = try #require(next())
+        #expect(OSCFeedbackServerTests.Client.flatten(sync.0).map(\.address) == ["/fanous/cue/current"])
+        #expect(sync.1 != port)  // the server's own connection
+
+        p.send(OSCMessage("/fanous/nothing"), to: port)  // P's first datagram: a new flow of a confirmed key
+        #expect(await waitUntil {
+            store.queue.sync { receiver.flows.flows.contains { if case .hostPort(_, let x) = $0.connection.endpoint { x.rawValue == p.port } else { false } } }
+        })
+        // the bind was queued on the feedback queue before the flow was in the table: every tick after this sees it
+        box.state.withLock { $0["/fanous/cue/current"] = [.float32(2)] }
+        let change = try #require(next())
+        #expect(OSCFeedbackServerTests.Client.flatten(change.0) == [OSCMessage("/fanous/cue/current", [.float32(2)])])
+        #expect(change.1 == port, "feedback came from \(change.1), not from the OSC port \(port)")
     }
 }
