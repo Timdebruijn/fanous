@@ -181,6 +181,10 @@ private final class ClientConnection: @unchecked Sendable {
     private var upload: (request: HTTPRequest, file: URL, handle: FileHandle, remaining: Int)?
     /// Set after a successful upgrade: every further byte is a WebSocket frame.
     private var websocket: WebSocketSession?
+    /// A response the transport has not taken yet: no request is parsed and no receive armed until it has.
+    private var sending = false
+    /// The peer finished sending, or the receive failed: the connection ends once the buffer is served.
+    private var receiveEnded = false
     private var remoteAddress: String {
         if case .hostPort(let host, _) = connection.endpoint { return "\(host)" }
         return "\(connection.endpoint)"
@@ -206,71 +210,75 @@ private final class ClientConnection: @unchecked Sendable {
 
     private func receive() {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [self] data, _, isComplete, error in
-            if let data, !data.isEmpty {
-                buffer.append(contentsOf: data)
-                guard process() else { return }
-            }
-            if isComplete || error != nil {
-                // here, not in `.cancelled`: only this pending receive keeps the connection object alive, so the
-                // state handler's weak self is gone by then (an upload cleanup there never ran)
-                websocket?.connectionDidEnd()
-                abandonUpload()
-                connection.cancel()
-                return
-            }
-            receive()
+            if let data, !data.isEmpty { buffer.append(contentsOf: data) }
+            receiveEnded = isComplete || error != nil
+            serve()
         }
     }
 
-    /// Handles every complete request in the buffer. Returns false once the connection is being closed.
+    /// Handles the next request in the buffer, then waits for its response to leave, reads more, or ends the connection.
+    private func serve() {
+        guard process(), !sending else { return }
+        if receiveEnded {
+            // here, not in `.cancelled`: only the pending receive or send keeps the connection object alive, so the
+            // state handler's weak self is gone by then (an upload cleanup there never ran)
+            websocket?.connectionDidEnd()
+            abandonUpload()
+            connection.cancel()
+            return
+        }
+        receive()
+    }
+
+    /// Handles at most one complete request: the next waits until the transport has taken its response (B270), so a
+    /// client that pipelines requests and never reads holds one response here, not one per request. Returns false once
+    /// the connection is being closed.
     private func process() -> Bool {
-        while true {
-            if let websocket { return websocket.feed(&buffer) }
-            if upload != nil { return drainUpload() }
-            let parsed: (request: HTTPRequest, headLength: Int)?
-            do {
-                parsed = try HTTPRequest.parse(buffer)
-            } catch {
-                send(.text(400, "bad request"), includeBody: true, close: true)
+        if let websocket { return websocket.feed(&buffer) }
+        if upload != nil { return drainUpload() }
+        let parsed: (request: HTTPRequest, headLength: Int)?
+        do {
+            parsed = try HTTPRequest.parse(buffer)
+        } catch {
+            send(.text(400, "bad request"), includeBody: true, close: true)
+            return false
+        }
+        guard let (head, headLength) = parsed else { return true }
+        var request = head
+        request.remoteAddress = remoteAddress
+        if WebSocketHandshake.isUpgrade(request) {
+            buffer.removeFirst(headLength)
+            guard let handler = server.upgradeRoute?(request), let response = WebSocketHandshake.response(for: request) else {
+                send(.text(404, "no such socket"), includeBody: true, close: true)
                 return false
             }
-            guard let (head, headLength) = parsed else { return true }
-            var request = head
-            request.remoteAddress = remoteAddress
-            if WebSocketHandshake.isUpgrade(request) {
-                buffer.removeFirst(headLength)
-                guard let handler = server.upgradeRoute?(request), let response = WebSocketHandshake.response(for: request) else {
-                    send(.text(404, "no such socket"), includeBody: true, close: true)
-                    return false
-                }
-                server.log(request, response)
-                send(response, includeBody: false, close: false)
-                let session = WebSocketSession(connection: connection, remoteAddress: request.remoteAddress, handler: handler)
-                websocket = session
-                session.opened()
-                return session.feed(&buffer)
-            }
-            if request.contentLength > HTTPSServer.maxInlineBody {
-                // large body: stream it to the file the upload sink names, or refuse it
-                let file = server.uploadRoute == nil ? nil : server.uploadSink?(request)
-                guard let file, let handle = try? FileHandle(forWritingTo: file) else {
-                    if let file { try? FileManager.default.removeItem(at: file) }
-                    send(.text(413, "body too large"), includeBody: true, close: true)
-                    return false
-                }
-                buffer.removeFirst(headLength)
-                upload = (request, file, handle, request.contentLength)
-                return drainUpload()
-            }
-            let total = headLength + request.contentLength
-            guard buffer.count >= total else { return true }  // body still arriving
-            request.body = Array(buffer[headLength..<total])
-            buffer.removeFirst(total)
-            let response = server.respond(to: request)
             server.log(request, response)
-            send(response, includeBody: request.method != "HEAD", close: request.wantsClose)
-            if request.wantsClose { return false }
+            send(response, includeBody: false, close: false)
+            let session = WebSocketSession(connection: connection, remoteAddress: request.remoteAddress, handler: handler)
+            websocket = session
+            session.opened()
+            return session.feed(&buffer)
         }
+        if request.contentLength > HTTPSServer.maxInlineBody {
+            // large body: stream it to the file the upload sink names, or refuse it
+            let file = server.uploadRoute == nil ? nil : server.uploadSink?(request)
+            guard let file, let handle = try? FileHandle(forWritingTo: file) else {
+                if let file { try? FileManager.default.removeItem(at: file) }
+                send(.text(413, "body too large"), includeBody: true, close: true)
+                return false
+            }
+            buffer.removeFirst(headLength)
+            upload = (request, file, handle, request.contentLength)
+            return drainUpload()
+        }
+        let total = headLength + request.contentLength
+        guard buffer.count >= total else { return true }  // body still arriving
+        request.body = Array(buffer[headLength..<total])
+        buffer.removeFirst(total)
+        let response = server.respond(to: request)
+        server.log(request, response)
+        send(response, includeBody: request.method != "HEAD", close: request.wantsClose)
+        return !request.wantsClose
     }
 
     /// Moves buffered bytes into the upload file; finishes the request when the body is complete.
@@ -314,10 +322,17 @@ private final class ClientConnection: @unchecked Sendable {
 
     private func send(_ response: HTTPResponse, includeBody: Bool, close: Bool) {
         let bytes = Data(response.serialized(includeBody: includeBody))
+        sending = true
         connection.send(
             content: bytes,
-            completion: .contentProcessed { [connection] _ in
-                if close { connection.cancel() }
+            completion: .contentProcessed { [self] error in
+                if close { return connection.cancel() }
+                sending = false
+                if error != nil {  // the connection is gone: answer nothing more, end it
+                    buffer.removeAll()
+                    receiveEnded = true
+                }
+                serve()
             })
     }
 }
