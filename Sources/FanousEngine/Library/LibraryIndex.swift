@@ -127,19 +127,26 @@ public final class LibraryIndex: @unchecked Sendable {
         var byKey: [MediaKey: String] = [:]
         var cache: [String: CacheEntry] = [:]  // key = path|mtime|size
         var pendingProbes: [String] = []
+        /// B267: the cache key that was in work when the engine stopped before this start, and how often that happened.
+        var stoppedIn: (key: String, stops: Int)?
     }
 
     /// B220: the wording of the probe's reason texts. A cached entry that carries a reason is probed again once when the
     /// version it was written with is not this one (a cache from before this field has none); entries without a reason
     /// are not stale and keep their hit and thumbnail. BUMP THIS whenever a reason text changes. The texts are made in
     /// `probe` (still, movie, sequence and unknown-type reasons) and in `openFailureText` (the movie open failure, also
-    /// used by the ingest queue).
+    /// used by the ingest queue), and in `loadCache` (`stoppedTwice`).
     static let reasonsVersion = 1
+    static let stoppedTwice = "the engine stopped twice while reading it: replace or re-save the file to try again"
 
     struct CacheEntry: Codable {
         var metadata: MediaMetadata?; var thumbnail: String?; var status: LibraryItem.Status; var reason: String?
         var reasonsVersion: Int?  // nil = no reason, or written before B220
     }
+
+    /// B267: the file in work on the library thread, written before its probe and thumbnail and removed after, so the next
+    /// start knows which file was in work when the engine stopped. `stops`: how often that happened before this probe.
+    struct ProbeMarker: Codable { var path: String; var key: String; var stops: Int }
 
     public init(root: URL, cacheDirectory: URL, logger: Logger) {
         self.root = root
@@ -324,6 +331,13 @@ public final class LibraryIndex: @unchecked Sendable {
 
     private func probe(_ url: URL) {
         guard let item = state.withLock({ s in s.snapshot.folders.lazy.flatMap(\.items).first { $0.path == url.path } }) else { return }
+        let key = Self.cacheKey(item)
+        let stops = state.withLock { $0.stoppedIn?.key == key ? $0.stoppedIn!.stops : 0 }
+        // ponytail: one small file written and removed per probe, beside the full cache rewrite of B328; not atomic, a torn
+        // marker reads as none (the file is then not blamed)
+        try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        try? JSONEncoder().encode(ProbeMarker(path: item.path, key: key, stops: stops)).write(to: markerFile)
+        defer { try? FileManager.default.removeItem(at: markerFile) }
         var entry = CacheEntry(metadata: nil, thumbnail: nil, status: .unreadable, reason: nil)
         // B220: every reason text below (and `openFailureText`) is cached; bump `reasonsVersion` when one is reworded
         switch item.kind {
@@ -450,10 +464,29 @@ public final class LibraryIndex: @unchecked Sendable {
     // MARK: Cache
 
     private var cacheFile: URL { cacheDirectory.appending(path: "library-index.json") }
+    var markerFile: URL { cacheDirectory.appending(path: "library-probing.json") }
 
     private func loadCache() {
-        guard let data = try? Data(contentsOf: cacheFile), let cache = try? JSONDecoder().decode([String: CacheEntry].self, from: data) else { return }
-        state.withLock { $0.cache = cache }
+        if let data = try? Data(contentsOf: cacheFile), let cache = try? JSONDecoder().decode([String: CacheEntry].self, from: data) {
+            state.withLock { $0.cache = cache }
+        }
+        // B267: a marker means the engine stopped while that file was read (a crash, a kill, a power cut). The second time it
+        // is unreadable until it changes (a new size or date is a new cache key); the first time it is read once more. A
+        // marker under another root belongs to an index that runs beside this one while the root is replaced (B51).
+        guard let data = try? Data(contentsOf: markerFile), let marker = try? JSONDecoder().decode(ProbeMarker.self, from: data),
+            marker.path.hasPrefix(root.path + "/")
+        else { return }
+        try? FileManager.default.removeItem(at: markerFile)
+        if marker.stops + 1 >= 2 {
+            logger.warning("the engine stopped twice while reading this library file: listed as unreadable until it changes", metadata: ["file": "\(marker.path)"])
+            state.withLock {
+                $0.cache[marker.key] = CacheEntry(metadata: nil, thumbnail: nil, status: .unreadable, reason: Self.stoppedTwice, reasonsVersion: Self.reasonsVersion)
+            }
+            saveCache()
+        } else {
+            logger.warning("the engine stopped while reading this library file: it is read once more", metadata: ["file": "\(marker.path)"])
+            state.withLock { $0.stoppedIn = (marker.key, marker.stops + 1) }
+        }
     }
 
     private func saveCache() {

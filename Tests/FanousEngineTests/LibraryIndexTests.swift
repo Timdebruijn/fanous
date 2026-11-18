@@ -278,6 +278,103 @@ struct LibraryIndexTests {
         let written = try JSONEncoder().encode(cache["k"])
         #expect(try JSONDecoder().decode(LibraryIndex.CacheEntry.self, from: written).reason == "Cannot Open")
     }
+
+    // MARK: B267: a file in work when the engine stopped
+
+    /// Two stills; the cache key of the first, as a scan reads it.
+    private func twoStills() throws -> (root: URL, cache: URL, first: URL, key: String) {
+        let root = try tempDir("fanous-library")
+        let first = root.appending(path: "001_Show/001_poison.png")
+        try Self.png(first)
+        try Self.png(root.appending(path: "001_Show/002_fine.png"))
+        let cache = root.appending(path: ".cache")
+        let scan = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        scan.rescan()
+        let item = try #require(scan.snapshot.folders.first?.items.first)
+        return (root, cache, first, LibraryIndex.cacheKey(item))
+    }
+
+    /// What a previous run left when it stopped inside the probe of `path`.
+    private func leaveMarker(_ cache: URL, path: URL, key: String, stops: Int) throws {
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        try JSONEncoder().encode(LibraryIndex.ProbeMarker(path: path.path, key: key, stops: stops)).write(to: cache.appending(path: "library-probing.json"))
+    }
+
+    /// Counts thumbnailer calls per file name, and reads the marker while the thumbnail is made (the probe is in work).
+    private final class Thumbnails: Sendable {
+        let made = Mutex<[String]>([])
+        let markers = Mutex<[LibraryIndex.ProbeMarker?]>([])
+    }
+
+    private func started(_ root: URL, _ cache: URL, _ thumbnails: Thumbnails) async -> LibraryIndex {
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        let marker = index.markerFile
+        index.thumbnailer = { url, _, _ in
+            thumbnails.made.withLock { $0.append(url.lastPathComponent) }
+            thumbnails.markers.withLock { $0.append((try? Data(contentsOf: marker)).flatMap { try? JSONDecoder().decode(LibraryIndex.ProbeMarker.self, from: $0) }) }
+            return "thumb.jpg"
+        }
+        index.start()
+        // the marker goes just after the item is updated
+        _ = await waitUntil(every: .milliseconds(20)) {
+            index.snapshot.folders.first?.items.allSatisfy { $0.status != .probing } == true && !FileManager.default.fileExists(atPath: marker.path)
+        }
+        return index
+    }
+
+    /// The file is recorded while it is probed and thumbnailed, and the record is gone after.
+    @Test func aProbeIsRecordedWhileItRuns() async throws {
+        let (root, cache, first, key) = try twoStills()
+        let thumbnails = Thumbnails()
+        let index = await started(root, cache, thumbnails)
+        defer { index.stop() }
+        let markers = thumbnails.markers.withLock { $0 }
+        #expect(markers.count == 2)
+        #expect(markers.first??.path == first.path && markers.first??.key == key && markers.first??.stops == 0)
+        #expect(!FileManager.default.fileExists(atPath: index.markerFile.path), "removed after the probe")
+    }
+
+    /// Stopped once: read once more (and fine this time, so nothing stays); stopped twice: unreadable, not read, the rest is.
+    @Test func aFileTheEngineStoppedInTwiceIsUnreadableAndNotReadAgain() async throws {
+        let (root, cache, first, key) = try twoStills()
+        try leaveMarker(cache, path: first, key: key, stops: 0)
+        var thumbnails = Thumbnails()
+        var index = await started(root, cache, thumbnails)
+        index.stop()
+        #expect(thumbnails.made.withLock { $0 } == ["001_poison.png", "002_fine.png"], "stopped once: read again")
+        #expect(thumbnails.markers.withLock { $0.first??.stops } == 1, "the second try is recorded as one")
+        #expect(index.snapshot.folders.first?.items.map(\.status) == [.playable, .playable])
+
+        try FileManager.default.removeItem(at: cache.appending(path: "library-index.json"))
+        try leaveMarker(cache, path: first, key: key, stops: 1)
+        thumbnails = Thumbnails()
+        index = await started(root, cache, thumbnails)
+        defer { index.stop() }
+        #expect(thumbnails.made.withLock { $0 } == ["002_fine.png"], "the poison file is not read a third time")
+        let items = try #require(index.snapshot.folders.first?.items)
+        #expect(items.map(\.status) == [.unreadable, .playable])
+        #expect(items[0].reason == LibraryIndex.stoppedTwice)
+        #expect(!FileManager.default.fileExists(atPath: index.markerFile.path))
+        #expect(FileManager.default.fileExists(atPath: first.path), "the file stays where it is")
+
+        // a rescan (the Rescan button) keeps it unreadable; a new copy of the file is read again
+        index.rescan()
+        #expect(index.snapshot.folders.first?.items.first?.status == .unreadable)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-3600)], ofItemAtPath: first.path)
+        index.rescan()
+        #expect(await waitUntil(every: .milliseconds(20)) { index.snapshot.folders.first?.items.first?.status == .playable })
+    }
+
+    /// A marker under another root is another index's (B51: the old index still probes while the root is replaced).
+    @Test func aMarkerUnderAnotherRootIsLeftAlone() async throws {
+        let (root, cache, _, _) = try twoStills()
+        let elsewhere = try tempDir("fanous-library").appending(path: "001_Show/001_poison.png")
+        try leaveMarker(cache, path: elsewhere, key: "\(elsewhere.path)|0|0|v2", stops: 1)
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.rescan()
+        #expect(index.snapshot.folders.first?.items.map(\.status) == [.probing, .probing])
+        #expect(FileManager.default.fileExists(atPath: index.markerFile.path))
+    }
 }
 
 /// The LibraryIndexTests that need the GPU or a decoder: local and self-hosted runs only (scripts/test.sh --hosted leaves them out).

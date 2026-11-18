@@ -51,6 +51,9 @@ public struct IngestJob: Codable, Sendable, Identifiable {
     /// In place with an originals directory: where the source goes, saved just before it moves there. `deleteSource`
     /// replaces the source in one rename, which leaves no state to recover from.
     var originalMovedTo: URL?
+    /// B267: how often the engine stopped (crashed, was killed, lost power) while this job ran; nil = never. Absent from the
+    /// JSON while nil.
+    public var interruptedRuns: Int?
 
     public init(
         source: URL, destination: URL, kind: Kind, originalsDirectory: URL? = nil, deleteSource: Bool = false
@@ -68,8 +71,9 @@ public struct IngestJob: Codable, Sendable, Identifiable {
 }
 
 /// Runs ingest jobs one at a time on a single `.utility` thread, persists the queue as JSON, and reloads it at init
-/// (jobs that were running when the process died start over from `queued`). Output is written to a hidden temp file in
-/// the destination directory and renamed on success, so the library index never sees a partial movie.
+/// (jobs that were running when the process died start over from `queued`, once: the second time they fail, B267).
+/// Output is written to a hidden temp file in the destination directory and renamed on success, so the library index
+/// never sees a partial movie.
 /// The running worker keeps the queue alive: call `stop()` when done.
 public final class IngestQueue: @unchecked Sendable {
     private struct State {
@@ -101,7 +105,7 @@ public final class IngestQueue: @unchecked Sendable {
                 try? FileManager.default.moveItem(at: persistenceURL, to: persistenceURL.appendingPathExtension("corrupt"))
             }
         }
-        var recovered = false
+        var changed = false
         for index in jobs.indices {
             if case .running = jobs[index].state {
                 let files = FileManager.default, job = jobs[index], temporary = Self.temporaryURL(for: job)
@@ -112,14 +116,26 @@ public final class IngestQueue: @unchecked Sendable {
                 {
                     jobs[index].state = .done
                     jobs[index].finishedAt = Date()
-                    recovered = true
+                    changed = true
                     continue
                 }
-                jobs[index].state = .queued
                 try? files.removeItem(at: temporary)  // the half-written output of the crashed run
+                // B267: a job the engine stopped in twice (in show mode a paused job counts too) is not started a third time;
+                // its source stays where it is. Saved now, so a stop before the job is claimed again is not counted.
+                let runs = (job.interruptedRuns ?? 0) + 1
+                jobs[index].interruptedRuns = runs
+                changed = true
+                if runs >= 2 {
+                    jobs[index].state = .failed("the engine stopped twice during this job")
+                    jobs[index].finishedAt = Date()
+                    logger.warning("the engine stopped twice during this ingest job: failed, the source is left in place", metadata: ["source": "\(job.source.path)"])
+                } else {
+                    jobs[index].state = .queued
+                    logger.warning("the engine stopped during this ingest job: it starts over", metadata: ["source": "\(job.source.path)"])
+                }
             }
         }
-        if recovered { save(jobs) }
+        if changed { save(jobs) }
         state.withLock { $0.jobs = jobs }
     }
 

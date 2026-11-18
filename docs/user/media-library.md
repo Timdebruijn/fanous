@@ -41,7 +41,7 @@ Fanous Library/
 |---|---|
 | The number | The first one to three digits of the folder or file name, 1 to 255. Anything may follow: `001_Name`, `12-Show`, `7 intro.mov` |
 | Invalid names | No digits in front, 0, above 255, four or more digits, or a duplicate number in the same folder (the name that sorts first keeps the number). Such items are listed with a red **invalid name** badge and the reason, and cannot be reached from the console: rename them in Finder. Every file in a folder with an invalid number is invalid with it |
-| Unreadable | A file macOS cannot open at all (a `.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`, `.f4v` or `.divx`, whose reason reads "AVFoundation cannot open .webm files"; a damaged file; a movie whose header gives no usable length, "unknown duration"; a sub-folder that is no image sequence) shows a red **unreadable** badge with the reason and no Transcode button: convert it on another machine |
+| Unreadable | A file macOS cannot open at all (a `.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`, `.f4v` or `.divx`, whose reason reads "AVFoundation cannot open .webm files"; a damaged file; a movie whose header gives no usable length, "unknown duration"; a sub-folder that is no image sequence; a file the engine stopped on twice while reading it, "the engine stopped twice while reading it: replace or re-save the file to try again") shows a red **unreadable** badge with the reason and no Transcode button: convert it on another machine |
 | Ignored | Folders and files whose names start with `_` or `.`, and files that are not media: a file is media when it is a still or has one of these extensions: `.mov`, `.mp4`, `.m4v`, `.avi`, `.mkv`, `.mxf`, `.webm`, `.mpg`, `.mpeg`, `.m2ts`, `.mts`, `.ts`, `.wmv`, `.flv`, `.3gp`, `.3g2`, `.ogv`, `.vob`, `.dv`, `.qt`, `.m2v`, `.f4v`, `.asf`, `.divx` (a TypeScript `.ts` file therefore shows as unreadable). The list is the same on every Mac |
 | Watched | A change in Finder shows up within a moment; **Rescan** on the Media screen forces it |
 | Folder 0 | Not on disk: built-in content and live inputs ([Built-in content](reference/built-in-content.md)) |
@@ -193,7 +193,9 @@ flowchart LR
 
 A HAP Q transcode of 1080p runs at about 11 frames a second on the M1 Pro,
 so a 25 fps clip takes about two and a half times its length; ProRes at
-1080p is not measured. The queue survives an engine restart; a job that was running starts over. Jobs can be
+1080p is not measured. The queue survives an engine restart; a job that was running starts over, once: when the engine stops during the
+same job a second time (a crash, or a power cut; also while it waits in show mode), it fails with "the engine stopped
+twice during this job" and its source stays where it is. Jobs can be
 queued in show mode, but they wait until it ends. The status bar shows the
 running job's progress; do it before the show.
 
@@ -239,7 +241,10 @@ for a movie in a codec Fanous cannot decode, such as H.264) and caches both unde
 then, and a layer pointing at the file shows "no file" until the probe is
 done. The same thumbnails go to a console over CITP and stand in on the
 Layers screen for a layer that shows nothing. A file that changes, moves or
-is renamed is probed again. After an update that rewords the reasons, every
+is renamed is probed again. A file the engine stopped on while reading it
+(a crash, or a power cut) is read once more at the next start; after the
+second time it is listed as unreadable and not read again until it changes,
+so a file that crashes the engine cannot keep it from starting. After an update that rewords the reasons, every
 file that is not playable (needs transcode, unreadable) is probed again once
 and shows "probing…" until then; playable files are not touched.
 

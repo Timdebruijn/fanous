@@ -365,6 +365,13 @@ import VideoToolbox
         try encoder.encode([crashed]).write(to: file)
         #expect(IngestQueue(persistenceURL: file).jobs.map(\.state) == [.queued])
 
+        // B267: started over once, saved as such; the second time the engine stops in it, it fails and is not started.
+        #expect(IngestQueue(persistenceURL: file).jobs.first?.interruptedRuns == 1, "the count was saved at the first restore")
+        crashed.interruptedRuns = 1
+        try encoder.encode([crashed]).write(to: file)
+        #expect(IngestQueue(persistenceURL: file).jobs.map(\.state) == [.failed("the engine stopped twice during this job")], "a failed job is never claimed")
+        #expect(IngestQueue(persistenceURL: file).jobs.first?.state == .failed("the engine stopped twice during this job"), "saved as failed")
+
         // Garbage does not stop the queue from starting.
         try Data("not json".utf8).write(to: file)
         #expect(IngestQueue(persistenceURL: file).jobs.isEmpty)
