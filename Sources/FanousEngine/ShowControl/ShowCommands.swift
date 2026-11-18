@@ -24,6 +24,17 @@ public enum ShowCommands {
         /// The operator's switch (`timecode.enable`, allowed under show lock); nil = on. The source stays configured.
         public var enabled: Bool? = nil
         public init() {}
+
+        /// `layerOffsets` by layer number. `timecode.set` refuses a key that is not the canonical spelling of a number
+        /// (B262), so "01" or "+1" come only from an older build or a hand edit. Where two keys name one layer the
+        /// canonical one wins, else the lowest key, so a loaded project never traps and its winner does not hang on hash order.
+        public var layerOffsetsByNumber: [Int: Double] {
+            var byNumber: [Int: Double] = [:]
+            for (key, value) in layerOffsets.sorted(by: { $0.key < $1.key }) {
+                if let number = Int(key), byNumber[number] == nil || String(number) == key { byNumber[number] = value }
+            }
+            return byNumber
+        }
     }
 
     // MARK: Cues ⇄ JSON
@@ -172,6 +183,9 @@ public enum ShowCommands {
                 try settings.set(value, at: pointer)
                 guard let decoded = try? settings.decoded(as: TimecodeSettings.self) else {
                     throw CommandError.invalidArgs("\(path) does not fit the timecode settings")
+                }
+                if let key = decoded.layerOffsets.keys.first(where: { Int($0).map(String.init) != $0 }) {
+                    throw CommandError.invalidArgs("layerOffsets key \"\(key)\" is not a layer number")
                 }
                 try project.set(try JSONValue(encoding: decoded), at: "/timecode")
                 return nil

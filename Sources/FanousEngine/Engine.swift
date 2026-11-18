@@ -1153,7 +1153,7 @@ public final class Engine: @unchecked Sendable {
         mtc = nil
         timecodeClock.stop()
         timecodeClock.freewheelSeconds = max(0.1, settings.freewheel)
-        render?.compositor.timecodeOffsets = TimecodeOffsets(project: settings.offset, layers: Dictionary(uniqueKeysWithValues: settings.layerOffsets.compactMap { k, v in Int(k).map { ($0, v) } }))
+        render?.compositor.timecodeOffsets = TimecodeOffsets(project: settings.offset, layers: settings.layerOffsetsByNumber)
         switch settings.enabled == false ? .off : settings.source {
         case .off: break
         case .ltc:
