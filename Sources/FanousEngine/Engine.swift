@@ -230,7 +230,12 @@ public final class Engine: @unchecked Sendable {
         // The project document comes first: without a scene file (the bundled agent) it is the source of the layer
         // count, canvas, source policy and library root (DESIGN.md §2.4); a scene file (development, bench) wins,
         // and its canvas is mirrored into the project so the UI shows what renders.
-        var loadedProject = ProjectDocument.load(from: AppPaths.projectFile)
+        // hand-written MIDI map entries and cues get an id on load (B346: before the start version is saved from it), so
+        // per-entry state, midi.map.remove and cue.set/remove can address them and the cue list parses the same every time
+        var loadedProject = ProjectDocument.load(from: AppPaths.projectFile).map { project in
+            let project = MIDISettings.assigningIDs(project) ?? project
+            return ShowCommands.assigningCueIDs(project) ?? project
+        }
         projectFile = AppPaths.projectFile
         if loadedProject == nil {
             // keep an unreadable file (damaged, another schema) before the new project's autosave writes over it
@@ -369,10 +374,7 @@ public final class Engine: @unchecked Sendable {
 
         // Phase 5: roles, the project and live documents and the WebSocket state server (DESIGN.md §11).
         let auth = RoleAuth(settingsURL: AppPaths.settingsFile, shellTokenURL: AppPaths.shellTokenFile, logger: logger)
-        var project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: startCanvas)
-        // hand-written MIDI map entries get an id on load, so per-entry state and midi.map.remove can address them
-        if let fixed = MIDISettings.assigningIDs(project) { project = fixed }
-        if let fixed = ShowCommands.assigningCueIDs(project) { project = fixed }  // B346: and hand-written cues
+        let project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: startCanvas)
         let store = StateStore(project: project, logger: logger)
         ProjectDocument.registerCommands(
             on: store, auth: auth, showModeOn: { [weak self] in self?.showMode.isOn ?? false },
@@ -1576,7 +1578,10 @@ public final class Engine: @unchecked Sendable {
                 }
             }
         }
-        let cueList = ShowCommands.cueList(from: document)
+        // B346: a loaded or reverted project's cues without ids get them once; the runner gets the list with the ids the
+        // correction below writes, so the correction's own change finds the same list and replaces nothing
+        let cuesWithIDs = ShowCommands.assigningCueIDs(document)
+        let cueList = ShowCommands.cueList(from: cuesWithIDs ?? document)
         if cueList != lastCues {
             lastCues = cueList
             cues?.replace(list: cueList)
@@ -1588,7 +1593,7 @@ public final class Engine: @unchecked Sendable {
             // ponytail: replaces the whole map, so a map edit landing in between is lost; ids then come on the next change
             DispatchQueue.global(qos: .utility).async { store.correct(map, at: "/midi/map") }
         }
-        if let fixed = ShowCommands.assigningCueIDs(document), let cues = fixed["cues"], let store {
+        if let cues = cuesWithIDs?["cues"], let store {
             // B346: the same for cues; ponytail: replaces the whole list, as above for the map
             DispatchQueue.global(qos: .utility).async { store.correct(cues, at: "/cues") }
         }

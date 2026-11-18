@@ -76,6 +76,23 @@ struct ShowControlTests {
         #expect(ShowCommands.cueList(from: store.project).cues.map(\.name) == ["A2", "C", "D"])
     }
 
+    /// B346: a project loaded or reverted while the engine runs (here: `/cues` corrected to id-less cues from off the
+    /// store queue, as a load lands) gets its cue ids through `Engine.projectChanged`, once: the stored cues end with
+    /// unique UUIDs and parse the same twice. Never started, the engine has no cue runner, so this cannot see which list
+    /// the runner gets; that it gets the corrected one, and only once, is the live check's.
+    @Test func aLoadedProjectsCuesGetIDsThroughProjectChanged() async throws {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
+        let store = StateStore(project: testProject(layers: 2, outputs: 0), logger: testLogger)
+        engine.store = store
+        store.onProjectChanged = { [engine] in engine.projectChanged($0) }
+        let cues: JSONValue = [["number": 1, "name": "A"], ["number": 2, "name": "B", "id": "cue-2"], ["number": 3, "name": "C", "id": "cue-2"]]
+        try await offPool { store.correct(cues, at: "/cues") }
+        let ids = { @Sendable in (store.project["cues"]?.array ?? []).compactMap { $0["id"]?.string.flatMap(UUID.init(uuidString:)) } }
+        #expect(await waitUntil { Set(ids()).count == 3 }, "the cues did not get ids: \(store.project["cues"] ?? .null)")
+        #expect(ShowCommands.cueList(from: store.project) == ShowCommands.cueList(from: store.project))
+        #expect(ShowCommands.assigningCueIDs(store.project) == nil)
+    }
+
     /// B43: a cue's fade measured end to end in the engine, go() → CueRunner (50 Hz) → DMXStore → the published Layer 1
     /// intensity the compositor reads. Loose bounds (B67), held at load average 31; the sampler thread must keep up. Stops at the snapshot;
     /// nothing here measures light (no photon probe exists).
