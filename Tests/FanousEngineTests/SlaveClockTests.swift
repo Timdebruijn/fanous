@@ -117,4 +117,37 @@ struct SlaveClockTests {
             frameCount: 100)
         #expect(abs(loop.offsetMs) < 1e-6)
     }
+
+    // B372: a local slave on the same file shows its master's frame on every tick, across the loop's wrap too. The
+    // targets are whole periods of a 24 MHz mach clock, as `PacedThread` makes them. On 13798aee the master's position
+    // sat at 99.999… while it showed frame 0; the slave clamped that to 99 and showed 99, then skipped 0. Whether the
+    // float noise lands on that side depends on the start time, so four starts; 25p on 50 Hz is the control.
+    @Test func aLocalSlaveShowsItsMastersFrameAcrossTheWrap() {
+        for start in (0..<4).map({ 6_220_800_000_000 + UInt64($0) * 1_000_003 }) {  // three days of host time
+            for (fps, hz, speed) in [(60.0, 60.0, 100.0), (24, 60, 100), (25, 60, 100), (60, 60, 80), (25, 50, 100)] {
+                wrap(start: start, fps: fps, hz: hz, speed: speed)
+            }
+        }
+    }
+
+    func wrap(start: UInt64, fps: Double, hz: Double, speed: Double) {
+        var master = LayerClock()
+        master.retrigger(mode: .loopForward, inFrame: 0, outFrame: 99, frameCount: 100)
+        var slave = LayerClock()
+        let period = UInt64(24_000_000 / hz)
+        var tick = start
+        var last = Double(tick + period) / 24e6
+        var disagree = 0
+        for _ in 0..<6000 {
+            tick += period
+            let target = Double(tick + period) / 24e6
+            let shown = master.advance(
+                dt: target - last, fps: fps, speed: speed, mode: .loopForward, inFrame: 0, outFrame: 99, frameCount: 100)
+            let entry = Self.entry(position: master.position, fps: Float(fps), rate: Float(fps * speed / 100))
+            _ = SlaveClock.follow(&slave, entry: entry, age: 0, dt: target - last, interval: 1 / hz, fps: fps, frameCount: 100)
+            if slave.frame(lo: 0, hi: 99) != shown { disagree += 1 }
+            last = target
+        }
+        #expect(disagree == 0, "start \(start): \(fps) on \(hz) Hz at \(speed) %: \(disagree) of 6000 ticks")
+    }
 }

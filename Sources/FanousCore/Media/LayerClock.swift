@@ -16,8 +16,36 @@ public struct LayerClock: Sendable, Equatable {
     /// +1 or −1; bounce flips it.
     public var direction: Double = 1
     public var finished = false
+    /// Set by `retrigger`: the next `advance` shows the first frame instead of one tick past it (B372). A sync slave
+    /// never advances: the compositor clears it while the layer follows a master.
+    public var triggered = false
 
     public init() {}
+
+    /// How far before a frame's start the shown frame turns over, in frames (B372): frame k shows from position
+    /// k − 11/24 to k + 13/24. Not 0 (the floor): at matched rates the position lands on a whole frame every tick and
+    /// noise picks between two frames. Not 1/2 (the nearest frame): at a half rate (25p on 50 Hz, half speed) it lands
+    /// on a half frame every other tick. 11/24 stays 1/24 frame clear of every position a trigger leads to at the rate
+    /// ratios with a denominator dividing 8 or 12 (1, 1/2, 1/3, 1/4, 1/8, 5/6 for 50p on 60 Hz, 5/12 for 25p on 60 Hz)
+    /// and 0.058 frame clear at 2/5 (24p on 60 Hz); 0.018 at 12/25 (24p on 50 Hz) and none at 5/24 (B382).
+    static let lead = 11.0 / 24
+
+    /// The frame shown at `position` in `lo…hi`; from `hi` + 13/24 on (a slave's wrap within its file) it is `lo`
+    /// again. A NaN or infinite position shows `lo`.
+    public func frame(lo: Int, hi: Int) -> Int {
+        let f = max(Double(lo), (position + Self.lead).rounded(.down))  // max(lo, NaN) is lo
+        return f > Double(hi) ? lo : Int(f)
+    }
+
+    /// `position` looped within `lo…hi` and kept inside the window its frame shows in, `[lo − 11/24, hi + 13/24)`:
+    /// the in point's frame starts 11/24 before `lo`, so a sync slave, the audio and a switch to freeze see the
+    /// position of the frame on screen, not the out point's (B372).
+    public static func looped(_ position: Double, lo: Double, hi: Double) -> Double {
+        let span = hi - lo + 1
+        var p = lo + (position - lo).truncatingRemainder(dividingBy: span)
+        if p < lo { p += span }
+        return p >= hi + 1 - lead ? p - span : p
+    }
 
     /// Jumps to the start of the range for `mode` (the end for reverse modes).
     public mutating func retrigger(mode: PlayMode, inFrame: Int, outFrame: Int, frameCount: Int) {
@@ -25,6 +53,7 @@ public struct LayerClock: Sendable, Equatable {
         position = mode.isReverse ? hi : lo
         direction = 1
         finished = false
+        triggered = true
     }
 
     /// Advances by `dt` seconds and returns the frame to show; nil means black
@@ -32,6 +61,8 @@ public struct LayerClock: Sendable, Equatable {
     public mutating func advance(
         dt: Double, fps: Double, speed: Double, mode: PlayMode, inFrame: Int, outFrame: Int, frameCount: Int
     ) -> Int? {
+        let first = triggered
+        triggered = false
         guard frameCount > 0, fps > 0 else { return nil }
         let (lo, hi) = Self.range(inFrame, outFrame, frameCount)
         if hi <= lo {
@@ -41,18 +72,17 @@ public struct LayerClock: Sendable, Equatable {
         switch mode {
         case .freeze, .scrub, .timecode:
             position = min(hi, max(lo, position))
-            return Int(position)
+            return frame(lo: Int(lo), hi: Int(hi))
         default:
             break
         }
-        if finished { return mode.endsBlack ? nil : Int(position) }
-        let span = hi - lo + 1
+        if finished { return mode.endsBlack ? nil : frame(lo: Int(lo), hi: Int(hi)) }
+        if first { return frame(lo: Int(lo), hi: Int(hi)) }
         let step = dt * fps * speed / 100 * (mode.isReverse ? -1 : 1) * direction
         var next = position + step
         switch mode {
         case .loopForward, .loopReverse:
-            next = lo + (next - lo).truncatingRemainder(dividingBy: span)
-            if next < lo { next += span }
+            next = Self.looped(next, lo: lo, hi: hi)
         case .bounce:
             if next > hi {
                 next = 2 * hi - next
@@ -62,18 +92,18 @@ public struct LayerClock: Sendable, Equatable {
                 direction = -direction
             }
             next = min(hi, max(lo, next))
-        default:  // once modes
-            if next > hi {
+        default:  // once modes: the end frame shows for its whole frame, as every other frame
+            if next + Self.lead >= hi + 1 {
                 next = hi
                 finished = true
-            } else if next < lo {
+            } else if next + Self.lead < lo {
                 next = lo
                 finished = true
             }
         }
         position = next
         if finished && mode.endsBlack { return nil }
-        return Int(min(hi, max(lo, next)))
+        return frame(lo: Int(lo), hi: Int(hi))
     }
 
     static func range(_ inFrame: Int, _ outFrame: Int, _ frameCount: Int) -> (Double, Double) {

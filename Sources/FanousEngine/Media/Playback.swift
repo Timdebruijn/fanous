@@ -244,8 +244,8 @@ public final class LayerPlayback: @unchecked Sendable {
             }
         }
         guard ring.count > 0 else { return holdFrame }
-        var best: DecodedFrame?
-        for i in 0..<min(ring.count, 3) {
+        var best: DecodedFrame?  // the whole ring: with frames decoded ahead the clock's frame can be anywhere in it (B372)
+        for i in 0..<ring.count {
             guard let f = ring.peek(i) else { break }
             if best == nil || behind(f.frameIndex) < behind(best!.frameIndex) { best = f }
         }
@@ -353,7 +353,9 @@ public final class RenderLayer: @unchecked Sendable {
 
     /// Frame index of the playing media for the UI's position display.
     /// ponytail: unsynchronised read of a compositor-owned value; a stale frame number for one 100 ms tick is harmless.
-    public var currentFrame: Int { Int(current?.clock.position ?? 0) }
+    /// The clock's frame (B372): a looping clock stays inside its shown frame's window, so the in and out points
+    /// are not needed for it.
+    public var currentFrame: Int { current.map { $0.clock.frame(lo: 0, hi: $0.frameCount - 1) } ?? 0 }
 }
 
 /// Media as a scene addresses it: (folder, file) → a file or a live input.
