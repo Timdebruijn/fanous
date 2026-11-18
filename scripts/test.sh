@@ -20,7 +20,7 @@ if [[ "${1:-}" == "--hosted" ]]; then
   hosted+='|EditOverlayTests|HTTPSServerLogTests|IngestAPITests|LayerGeometryTests|LibraryIndexTests|LibraryRedactionTests|LiveCatalogTests'
   hosted+='|DMXStateBoundsTests|HAPFrameBoundsTests|HTTPSPipeliningTests|MetricsMicrosTests|ProjectValueRangeTests'
   hosted+='|MIDIControlTests|OSCFeedbackServerTests|OSCReceiverTests|OSLogHandlerTests|PresetCommandsTests|ProjectVersionsTests'
-  hosted+='|RESTAuthTests|RoleAuthTests|ShowControlTests|SlaveClockTests|StateServerTests|StateStoreRedactionTests|StateStoreTests'
+  hosted+='|ReferenceSwapTests|RESTAuthTests|RoleAuthTests|ShowControlTests|SlaveClockTests|StateServerTests|StateStoreRedactionTests|StateStoreTests'
   hosted+='|SyncReceiverTests|SyncSenderTests|TLSIdentityTests|TripleBufferTests|UDPFlowTests|UDPSendTests|UIExpiryTests'
   hosted+='|UniverseSettingsEngineTests|WallCommandsTests|WebSocketHandshakeTests|WebSocketSessionTests'
   set -- --filter "FanousCoreTests|FanousEngineTests\.($hosted)/" "$@"

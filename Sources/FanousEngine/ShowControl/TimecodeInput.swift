@@ -31,7 +31,12 @@ public final class TimecodeClock: @unchecked Sendable {
 
     private let sample = Mutex<Sample>(Sample())
     nonisolated(unsafe) private var cached = Sample()
-    public var freewheelSeconds: Double = 2
+    /// Set by Control (`timecode.set`) while the compositor and the feed read it (B273): a Double's bits in an atomic.
+    public var freewheelSeconds: Double {
+        get { Double(bitPattern: freewheelBits.load(ordering: .relaxed)) }
+        set { freewheelBits.store(newValue.bitPattern, ordering: .relaxed) }
+    }
+    private let freewheelBits = Atomic<UInt64>(2.0.bitPattern)
     /// Every decoded frame, on the source's thread (cue triggers; the engine dispatches onward).
     nonisolated(unsafe) public var onFrame: ((Timecode, Double) -> Void)?
     public let framesSeen = Atomic<Int>(0)
@@ -146,8 +151,16 @@ public final class LTCInput: @unchecked Sendable {
     /// the engine start under one lock, keeps a stopped input from opening afterwards. The sink is kept to detach it,
     /// which breaks the input → engine → sink → closure → input cycle.
     private let lifecycle = Mutex<(stopped: Bool, sink: AVAudioSinkNode?)>((false, nil))
-    public private(set) var deviceName = ""
-    public private(set) var lastError: String?
+    /// Written by `start` on a cooperative thread, read by the feed queue and Control (B273); off the audio thread.
+    public private(set) var deviceName: String {
+        get { report.withLock { $0.device } }
+        set { report.withLock { $0.device = newValue } }
+    }
+    public private(set) var lastError: String? {
+        get { report.withLock { $0.error } }
+        set { report.withLock { $0.error = newValue } }
+    }
+    private let report = Mutex<(device: String, error: String?)>(("", nil))
 
     public init(clock: TimecodeClock, channel: Int = 0, logger: Logger) {
         self.clock = clock

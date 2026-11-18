@@ -86,8 +86,16 @@ public final class Engine: @unchecked Sendable {
     private var canvasSwitch: CanvasSwitch?
     // Phase 7: show control
     private let timecodeClock = TimecodeClock()
-    private var ltc: LTCInput?
-    private var mtc: MTCInput?
+    /// Swapped by `applyTimecodeSettings` on Control while the feed queue reads them for `live.timecode` (B273).
+    private var ltc: LTCInput? {
+        get { timecodeInputs.withLock { $0.ltc } }
+        set { timecodeInputs.withLock { $0.ltc = newValue } }
+    }
+    private var mtc: MTCInput? {
+        get { timecodeInputs.withLock { $0.mtc } }
+        set { timecodeInputs.withLock { $0.mtc = newValue } }
+    }
+    private let timecodeInputs = Mutex<(ltc: LTCInput?, mtc: MTCInput?)>((nil, nil))
     private var lastTimecodeSettings = ShowCommands.TimecodeSettings()
     /// Timecode set to LTC (the switch aside), for readiness off the control queue (B137).
     private let ltcInUse = Atomic<Bool>(false)
@@ -1111,8 +1119,9 @@ public final class Engine: @unchecked Sendable {
         return ["port": .number(Double(s.port)), "clients": .array(s.clients.map { .string($0) }), "streams": .number(Double(s.streams)), "beaconsDropped": .number(Double(s.beaconsDropped)), "multicast": .array([.string(CITPMulticast.address), .string(CITPMulticast.addressSince2014)])]
     }
 
-    private func timecodeLive() -> JSONValue {
+    func timecodeLive() -> JSONValue {  // internal for the B273 test
         let s = timecodeClock.current()
+        let (ltc, mtc) = timecodeInputs.withLock { $0 }
         let mtcStatus = mtc?.status.withLock { $0 }
         return [
             "state": .string(s.state.rawValue), "source": .string(s.source), "value": .string(s.state == .off ? "--:--:--:--" : s.timecode.description),
