@@ -437,12 +437,16 @@ public final class Engine: @unchecked Sendable {
         lastCues = cueList
         self.cues = cues
         if let resumeCues {
-            // the enter below writes the file: with the stored state, not the controller's empty one
-            showMode.setCue(resumeCues.cue, number: resumeCues.cueNumber, targets: resumeCues.targets)
-            let alive = Set(cueList.cues.map(\.id))
-            let values = "\(resumeCues.targets.filter { alive.contains($0.key) }.values.reduce(0) { $0 + $1.count })"
+            // the enter below writes the file: with the state the runner lands on (the same resume on a scratch engine:
+            // the fallback cue, gone owners dropped, raws clamped), not the controller's empty one nor the stored one, so
+            // this write and the runner's report are the same whichever lands last
+            var landed = CueEngine(list: cueList)
+            landed.resume(current: resumeCues.cue, number: resumeCues.cueNumber, targets: resumeCues.targets)
+            let targets = landed.targets
+            showMode.setCue(landed.current?.id, number: landed.current?.number, targets: targets)
+            let values = "\(targets.values.reduce(0) { $0 + $1.count })"
             let stored = resumeCues.cueNumber.map { "\($0)" } ?? "?"
-            if let cue = cueList.resuming(id: resumeCues.cue, number: resumeCues.cueNumber) {
+            if let cue = landed.current {
                 logger.warning(
                     cue.id == resumeCues.cue ? "cue position resumed" : "cue position resumed on an earlier cue: the cue is no longer in the cue list",
                     metadata: ["cue": "\(cue.number)", "name": "\(cue.name)", "stored": "\(stored)", "values": "\(values)"])

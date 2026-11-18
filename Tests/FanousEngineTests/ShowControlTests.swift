@@ -1414,6 +1414,45 @@ struct ShowControlTests {
         #expect(runner.status.withLock { $0.current } == 3 && reported.withLock { $0.count } == 2, "a command after stop changed the state")
     }
 
+    /// B284: at start the engine writes the state the runner will land on (a resume on a scratch `CueEngine`, as
+    /// `Engine.start` does), so its direct write and the runner's later report put the same file down, in either order:
+    /// for a stored cue that is gone (the earlier cue instead), an owner that left the list (dropped) and a raw beyond its
+    /// range (clamped). Writing the stored state instead would leave the gone cue's id in the file until the next fire.
+    @Test func theStartWriteEqualsTheRunnersReport() async throws {
+        let dir = try tempDir("fanous-show")
+        let one = CueValue(fixture: .layer(1), parameter: .layer(.intensity), raw: 20000)
+        let mode = CueValue(fixture: .layer(1), parameter: .layer(.playMode), raw: 65535)
+        let list = CueList(cues: [Cue(number: 1, values: [one]), Cue(number: 2, values: [mode])])
+        let (gone, left) = (UUID(), UUID())
+        let stored: [UUID: [CueValue]] = [list.cues[0].id: [one], list.cues[1].id: [mode], left: [CueValue(fixture: .layer(2), parameter: .layer(.intensity), raw: 9)]]
+
+        var landed = CueEngine(list: list)
+        landed.resume(current: gone, number: 2.5, targets: stored)
+        let direct = ShowModeController(logger: testLogger, stateURL: dir.appending(path: "direct.json"))
+        direct.setCue(landed.current?.id, number: landed.current?.number, targets: landed.targets)
+        direct.enter()
+        defer { direct.leave() }
+
+        let runner = CueRunner(dmx: DMXStore(patch: .standard(layers: 2, outputs: 0), logger: testLogger))
+        defer { runner.stop() }
+        let report = Mutex<(cue: Cue?, targets: [UUID: [CueValue]])?>(nil)
+        runner.onStateChange = { cue, targets in report.withLock { $0 = (cue, targets) } }
+        runner.replace(list: list, resuming: (gone, 2.5, stored))
+        #expect(await waitUntil { report.withLock { $0 } != nil })
+        let reported = try #require(report.withLock { $0 })
+        let viaRunner = ShowModeController(logger: testLogger, stateURL: dir.appending(path: "runner.json"))
+        viaRunner.setCue(reported.cue?.id, number: reported.cue?.number, targets: reported.targets)
+        viaRunner.enter()
+        defer { viaRunner.leave() }
+
+        let a = try #require(ShowModeState.load(from: dir.appending(path: "direct.json")))
+        let b = try #require(ShowModeState.load(from: dir.appending(path: "runner.json")))
+        #expect(a.cue == list.cues[1].id && a.cueNumber == 2, "the earlier cue, not the gone one")
+        #expect(a.cue == b.cue && a.cueNumber == b.cueNumber && a.held == b.held)
+        #expect(a.held?[left.uuidString] == nil, "the owner that left the list is dropped")
+        #expect(a.held?[list.cues[1].id.uuidString]?.values.first == ChannelMap.spec(.layer(.playMode)).clamped(65535), "the raw clamped")
+    }
+
     /// B284: a running fade is ticked at 50 Hz but changes no target: it reports once, at the GO, not per tick or at its
     /// end.
     @Test func aRunningFadeReportsNothing() async throws {
