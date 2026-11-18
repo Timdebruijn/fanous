@@ -13,7 +13,7 @@ import Synchronization
 public struct SyncSettings: Codable, Sendable, Equatable {
     /// "any" (the first up, non-loopback interface) or an interface name or address; where broadcasts go out.
     public var interface = "any"
-    public var port: UInt16 = 8002
+    public var port = defaultPort
     /// "broadcast", or an IPv4 address with an optional ":port" (two engines on one Mac listen on different ports).
     public var target = "broadcast"
 
@@ -23,6 +23,14 @@ public struct SyncSettings: Codable, Sendable, Equatable {
     enum CodingKeys: String, CodingKey { case interface, port, target }
 
     public init() {}
+
+    /// The sync port of an engine whose settings name none, so the installed engine's on this Mac.
+    public static let defaultPort: UInt16 = 8002
+
+    /// With `--no-network` the default port is neither bound nor sent to: it belongs to the installed engine, and a
+    /// test instance started without settings.json stays off it (B337). Engines that sync on one Mac each name their
+    /// own `port`.
+    static func usable(_ port: UInt16, network: Bool) -> Bool { network || port != defaultPort }
 
     /// "broadcast", or an IPv4 address with an optional ":port" (1–65535): what the sender can send to.
     static func isValidTarget(_ target: String) -> Bool {
@@ -163,8 +171,8 @@ final class SyncSender: @unchecked Sendable {
     }
 
     /// The target's address: the sync interface's subnet broadcast, or the unicast address (127.0.0.1 only without
-    /// the network). nil = nowhere, logged when it changes to that.
-    private func resolve() -> sockaddr_in? {
+    /// the network). nil = nowhere, logged when it changes to that. Sender thread, or a test on a sender not started.
+    func resolve() -> sockaddr_in? {
         let settings = self.settings
         var address = sockaddr_in()
         address.sin_family = sa_family_t(AF_INET)
@@ -194,6 +202,9 @@ final class SyncSender: @unchecked Sendable {
             let host = settings.target.prefix { $0 != ":" }
             guard network || host == "127.0.0.1" else {
                 return nowhere("sync target \(host) is not sent to with --no-network; only 127.0.0.1")
+            }
+            guard SyncSettings.usable(UInt16(bigEndian: address.sin_port), network: network) else {
+                return nowhere("sync port \(SyncSettings.defaultPort) is not sent to with --no-network; give the target another :port")
             }
         }
         var text = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))

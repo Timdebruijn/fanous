@@ -44,6 +44,18 @@ struct SyncReceiverTests {
         return nil
     }
 
+    /// B337, the receiver's call site (`startSync` and `sync.set` both bind through `start(port:network:)`): with
+    /// `--no-network` the default port is not bound, another port is. Binds nothing on 8002 while the rule holds.
+    @Test func noNetworkDoesNotListenOnTheDefaultPort() throws {
+        let refused = SyncReceiver(machine: Self.own, logger: testLogger)
+        #expect(try refused.start(port: SyncSettings.defaultPort, network: false) == false)
+        #expect(!refused.listening)
+        let other = SyncReceiver(machine: Self.own, logger: testLogger)
+        defer { other.stop() }
+        #expect(try other.start(port: 0, network: false))  // port 0: the kernel picks one
+        #expect(other.listening)
+    }
+
     @Test func aSendersClockArrives() async throws {
         let (receiver, port) = try Self.receiver()
         defer { receiver.stop() }

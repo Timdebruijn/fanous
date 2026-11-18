@@ -772,14 +772,15 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
-    /// The receiver binds 127.0.0.1 only and the sender sends to 127.0.0.1 only with `--no-network`. A port in use
-    /// leaves the receiver unbound (logged): local groups and sending still work.
+    /// The receiver binds 127.0.0.1 only and the sender sends to 127.0.0.1 only with `--no-network`, and neither uses
+    /// the default port then (B337). A port in use, or the default one with `--no-network`, leaves the receiver unbound
+    /// (logged): local groups and sending still work.
     private func startSync(compositor: Compositor) {
         let settings = MachineSettings.load(from: AppPaths.settingsFile).sync ?? SyncSettings()  // RoleAuth logs its problems
         let machine = UUID(uuidString: Self.installUUID()) ?? UUID()
         let receiver = SyncReceiver(machine: machine, logger: logger)
         do {
-            try receiver.start(port: settings.port, loopbackOnly: !options.network)
+            try startReceiving(receiver, settings)
         } catch {
             logger.error("sync port in use; not receiving sync packets", metadata: ["port": "\(settings.port)", "error": "\(error)"])
         }
@@ -797,10 +798,19 @@ public final class Engine: @unchecked Sendable {
         sender.apply(settings)
         receiver.stop()
         do {
-            try receiver.start(port: settings.port, loopbackOnly: !options.network)
+            try startReceiving(receiver, settings)
         } catch {
             logger.error("sync port in use; not receiving sync packets", metadata: ["port": "\(settings.port)", "error": "\(error)"])
             throw CommandError("failed", "saved, but sync port \(settings.port) is in use: not receiving sync packets")
+        }
+    }
+
+    /// Binds the settings' port, except the default one with `--no-network` (B337): that is a warning, not an error.
+    private func startReceiving(_ receiver: SyncReceiver, _ settings: SyncSettings) throws {
+        guard try receiver.start(port: settings.port, network: options.network) else {
+            return logger.warning(
+                "sync not receiving: --no-network leaves the default sync port to the installed engine; name another sync.port in settings.json to sync",
+                metadata: ["port": "\(settings.port)"])
         }
     }
 

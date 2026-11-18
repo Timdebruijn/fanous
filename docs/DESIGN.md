@@ -5200,7 +5200,11 @@ differs from the text above:
   (measured on macOS 27), so two engines on one Mac listen on different ports
   and each sends to the other's. `--no-network`: the receiver binds 127.0.0.1,
   only a 127.0.0.1 target is sent to, a broadcast target is ignored and
-  logged. A target that does not parse sends nothing and is logged.
+  logged, and the default port 8002 is neither bound nor sent to (B337): it
+  belongs to the installed engine, so a test instance syncs only on a port
+  of its own. The rule knows the constant, not the installed engine's
+  configured port: a port named explicitly is the starter's responsibility.
+  A target that does not parse sends nothing and is logged.
 - **`interface: any`** is the first up, non-loopback IPv4 interface with the
   multicast and broadcast flags, not "the interface of universe 1"; resolved
   every 5 s on the sender thread.
