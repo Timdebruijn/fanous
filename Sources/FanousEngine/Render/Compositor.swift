@@ -735,6 +735,7 @@ public final class Compositor: @unchecked Sendable {
             playback.clock.direction = 1
             playback.clock.finished = false
         }
+        if master != nil { playback.clock.triggered = false }  // a slave never advances: its own clock moves at once
         playback.following = master != nil
         if retrigger && master == nil { playback.clock.retrigger(mode: p.playMode, inFrame: inFrame, outFrame: outFrame, frameCount: playback.frameCount) }
         if master == nil, p.playMode == .timecode, playback.frameCount > 1, let timecode, let frames = timecode.frames(at: ctx.target) {
@@ -742,10 +743,8 @@ public final class Compositor: @unchecked Sendable {
             let offsets = timecodeOffsets
             let seconds = (frames - offsets.project - (offsets.layers[slot / 2 + 1] ?? 0)) / timecode.read(at: ctx.target).rate.exactFrameRate
             let lo = Double(min(inFrame, outFrame)), hi = Double(max(inFrame, outFrame))
-            var frame = seconds * playback.frameRate
-            let span = hi - lo + 1
-            if span > 0 { frame = lo + (frame - lo).truncatingRemainder(dividingBy: span) + (frame < lo ? span : 0) }
-            playback.clock.position = min(hi, max(lo, frame))
+            // looped like a loop's clock, so the out and in frames each show for a whole frame (B372)
+            playback.clock.position = min(hi, max(lo, LayerClock.looped(seconds * playback.frameRate, lo: lo, hi: hi)))
         }
         let speed: Double
         let frameIndex: Int?

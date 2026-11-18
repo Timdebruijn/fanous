@@ -332,9 +332,9 @@ display link's `targetTimestamp`:
   and restarts; the compositor shows the previous frame (or black, per layer
   setting) until the first new frame is ready, then starts the dissolve if
   dissolve > 0.
-- Frame selection: the clock's frame is `⌊position + 11/24⌋` (a loop past its
-  out point shows its in point again), so frame k shows from position
-  k − 11/24 to k + 13/24. Rounding down would put the clock on a frame boundary
+- Frame selection: the clock's frame is `⌊position + 11/24⌋`, so frame k
+  shows from position k − 11/24 to k + 13/24; a looping position is kept in
+  `[in − 11/24, out + 13/24)`, the window of the frame on screen. Rounding down would put the clock on a frame boundary
   every tick at matched rates (a trigger starts on a whole frame), and half a
   frame would do the same at half rates; 11/24 stays 1/24 frame clear of both
   and of every rate ratio with a denominator dividing 8 or 12 (quarter speed,

@@ -115,41 +115,111 @@ import Testing
 
     static let jitters: [Double] = [0, 1e-6, 200e-6]
 
-    static let cadences: [(Double, Double, Double, Int, Int, [Int], [Int])] = [
-        // fps, hz, speed, frames per tick p/q, the holds of frame 0 and of every frame after it
-        (60.0, 60.0, 100.0, 1, 1, [1], [1]),  // matched: main repeated 891 and skipped 891 of 3600 with ±1 µs
-        (50, 50, 100, 1, 1, [1], [1]),
-        (60000 / 1001, 60000 / 1001, 100, 1, 1, [1], [1]),
-        (60, 60, 0, 0, 1, [], []),  // speed 0: frame 0 throughout
-        (25, 50, 100, 1, 2, [2], [2]),  // 2-2-2-2, not 1-3
-        (30, 60, 100, 1, 2, [2], [2]),
-        (60, 60, 50, 1, 2, [2], [2]),
-        (60, 60, 25, 1, 4, [3], [4]),  // the first frame shows from its own start: 13/24 of a frame
-        (25, 50, 25, 1, 8, [5], [8]),
-        (24, 60, 100, 2, 5, [2], [2, 3]),  // 3-2 pulldown
-        (25, 60, 100, 5, 12, [2], [2, 3]),
-        (50, 60, 100, 5, 6, [1], [1, 2]),
-        (60, 60, 200, 2, 1, [1], [1]),
-        (25, 60, 300, 5, 4, [1], [1]),
+    static let cadences: [(Double, Double, Double, Set<Int>)] = [
+        // fps, hz, speed, and the ticks every frame after the first shows for (the first: at most the longest of them)
+        (60.0, 60.0, 100.0, [1]),  // matched: main repeated 891 and skipped 891 of 3600 with ±1 µs
+        (50, 50, 100, [1]),
+        (60000 / 1001, 60000 / 1001, 100, [1]),
+        (60, 60, 0, []),  // speed 0: frame 0 throughout
+        (25, 50, 100, [2]),  // every frame exactly twice, not 1-3
+        (30, 60, 100, [2]),
+        (60, 60, 50, [2]),
+        (60, 60, 25, [4]),
+        (25, 50, 25, [8]),
+        (24, 60, 100, [2, 3]),  // 3-2 pulldown
+        (25, 60, 100, [2, 3]),
+        (50, 60, 100, [1, 2]),
+        (60, 60, 200, [1]),
+        (25, 60, 300, [1]),
     ]
 
     @Test func cadenceFollowsTheClock() {
-        for (fps, hz, speed, p, q, first, rest) in Self.cadences {
-            cadence(fps: fps, hz: hz, speed: speed, p: p, q: q, first: first, rest: rest)
+        for (fps, hz, speed, rest) in Self.cadences {
+            let rate = fps * speed / 100 / hz  // frames per tick
+            let label = "\(fps) on \(hz) Hz at \(speed) %"
+            for jitter in Self.jitters {
+                let frames = shown(fps: fps, hz: hz, speed: speed, jitter: jitter).map { $0! }
+                // the rule: the clock's position at an ideal tick k, turned over `lead` early
+                #expect(frames.indices.allSatisfy { k in frames[k] == Int((Double(k) * rate + LayerClock.lead).rounded(.down)) }, "\(label) ±\(jitter) s")
+                // and what any good rule must give: the first frame at the trigger, never a frame away from the clock, even holds
+                #expect(frames[0] == 0, "\(label)")
+                #expect(frames.indices.allSatisfy { abs(Double(frames[$0]) - Double($0) * rate) < 1 }, "\(label)")
+                let runs = holds(frames)
+                #expect((runs.first ?? 0) <= (rest.max() ?? 0), "\(label): \(runs.prefix(3))")
+                #expect(Set(runs.dropFirst()) == rest, "\(label): \(Set(runs.dropFirst()))")
+                if rest == [2, 3] { #expect(zip(runs.dropFirst(), runs.dropFirst(2)).allSatisfy { $0 + $1 <= 5 }, "never 3-3: \(runs)") }
+            }
         }
     }
 
-    func cadence(fps: Double, hz: Double, speed: Double, p: Int, q: Int, first: [Int], rest: [Int]) {
-        // frame k·p/q + 11/24 rounded down, in whole numbers: what the clock's position says at an ideal tick k
-        let expected = (0..<3600).map { k in (24 * p * k + 11 * q) / (24 * q) }
-        for jitter in Self.jitters {
-            let frames = shown(fps: fps, hz: hz, speed: speed, jitter: jitter)
-            #expect(frames == expected, "\(fps) on \(hz) Hz at \(speed) %, ±\(jitter) s")
+    @Test func aDMXSpeedStepSlipsOnlyByTheDrift() {
+        // a 16-bit speed fader one step off 100 % or 50 %: the clock drifts; the picture slips only where the drift says
+        for (fps, hz, speed) in [(60.0, 60.0, 98.999), (25.0, 50.0, 49.9985)] {
+            let rate = fps * speed / 100 / hz
+            let frames = shown(fps: fps, hz: hz, speed: speed).map { $0! }
+            let steps = zip(frames, frames.dropFirst()).map { $1 - $0 }
+            #expect(steps.allSatisfy { $0 == 0 || $0 == 1 })
+            #expect(frames.indices.allSatisfy { abs(Double(frames[$0]) - Double($0) * rate) < 1 })
+            let runs = holds(frames).dropFirst()
+            let usual = Int((1 / rate).rounded())
+            let odd = runs.indices.filter { runs[$0] != usual }
+            if speed > 90 {
+                // one repeat per 1 / (1 − rate) ≈ 100 ticks, none closer together
+                let repeats = steps.indices.filter { steps[$0] == 0 }
+                #expect(zip(repeats, repeats.dropFirst()).allSatisfy { $1 - $0 >= 99 }, "\(repeats)")
+            } else {
+                #expect(odd.count <= 1, "\(Array(runs))")
+            }
         }
-        let runs = holds(expected)
-        #expect(Array(runs.prefix(1)) == first, "\(fps) on \(hz) Hz at \(speed) %")
-        #expect(Set(runs.dropFirst()) == Set(rest), "\(fps) on \(hz) Hz at \(speed) %")
-        if rest == [2, 3] { #expect(zip(runs.dropFirst(), runs.dropFirst(2)).allSatisfy { $0 + $1 <= 5 }, "never 3-3: \(runs)") }
+    }
+
+    @Test func aChasePositionShowsTheFrameItIsCentredOn() {
+        // timecode chase interpolates with host time: the position's phase within a frame is arbitrary
+        for k in [0, 7, 98] {
+            for phase in stride(from: 0.0, to: 1.0, by: 0.05) {
+                var clock = LayerClock()
+                clock.position = Double(k) + phase
+                let shown = clock.advance(dt: 0.04, fps: 25, speed: 100, mode: .timecode, inFrame: 0, outFrame: 99, frameCount: 100)
+                #expect(shown == min(99, phase + LayerClock.lead < 1 ? k : k + 1), "\(k) + \(phase)")
+            }
+        }
+    }
+
+    @Test func aBounceAtHalfRateShowsEveryFrameEachWay() {
+        for jitter in Self.jitters {
+            let frames = shown(fps: 25, hz: 50, jitter: jitter, mode: .bounce, inFrame: 10, outFrame: 19, count: 100, ticks: 360).map { $0! }
+            #expect(zip(frames, frames.dropFirst()).allSatisfy { abs($1 - $0) <= 1 }, "\(frames)")
+            #expect(holds(frames).allSatisfy { $0 <= 3 }, "\(holds(frames))")
+            for pass in 0..<9 { #expect(Set(frames[pass * 36..<pass * 36 + 36]) == Set(10...19), "pass \(pass)") }
+        }
+    }
+
+    @Test func aLoopingClockStaysInsideItsShownFramesWindow() {
+        // the in point's frame starts 11/24 before the in point: a sync slave, the audio and a switch to freeze read the
+        // position of the frame on screen (on 13798aee the position sat at 99.99… while frame 0 showed)
+        for (fps, hz) in [(25.0, 60.0), (24, 60), (60, 60)] {
+            var clock = LayerClock()
+            clock.retrigger(mode: .loopForward, inFrame: 0, outFrame: 9, frameCount: 10)
+            for _ in 0..<600 {
+                let shown = clock.advance(dt: 1 / hz, fps: fps, speed: 100, mode: .loopForward, inFrame: 0, outFrame: 9, frameCount: 10)
+                #expect(clock.position >= -LayerClock.lead && clock.position < 10 - LayerClock.lead, "\(clock.position)")
+                #expect(clock.frame(lo: 0, hi: 9) == shown)
+            }
+        }
+        var clock = LayerClock()
+        clock.position = 9.5
+        let playing = clock.advance(dt: 0.2 / 25, fps: 25, speed: 100, mode: .loopForward, inFrame: 0, outFrame: 9, frameCount: 10)
+        #expect(playing == 0, "9.7 is in frame 0's window")
+        let frozen = clock.advance(dt: 1 / 60.0, fps: 25, speed: 100, mode: .freeze, inFrame: 0, outFrame: 9, frameCount: 10)
+        #expect(frozen == 0, "freeze holds the frame that was shown")
+    }
+
+    @Test func aNaNOrInfinitePositionShowsTheFirstFrame() {
+        for position in [Double.nan, .infinity, -.infinity] {
+            var clock = LayerClock()
+            clock.position = position
+            #expect(clock.frame(lo: 3, hi: 9) == 3, "\(position)")
+        }
     }
 
     @Test func aRateMismatchSkipsOnlyWhatTheRatesDiffer() {
@@ -195,7 +265,7 @@ import Testing
     }
 
     @Test func aPositionSetFromOutsideShowsTheFrameItIsOn() {
-        // timecode chase and a sync slave set the position each tick: a whole frame plus float noise is the common case
+        // a sync slave sets the position each tick from its master's: a whole frame plus float noise at matched rates
         for k in [1, 7, 98] {
             for position in [Double(k).nextDown, Double(k).nextUp, Double(k) - 0.4, Double(k) + 0.5] {
                 var clock = LayerClock()

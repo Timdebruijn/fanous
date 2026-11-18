@@ -353,9 +353,9 @@ public final class RenderLayer: @unchecked Sendable {
 
     /// Frame index of the playing media for the UI's position display.
     /// ponytail: unsynchronised read of a compositor-owned value; a stale frame number for one 100 ms tick is harmless.
-    /// The clock's frame (B372), without the layer's in and out points: in a loop's last 11/24 frame it reads one past
-    /// the out point (at most the file's last frame), not the in point the layer shows.
-    public var currentFrame: Int { current.map { min($0.frameCount - 1, $0.clock.frame(lo: 0, hi: .max)) } ?? 0 }
+    /// The clock's frame (B372): a looping clock stays inside its shown frame's window, so the in and out points
+    /// are not needed for it.
+    public var currentFrame: Int { current.map { $0.clock.frame(lo: 0, hi: $0.frameCount - 1) } ?? 0 }
 }
 
 /// Media as a scene addresses it: (folder, file) → a file or a live input.

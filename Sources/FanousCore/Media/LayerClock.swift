@@ -16,8 +16,9 @@ public struct LayerClock: Sendable, Equatable {
     /// +1 or −1; bounce flips it.
     public var direction: Double = 1
     public var finished = false
-    /// Set by `retrigger`: the next `advance` shows the first frame instead of one tick past it (B372).
-    var triggered = false
+    /// Set by `retrigger`: the next `advance` shows the first frame instead of one tick past it (B372). A sync slave
+    /// never advances: the compositor clears it while the layer follows a master.
+    public var triggered = false
 
     public init() {}
 
@@ -26,13 +27,24 @@ public struct LayerClock: Sendable, Equatable {
     /// noise picks between two frames. Not 1/2 (the nearest frame): at a half rate (25p on 50 Hz, half speed) it lands
     /// on a half frame every other tick. 11/24 stays 1/24 frame clear of every position a trigger leads to at the rate
     /// ratios with a denominator dividing 8 or 12 (1, 1/2, 1/3, 1/4, 1/8, 5/6 for 50p on 60 Hz, 5/12 for 25p on 60 Hz)
-    /// and 0.058 frame clear at 2/5 (24p on 60 Hz).
+    /// and 0.058 frame clear at 2/5 (24p on 60 Hz); 0.018 at 12/25 (24p on 50 Hz) and none at 5/24 (B382).
     static let lead = 11.0 / 24
 
-    /// The frame shown at `position` in `lo…hi`; from `hi` + 13/24 on (a loop's last 11/24 frame) it is `lo` again.
+    /// The frame shown at `position` in `lo…hi`; from `hi` + 13/24 on (a slave's wrap within its file) it is `lo`
+    /// again. A NaN or infinite position shows `lo`.
     public func frame(lo: Int, hi: Int) -> Int {
-        let f = (position + Self.lead).rounded(.down)
-        return f > Double(hi) ? lo : max(lo, Int(f))
+        let f = max(Double(lo), (position + Self.lead).rounded(.down))  // max(lo, NaN) is lo
+        return f > Double(hi) ? lo : Int(f)
+    }
+
+    /// `position` looped within `lo…hi` and kept inside the window its frame shows in, `[lo − 11/24, hi + 13/24)`:
+    /// the in point's frame starts 11/24 before `lo`, so a sync slave, the audio and a switch to freeze see the
+    /// position of the frame on screen, not the out point's (B372).
+    public static func looped(_ position: Double, lo: Double, hi: Double) -> Double {
+        let span = hi - lo + 1
+        var p = lo + (position - lo).truncatingRemainder(dividingBy: span)
+        if p < lo { p += span }
+        return p >= hi + 1 - lead ? p - span : p
     }
 
     /// Jumps to the start of the range for `mode` (the end for reverse modes).
@@ -66,13 +78,11 @@ public struct LayerClock: Sendable, Equatable {
         }
         if finished { return mode.endsBlack ? nil : frame(lo: Int(lo), hi: Int(hi)) }
         if first { return frame(lo: Int(lo), hi: Int(hi)) }
-        let span = hi - lo + 1
         let step = dt * fps * speed / 100 * (mode.isReverse ? -1 : 1) * direction
         var next = position + step
         switch mode {
         case .loopForward, .loopReverse:
-            next = lo + (next - lo).truncatingRemainder(dividingBy: span)
-            if next < lo { next += span }
+            next = Self.looped(next, lo: lo, hi: hi)
         case .bounce:
             if next > hi {
                 next = 2 * hi - next
