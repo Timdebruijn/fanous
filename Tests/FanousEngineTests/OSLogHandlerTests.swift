@@ -13,7 +13,7 @@ import Testing
 struct OSLogHandlerTests {
     /// A line through the engine's handler reaches the unified log under subsystem org.fanous and the file, the call's
     /// metadata winning over the logger's, and info is kept as notice.
-    @Test func lineReachesTheUnifiedLogAndTheFile() async throws {
+    @Test(.offPool) func lineReachesTheUnifiedLogAndTheFile() async throws {
         let marker = UUID().uuidString
         let file = tempFile("fanous-oslog", ext: "log")
         let sink = FileLogSink(url: file)

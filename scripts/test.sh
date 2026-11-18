@@ -11,7 +11,10 @@ cd "$(dirname "$0")/.."
 # goes through offPool (Tests/FanousEngineTests/TestSupport.swift), or enough of those tests at once hang
 # the run (B63). Tests that wait for something poll with a deadline (waitUntil in TestSupport.swift), so a loaded
 # Mac makes the run slower, not red, in the loads tested (load average up to ~100); negative checks keep fixed
-# windows (B67).
+# windows (B67). A test that computes for long runs off the pool: one that blocks (a `recv` with a timeout, a
+# semaphore) or computes for more than a fraction of a second without suspending gets `@Test(.offPool)`. On a 3-core
+# runner three such tests held every pool thread and async tests elsewhere missed their 10 s deadlines (B353). The run
+# ends with its ten slowest tests: one near the top that neither waits real time nor runs off the pool is a candidate.
 # `--hosted`: the suites a hosted CI runner can run: Core, and the engine suites that need no GPU, media hardware or
 # display (the GPU tests of a mixed file live in its …GPUTests suite). Add a suite here once it passes on macos-26.
 if [[ "${1:-}" == "--hosted" ]]; then
@@ -36,4 +39,10 @@ plugins="$(xcode-select -p)/usr/lib/swift/host/plugins/testing"
 if [[ -d "$plugins" ]]; then
   set -- -Xswiftc -plugin-path -Xswiftc "$plugins" "$@"
 fi
-swift test "$@"
+swift test "$@" | awk '{ print; fflush() }
+  / Test [^ ]+ (passed|failed) after [0-9.]+ seconds/ {
+    t = $0; sub(/ seconds.*/, "", t); sub(/.* after /, "", t)
+    n = $0; sub(/.* Test /, "", n); sub(/ .*/, "", n)
+    print t, n | "sort -rn | head -10"
+  }
+  END { print "Ten slowest tests:"; fflush(); close("sort -rn | head -10") }'

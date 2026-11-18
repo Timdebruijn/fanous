@@ -189,7 +189,7 @@ struct DMXStateBoundsTests {
     }
 
     /// 17 Art-Net senders on the patched A 0.0.0, each sending every tick: every packet still reaches the universe.
-    @Test func tenMinutesOfSeventeenArtNetSendersLogBounded() {
+    @Test(.offPool) func tenMinutesOfSeventeenArtNetSendersLogBounded() {
         let lines = HTTPSServerLogTests.Lines()
         let store = Self.store(.standard(layers: 1, outputs: 1), lines)
         var packets = 0
@@ -205,7 +205,7 @@ struct DMXStateBoundsTests {
     }
 
     /// A burst over 600 sACN universes (past the 256 held) every second, the same sources each time.
-    @Test func tenMinutesOfABurstEverySecondLogBounded() {
+    @Test(.offPool) func tenMinutesOfABurstEverySecondLogBounded() {
         let lines = HTTPSServerLogTests.Lines()
         let store = Self.store(.standard(layers: 1, outputs: 1), lines)
         Self.tenMinutes(store) { tick, time in

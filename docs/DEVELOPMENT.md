@@ -56,6 +56,15 @@ temporary directory and removes it afterwards, so a test engine never writes the
 real install's files (B240, B260). A `FANOUS_HOME` already set is kept, and
 not removed.
 
+Swift Testing runs every test on the cooperative pool, one thread per core (three
+on a hosted runner). A test that computes for long runs off the pool: one that
+blocks (a `recv` with a timeout, a semaphore) or computes for more than a
+fraction of a second without suspending gets `@Test(.offPool)`
+(`Tests/FanousEngineTests/TestSupport.swift`), or three of them stall every other
+test's `waitUntil` past its deadline (B353). `scripts/test.sh` ends with the ten
+slowest tests; to see the stall on this Mac, run it with
+`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1` (a pool one thread wide).
+
 Multi-server sync on one Mac (DESIGN.md §23): two such engines, each with its
 own sync port in `settings.json` and the other's port as a unicast target (a
 unicast datagram reaches only one of two sockets sharing a port, and

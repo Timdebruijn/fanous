@@ -120,7 +120,7 @@ struct CITPServerTests {
         #expect(found, "no PLoc within 3 s (no default route, or a firewall holds the engine's UDP)")
     }
 
-    @Test func msexSessionOverLoopback() throws {
+    @Test(.offPool) func msexSessionOverLoopback() throws {
         let frames = Mutex(0)
         let sources = [VideoSource(sourceIdentifier: 0, name: "Canvas", width: 640, height: 360), VideoSource(sourceIdentifier: 1, name: "Layer 1", layerNumber: 0, width: 160, height: 90)]
         let server = CITPServer(
@@ -264,7 +264,7 @@ struct CITPServerTests {
 
     /// An MSEX 1.0/1.1 console sends no CInf (B78): after `fallbackDelay` it gets a 1.0 SInf (unsolicited) and 1.0
     /// layer status; a later CInf still sets the version.
-    @Test func consoleWithoutClientInformationGetsVersion1_0() throws {
+    @Test(.offPool) func consoleWithoutClientInformationGetsVersion1_0() throws {
         let server = CITPServer(
             name: "test", uuid: "550e8400-e29b-41d4-a716-446655440000",
             providers: CITPServer.Providers(

@@ -728,7 +728,7 @@ struct ShowControlTests {
     /// B197: a library volume that stops answering (a stalled network mount) holds the checks for the volume timeout
     /// only: disk and library fail, Spotlight is manual, and a second check joins the hung read instead of starting
     /// another thread. Once the read returns, the next check reads the volume again.
-    @Test func aHungLibraryVolumeReadTimesOut() throws {
+    @Test(.offPool) func aHungLibraryVolumeReadTimesOut() throws {
         let gate = Hold()
         defer { gate.done() }
         let reads = Atomic<Int>(0)

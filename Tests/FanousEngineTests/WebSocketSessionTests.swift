@@ -154,7 +154,7 @@ struct WebSocketSessionTests {
     }
 
     /// Each frame is within `maxMessageBytes` (the parser's limit), the reassembled message is one byte over it.
-    @Test func fragmentsAboveTheMessageLimitAreRefusedWith1009() async throws {
+    @Test(.offPool) func fragmentsAboveTheMessageLimitAreRefusedWith1009() async throws {
         let pair = try await Pair.make()
         defer { pair.stop() }
         // 8 MB frames by hand with a zero mask key: `encode(key:)` would mask 16 MB in a debug build
