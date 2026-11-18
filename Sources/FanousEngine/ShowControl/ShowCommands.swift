@@ -64,16 +64,17 @@ public enum ShowCommands {
     /// "hh:mm:ss:ff@25", 25 without "@rate"; the rate as the guide writes it ("29.97df", "29.97ndf") or the engine's label
     /// ("29.97 DF"), case and spaces ignored. `strict` (cue.add, cue.set) is the web's `parseTrigger` minus the conveniences
     /// it normalizes before sending (`;`, spaces before `@`, surrounding whitespace): one or two digits per field, at most
-    /// one `@`. Not strict (loading a project) also takes what older builds stored: a sign or more digits (`Int`), empty
+    /// one `@`. Not strict (loading a project) also takes what older builds stored: a sign or more digits (`Int32`), empty
     /// fields, more `@`s (only the first two parts read) and the raw rate value ("fps2997df"). Field ranges are not checked
     /// here: `validateCue` refuses an out-of-range trigger (`Timecode.isValid`), while a stored project keeps its trigger armed.
+    /// A field beyond `Int32` (a hand-edited file) is no trigger: its frame count would overflow on every timecode frame (B266).
     static func parseTimecode(_ text: String, strict: Bool = false) -> Timecode? {
         let parts = text.split(separator: "@", omittingEmptySubsequences: !strict)
         guard let time = parts.first, !strict || parts.count <= 2 else { return nil }
         func key(_ s: some StringProtocol) -> String { s.lowercased().replacingOccurrences(of: " ", with: "") }
         let rate = parts.count > 1 ? TimecodeRate.allCases.first { ([key($0.label)] + (strict ? [] : [$0.rawValue.lowercased()])).contains(key(parts[1])) } : .fps25
         let fields = time.split(separator: ":", omittingEmptySubsequences: !strict).map { field in
-            !strict || ((1...2).contains(field.count) && field.allSatisfy { ("0"..."9").contains($0) }) ? Int(field) : nil
+            !strict || ((1...2).contains(field.count) && field.allSatisfy { ("0"..."9").contains($0) }) ? Int32(field).map(Int.init) : nil
         }
         guard fields.count == 4, let h = fields[0], let m = fields[1], let s = fields[2], let f = fields[3], let rate else { return nil }
         return Timecode(hours: h, minutes: m, seconds: s, frames: f, rate: rate)

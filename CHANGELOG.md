@@ -28,6 +28,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fix (B264): a movie whose header gives no usable duration (a timescale of 0 reads as NaN) no longer crashes the engine at the
   library probe and at every start after it; it is listed unreadable with "unknown duration", as is one whose frame count would exceed Int32 (an edit list of 2^32 s), and
   ingest fails both, or a track claiming 2^31 fps, with a reason; an audio loop too long to count in frames is no loop instead of a crash (PR #390).
+- Fix (B266): numbers only a hand-edited or foreign project file can hold no longer crash or hang the engine: a cue trigger hour
+  past 2147483647, a patch address where the fixture does not fit in the universe, a layer count below 1 or past 64, a negative or
+  oversized canvas, a mapping mesh or wall grid past any real size; the file keeps the value, which is ignored or makes the command
+  that meets it refuse (PR #393).
 
 ## 1.0.0-rc.14 — 2026-11-17
 

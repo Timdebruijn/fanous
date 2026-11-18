@@ -204,9 +204,15 @@ public enum ProjectDocument {
     public static let maxCanvasPixels = 4 * 3840 * 2160
 
     static func checkTotalPixels(_ canvases: [CanvasConfig]) throws {
-        guard canvases.reduce(0, { $0 + $1.width * $1.height }) <= maxCanvasPixels else {
+        guard pixels(canvases) <= Double(maxCanvasPixels) else {
             throw CommandError.invalidArgs("all canvases together may have at most 4 × 3840 × 2160 pixels (33.2 megapixels)")
         }
+    }
+
+    /// The canvases' pixels together, in `Double`: a hand-edited canvas size is any Int, and `Int` products overflow; a
+    /// negative side counts as 0, so it never offsets the budget (B266).
+    static func pixels(_ canvases: [CanvasConfig]) -> Double {
+        canvases.reduce(0) { $0 + Double(max(0, $1.width)) * Double(max(0, $1.height)) }
     }
 
     static func sharedRate(_ fps: Double) -> String {
@@ -608,7 +614,8 @@ public enum ProjectDocument {
             ) { project, args in
                 guard let count = args["count"]?.int, (1...64).contains(count) else { throw CommandError.invalidArgs("count must be 1–64") }
                 guard var patch = ProjectDocument.patch(from: project) else { throw CommandError.invalidArgs("project has no patch") }
-                let previous = project["layerCount"]?.int ?? 0
+                // the range this command gives: a hand-edited count far below 1 would loop from it (B266)
+                let previous = min(max(0, project["layerCount"]?.int ?? 0), 64)
                 patch.entries.removeAll {
                     if case .layer(let n) = $0.fixture { return n > count }
                     return false
@@ -633,7 +640,8 @@ public enum ProjectDocument {
                 argsType: "{ layer: number; canvas: number }"
             ) { project, args in
                 guard let layer = args["layer"]?.int, let canvas = args["canvas"]?.int else { throw CommandError.invalidArgs("args: { layer, canvas }") }
-                guard (1...(project["layerCount"]?.int ?? 0)).contains(layer) else { throw CommandError.invalidArgs("no layer \(layer)") }
+                // not `1...layerCount`: a hand-edited count below 1 makes that range trap (B266)
+                guard layer >= 1, layer <= project["layerCount"]?.int ?? 0 else { throw CommandError.invalidArgs("no layer \(layer)") }
                 guard ProjectDocument.canvases(from: project).contains(where: { $0.id == canvas }) else { throw CommandError.invalidArgs("no canvas \(canvas)") }
                 var assigned = layerCanvases(from: project)
                 assigned[layer] = canvas

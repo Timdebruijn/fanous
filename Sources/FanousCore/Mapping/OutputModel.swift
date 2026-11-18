@@ -98,7 +98,14 @@ public struct MeshWarp: Codable, Hashable, Sendable {
         }
         return MeshWarp(cols: cols, rows: rows, points: points)
     }
-    public var isIdentity: Bool { self == .identity(cols: cols, rows: rows) }
+    /// At least 2 × 2 with one point per grid position; the product is checked for overflow, since a hand-edited project
+    /// can hold any Int (B266). A mesh that is not is ignored where the warp is drawn.
+    public var isWellFormed: Bool {
+        let (count, overflow) = cols.multipliedReportingOverflow(by: rows)
+        return cols >= 2 && rows >= 2 && !overflow && points.count == count
+    }
+    /// Only a well-formed mesh is built to compare: `identity` makes `cols × rows` points.
+    public var isIdentity: Bool { isWellFormed && self == .identity(cols: cols, rows: rows) }
 }
 
 public struct WarpSettings: Codable, Hashable, Sendable {
