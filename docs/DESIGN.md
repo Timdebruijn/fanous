@@ -354,11 +354,19 @@ display link's `targetTimestamp`:
   Capture, screen, Syphon and generator opens, and stopping retired
   playbacks, stay on the loader thread. The layers of one cue each switch
   when their own first frame is ready; there is no barrier across layers.
-- Frame selection: the compositor picks the ring frame whose pts is the
-  closest at-or-before `position`; frames older than that are released to the
-  pool. There is **no frame blending** in v1 (nearest frame), which keeps
-  25/30/50/60 fps content on any output rate deterministic. `[OPEN-4]`
-  optional frame blending later.
+- Frame selection: the clock's frame is `⌊position + 11/24⌋`, so frame k
+  shows from position k − 11/24 to k + 13/24; a looping position is kept in
+  `[in − 11/24, out + 13/24)`, the window of the frame on screen. Rounding down would put the clock on a frame boundary
+  every tick at matched rates (a trigger starts on a whole frame), and half a
+  frame would do the same at half rates; 11/24 stays 1/24 frame clear of both
+  and of every rate ratio with a denominator dividing 8 or 12 (quarter speed,
+  25p and 50p on 60 Hz), and 0.058 frame clear of 3-2 pulldown. A trigger's
+  tick shows the first frame; a once mode ends when the clock's frame passes
+  the out point. The compositor picks, from the whole ring, the frame closest
+  at-or-before the clock's frame; frames older than that are released to the
+  pool (the last two shown stay one tick for the GPU). There is **no frame
+  blending** in v1 (nearest frame), which keeps 25/30/50/60 fps content on any
+  output rate deterministic. `[OPEN-4]` optional frame blending later.
 - Media of any frame rate is supported; the clock is in media frames so
   speed 100 % always means native rate.
 
