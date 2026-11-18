@@ -30,7 +30,14 @@ public final class Compositor: @unchecked Sendable {
     nonisolated(unsafe) public var previewTap: ((MTLTexture, MTLCommandBuffer, Double, OutputSet?) -> Void)?
     /// Timecode for layers in the Timecode play mode (DESIGN.md §15.1); offsets in frames of the timecode rate.
     nonisolated(unsafe) public var timecode: TimecodeClock?
-    nonisolated(unsafe) public var timecodeOffsets = TimecodeOffsets(project: 0, layers: [:])
+    /// Replaced as one reference by Control (`timecode.set`) while the tick runs (B273): taken once per tick like
+    /// `layerCanvas`, without waiting; on a busy lock the tick chases with the offsets it took last.
+    public var timecodeOffsets: TimecodeOffsets {
+        get { timecodeOffsetsBox.withLock { $0 } }
+        set { _ = timecodeOffsetsBox.withLock { old in defer { old = newValue }; return old } }  // the old value is freed after the unlock, not under it
+    }
+    private let timecodeOffsetsBox = Mutex(TimecodeOffsets(project: 0, layers: [:]))
+    private var tickTimecodeOffsets = TimecodeOffsets(project: 0, layers: [:])
     /// Output regions of the master display (DESIGN.md §9): nil = the whole drawable shows the canvas.
     /// Replaced as one reference by Control while the tick runs (`OutputCoordinator`, writers on the main actor): one
     /// locked read per tick, before its preview tap, so the tick holds its own reference while a writer drops the old
@@ -399,6 +406,7 @@ public final class Compositor: @unchecked Sendable {
         drawItems.removeAll(keepingCapacity: true)
 
         layerCanvasBox.withLockIfAvailable { tickLayerCanvas = $0 }  // busy: last tick's assignment once more
+        timecodeOffsetsBox.withLockIfAvailable { tickTimecodeOffsets = $0 }  // busy: the offsets taken last
         sync?.receiver.table.withLockIfAvailable { syncTable.copy(from: $0) }  // busy: last tick's table once more
         syncClocks.removeAll(keepingCapacity: true)
         // Everything that is not GPU work: hand-off, clocks, audio, decoder requests, frame selection.
@@ -739,7 +747,7 @@ public final class Compositor: @unchecked Sendable {
         if retrigger && master == nil { playback.clock.retrigger(mode: p.playMode, inFrame: inFrame, outFrame: outFrame, frameCount: playback.frameCount) }
         if master == nil, p.playMode == .timecode, playback.frameCount > 1, let timecode, let frames = timecode.frames(at: ctx.target) {
             // chase: (tc − project offset − layer offset) at the file's rate, looped within in/out
-            let offsets = timecodeOffsets
+            let offsets = tickTimecodeOffsets
             let seconds = (frames - offsets.project - (offsets.layers[slot / 2 + 1] ?? 0)) / timecode.read(at: ctx.target).rate.exactFrameRate
             let lo = Double(min(inFrame, outFrame)), hi = Double(max(inFrame, outFrame))
             var frame = seconds * playback.frameRate

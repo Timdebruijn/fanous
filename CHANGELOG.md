@@ -23,6 +23,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   threads, so a file on a slow or gone volume no longer holds up every layer's media change; after 2 s its layer
   keeps its picture and that picture's status, adds "… is not answering", and takes the next selection, and
   playbacks a layer let go of are stopped meanwhile (PR #409).
+- Engine (B273): the output set of a secondary display and of an output preview, the timecode offsets, the timecode
+  freewheel and the timecode input the live feed reads are no longer swapped under a reading render or feed thread;
+  the render side takes them without waiting, so a mapping drag or a timecode change mid-show can no longer free a
+  reference a thread is reading (PR #410).
 - Engine (B270): an HTTPS connection reads and parses the next request only once the previous response has left, so
   a client that pipelines requests and never reads no longer makes the engine queue responses without bound
   (PR #397).

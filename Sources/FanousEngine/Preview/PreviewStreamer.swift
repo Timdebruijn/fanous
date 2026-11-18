@@ -34,7 +34,14 @@ public final class PreviewStreamer: @unchecked Sendable {
     /// through `tap`'s lookup.
     public var canvasID = 1
     /// When set, the preview shows this output (post-warp/blend) instead of the canvas; compiled for the preview size.
-    nonisolated(unsafe) public var outputSet: OutputSet?
+    /// Swapped by `Engine.previewOutput` at every mapping edit while the compositor taps (B273): the writer locks, `tap`
+    /// only tries and on a busy lock draws the set it took last.
+    public var outputSet: OutputSet? {
+        get { outputSetBox.withLock { $0 } }
+        set { _ = outputSetBox.withLock { old in defer { old = newValue }; return old } }  // the old set is freed after the unlock, not under it
+    }
+    private let outputSetBox = Mutex<OutputSet?>(nil)
+    private var tapOutputSet: OutputSet?  // compositor thread only
     /// Target "layer:<n>": the 0-based layer this preview shows alone (`showLayer`); nil = canvas or output.
     public private(set) var layer: Int?
     private weak var layerCompositor: Compositor?
@@ -203,7 +210,8 @@ public final class PreviewStreamer: @unchecked Sendable {
             canvas = layerTexture
         }
         // Freeze holds the output preview too (B107); before the render encoder, as `holdFrozen` blits
-        let outputSet = outputSet  // read once: `Engine.previewOutput` swaps it from another thread
+        outputSetBox.withLockIfAvailable { tapOutputSet = $0 }  // busy: the set taken last (B273)
+        let outputSet = tapOutputSet
         if let set = outputSet, let plan = set.plans.first {
             if let shown = live?.plans.first(where: { $0.id == plan.id }) {
                 // on the clock-master display: the frame its projector holds, no copy. The tick holds before it taps
