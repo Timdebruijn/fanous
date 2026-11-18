@@ -234,7 +234,8 @@ private final class ClientConnection: @unchecked Sendable {
     /// client that pipelines requests and never reads holds one response here, not one per request. Returns false once
     /// the connection is being closed.
     private func process() -> Bool {
-        if let websocket { return websocket.feed(&buffer) }
+        // a session that closed while the 101 was still leaving gets no frame that came after its close
+        if let websocket { return !websocket.isClosed && websocket.feed(&buffer) }
         if upload != nil { return drainUpload() }
         let parsed: (request: HTTPRequest, headLength: Int)?
         do {
