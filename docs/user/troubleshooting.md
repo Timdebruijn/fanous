@@ -69,7 +69,7 @@ flowchart TD
   start["Engine menu, first line"] --> line{"The two halves read?"}
   line -- "running · service installed" --> conn["The engine is fine: the connection (below)"]
   line -- "not running · service installed" --> log["Engine › Open Logs: the newest lines"]
-  log -- "HTTPS listener failed" --> port["Another program holds port 8443: the engine runs without its UI.<br>Quit that program and Restart Engine"]
+  log -- "HTTPS listener failed; trying again" --> port["Another program holds port 8443: the engine runs without its UI.<br>Quit that program: the UI is back within 5 s"]
   log -- "a crash report, or nothing recent" --> startit["Start Engine; after a crash macOS restarts it by itself (10 s after a quick crash)"]
   line -- "service needs approval in Login Items" --> approve["System Settings › General › Login Items & Extensions › Allow in the Background: Fanous on, then Start Engine"]
   line -- "service not installed" --> install["Start Engine registers and starts it"]
@@ -89,9 +89,11 @@ engine runs but does not answer within 10 seconds (port 8443 held by
 another program, or hung), Start Engine restarts it, and the outputs go
 black for a moment. Read the log first. A port held by another program
 (8443, Art-Net 6454, OSC 8000) does not stop the engine; the log says
-"HTTPS listener failed", "Art-Net listener failed" or "OSC UDP failed" and
-the engine runs without that listener; for Art-Net the readiness item
-**Art-Net port 6454 available** warns too ([known limitations](reference/known-limitations.md#show-mode-and-the-machine)).
+"HTTPS listener failed; trying again", "Art-Net listener failed; trying
+again" or "OSC UDP failed; trying again", the engine runs without that
+listener and tries again every 5 s at most, so it listens again within 5 s
+of that program quitting; the readiness items **Art-Net port 6454
+available** and **OSC port 8000 available** warn meanwhile ([known limitations](reference/known-limitations.md#show-mode-and-the-machine)).
 
 ## The iPad warns about the certificate
 
@@ -150,6 +152,16 @@ The fixtures hold their last values meanwhile, unless the universe's
    firewall allowing UDP 6454 (Art-Net) and 5568 (sACN).
 5. Two sources on one universe: Art-Net takes the latest packet, sACN the
    highest priority. Send each universe from one console.
+6. The console lost the engine after the network dropped (a cable pulled,
+   a switch restarted, the Mac woke from sleep): the [log](#logs) says
+   "Art-Net listener failed; trying again" (or "OSC UDP failed; trying
+   again") with the error once, and "Art-Net listening" when it listens
+   again. The engine makes the listener again 1, 2 and 4 s after the
+   failure and then every 5 s, so Art-Net and OSC come back by themselves
+   within 5 s of the network; no restart is needed. Meanwhile readiness
+   reads "not listening: …" on **Art-Net port 6454 available** or **OSC
+   port 8000 available**. "… waiting for a usable network" means macOS
+   holds the listener until a network is up; it goes on by itself.
 
 Done when the pill turns green.
 
@@ -386,8 +398,9 @@ log show --predicate 'subsystem == "org.fanous"' --last 1h
 
 | Line | Means |
 |---|---|
-| "HTTPS listener failed", "Art-Net listener failed", "OSC UDP failed", "OSC TCP failed" | That listener could not open, usually a port another program holds; the engine runs without it |
-| "CITP listener failed" | The CITP server could not open its port; the console will not list Fanous |
+| "HTTPS listener failed; trying again", "Art-Net listener failed; trying again", "OSC UDP failed; trying again", "OSC TCP failed; trying again" | That listener could not open or stopped working (a port another program holds, the network gone); the engine runs without it and makes it again every 5 s at most, logging the next line only when the outcome changes: "HTTPS listening", "Art-Net listening", "OSC listening" when it is back |
+| "… waiting for a usable network" | macOS holds that listener until a network is up; it listens by itself then |
+| "CITP listener failed; trying again" | The CITP server's port stopped working; the console does not list Fanous until "CITP listening" (a new port, announced by the next beacon) |
 | "sACN port in use; running without sACN" | The readiness item warns too |
 | "sync port in use; not receiving sync packets" | System › Sync: apply a free port |
 | "CITP start failed", "CITP PLoc beacon failed (firewall?)" | The console will not list Fanous |

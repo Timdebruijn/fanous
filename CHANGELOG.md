@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine (B272): an Art-Net, OSC, HTTPS or CITP listener that fails (a port another program holds, the network gone)
+  is made again on its port 1, 2 and 4 s later and then every 5 s until it listens, logged once per change; the
+  failed UDP listener's flows go with it, and readiness shows the live state of Art-Net and, in a new item "OSC port
+  8000 available", of OSC (PR #N)
 - Engine (B270): an HTTPS connection reads and parses the next request only once the previous response has left, so
   a client that pipelines requests and never reads no longer makes the engine queue responses without bound
   (PR #397).

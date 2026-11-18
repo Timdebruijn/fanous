@@ -16,7 +16,7 @@ OSC itself carries no login. Back to the [index](../README.md).
 |---|---|
 | Port | 8000, UDP and TCP (SLIP framing, OSC 1.1), on every interface; not configurable. Port 8001 is reserved and unused |
 | Off | With `--no-network` there is no OSC listener and no feedback |
-| Port in use | Logged ("OSC UDP failed"); OSC then does not work and nothing on screen says so |
+| Port in use, or the network gone | Logged ("OSC UDP failed; trying again"); the readiness item **OSC port 8000 available** warns, and the engine listens again by itself within 5 s of the port or the network coming free |
 | Packet size | UDP: no limit in Fanous; TCP: 64 KiB per SLIP packet, longer ones are dropped and logged |
 | Bundles | Supported, nested up to 8 deep. A timetag between 1 ms and 3600 s ahead delays the contents to that time; a timetag in the past, or further ahead, runs them at once |
 | Argument types | `i f s S b h d t T F N I`; messages without a type tag string (OSC 1.0) are read too |
