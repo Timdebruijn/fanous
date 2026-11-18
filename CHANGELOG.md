@@ -18,7 +18,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   old "Cannot Open" no longer stays; playable files keep their cache hit and thumbnail (PR #385).
 - Tests (B260): `scripts/test.sh` runs the suite in a fresh temporary `FANOUS_HOME`, so no test engine can write the real install's files (PR #386).
 - Fix (B264): a movie whose header gives no usable duration (a timescale of 0 reads as NaN) no longer crashes the engine at the
-  library probe and at every start after it; it is listed unreadable with "unknown duration", and ingest fails it, or a track claiming 2^31 fps, with a reason (PR #N).
+  library probe and at every start after it; it is listed unreadable with "unknown duration", and ingest fails it, or a track claiming 2^31 fps, with a reason (PR #390).
 
 ## 1.0.0-rc.14 — 2026-11-17
 
