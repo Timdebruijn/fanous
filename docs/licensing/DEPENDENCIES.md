@@ -18,7 +18,7 @@ no CI job checks it).
 
 | Code | Version / commit | License | GPLv3-compatible | Use | Notes |
 |---|---|---|---|---|---|
-| Vidvox/hap (`hap.c`, `hap.h`) | master @ `d847f6b` (2024-07-25), vendored in `Sources/CHap` | BSD-2-Clause | yes | HAP encode/decode (chunk callback for parallel decode) | no commits since 2024-07; we own fixes; fuzz-tested inputs (Phase 3) |
+| Vidvox/hap (`hap.c`, `hap.h`) | master @ `d847f6b` (2024-07-25), vendored in `Sources/CHap` | BSD-2-Clause | yes | HAP encode/decode (chunk callback for parallel decode) | no commits since 2024-07; we own fixes: local bounds checks (B265, listed in `VENDORED.md`), fuzz-tested in `HAPFrameBoundsTests` |
 | google/snappy | 1.3.1 = `9c28114` (2026-09-18), vendored in `Sources/CSnappy` | BSD-3-Clause (text match; COPYING unlabeled) | yes | HAP frame (de)compression | C++17 target; `snappy-stubs-public.h` generated for macOS; upstream HEAD `9466064` (2026-10-23) is two commits past the 1.3.1 tag and not vendored (B248) |
 | Syphon/Syphon-Framework | main @ `f476167` (2026-09-21); last tagged release "5" is from 2019 | Syphon Framework License (BSD-3-Clause style) | yes | Syphon Metal server (output) and client (input), vendored in `Sources/Syphon` | pin to commit, not tag; Metal path only, shaders compiled at runtime (`Sources/Syphon/VENDORED.md`) |
 

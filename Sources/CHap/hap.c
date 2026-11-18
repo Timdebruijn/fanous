@@ -177,8 +177,9 @@ static int hap_read_section_header(const void *buffer, uint32_t buffer_length, u
     
     /*
      Verify the section does not extend beyond the buffer
+     (local, B265: subtract rather than add, header + section length can wrap a uint32_t)
      */
-    if (*out_header_length + *out_section_length > buffer_length)
+    if (*out_section_length > buffer_length - *out_header_length)
     {
         return HapResult_Bad_Frame;
     }
@@ -705,10 +706,13 @@ static unsigned int hap_decode_header_complex_instructions(const void *texture_s
 
         /*
          If we calculated a chunk count and already have one, make sure they match
+         (local, B265: an empty table is bad too, the other tables' count would be read past its end)
          */
-        if (section_chunk_count != 0)
+        if (section_type == kHapSectionChunkSecondStageCompressorTable
+            || section_type == kHapSectionChunkSizeTable
+            || section_type == kHapSectionChunkOffsetTable)
         {
-            if ((*chunk_count) != 0 && section_chunk_count != (*chunk_count))
+            if (section_chunk_count == 0 || ((*chunk_count) != 0 && section_chunk_count != (*chunk_count)))
             {
                 return HapResult_Bad_Frame;
             }
@@ -784,6 +788,8 @@ unsigned int hap_decode_single_texture(const void *texture_section, uint32_t tex
 
             size_t running_compressed_chunk_size = 0;
             size_t running_uncompressed_chunk_size = 0;
+            size_t frame_data_length = texture_section_length - (size_t)(frame_data - (const char *)texture_section);
+            size_t chunk_offset;
             int i;
 
             if (chunk_info == NULL)
@@ -799,12 +805,22 @@ unsigned int hap_decode_single_texture(const void *texture_section, uint32_t tex
 
                 if (chunk_offsets)
                 {
-                    chunk_info[i].compressed_chunk_data = frame_data + hap_read_4_byte_uint(((uint8_t *)chunk_offsets) + (i * 4));
+                    chunk_offset = hap_read_4_byte_uint(((uint8_t *)chunk_offsets) + (i * 4));
                 }
                 else
                 {
-                    chunk_info[i].compressed_chunk_data = frame_data + running_compressed_chunk_size;
+                    chunk_offset = running_compressed_chunk_size;
                 }
+
+                /*
+                 Verify the chunk lies inside the frame data (local, B265)
+                 */
+                if (chunk_offset > frame_data_length || chunk_info[i].compressed_chunk_size > frame_data_length - chunk_offset)
+                {
+                    result = HapResult_Bad_Frame;
+                    break;
+                }
+                chunk_info[i].compressed_chunk_data = frame_data + chunk_offset;
 
                 running_compressed_chunk_size += chunk_info[i].compressed_chunk_size;
 
