@@ -113,7 +113,7 @@ import Testing
         defer { loader.stop() }
         defer { opens.held.withLock { $0 = [] } }
         Self.select(layers[0], 1, loader)
-        #expect(await waitUntil { layers[0].mediaStatus.withLock { $0.file == 1 && $0.error == "not answering: the volume is slow or gone" } })
+        #expect(await waitUntil { layers[0].mediaStatus.withLock { $0.error == "1/1 1.png is not answering: the volume is slow or gone" } })
         #expect(Self.take(layers[0]) == nil, "a given-up open handed something over")
         Self.select(layers[0], 2, loader)
         #expect(await waitUntil { Self.take(layers[0]) == MediaKey(folder: 1, file: 2) }, "the layer did not load the next file")
@@ -158,31 +158,88 @@ import Testing
         if givenUp { #expect(await waitUntil { layers[0].mediaStatus.withLock { $0.error } != nil }) }
         Self.select(layers[0], 2, loader)
         try await Task.sleep(for: .milliseconds(100))  // nothing to wait for: 2 cannot start while 1 holds the one thread
-        opens.held.withLock { $0.remove("1.png") }
+        opens.held.withLock { _ = $0.remove("1.png") }
         #expect(await waitUntil { opens.started.withLock { $0 } == ["1.png", "2.png"] }, "1's answer was not taken")
         #expect(Self.take(layers[0]) == nil, "the open the layer moved away from was handed over")
         opens.held.withLock { $0 = [] }
         #expect(await waitUntil { Self.take(layers[0]) == MediaKey(folder: 1, file: 2) })
     }
 
-    /// A given-up open that fails later writes the layer's status but hands nothing over: the layer keeps the picture it
-    /// kept at the give-up. A failure within the deadline still hands over no media (B299, unchanged).
-    @Test func aGivenUpOpenThatFailsKeepsThePicture() async throws {
+    /// After a give-up the layer's status keeps describing the clip it shows and gains the error, naming the selection
+    /// that did not come; a later failure of that open replaces the error but hands nothing over (the picture stays).
+    @Test func aGivenUpOpenThatFailsKeepsThePictureAndItsStatus() async throws {
         let opens = Opens()
-        opens.held.withLock { $0 = ["1.png"] }
-        opens.failing.withLock { $0 = ["1.png", "2.png"] }
+        opens.failing.withLock { $0 = ["1.png"] }
         let (loader, layers) = try Self.loader(layers: 1, opens: opens, deadline: .milliseconds(50))
         loader.start()
         defer { loader.stop() }
         defer { opens.held.withLock { $0 = [] } }
+        Self.select(layers[0], 3, loader)
+        #expect(await waitUntil { Self.take(layers[0]) == MediaKey(folder: 1, file: 3) })
+        opens.held.withLock { $0 = ["1.png"] }
         Self.select(layers[0], 1, loader)
-        #expect(await waitUntil { layers[0].mediaStatus.withLock { $0.error } == "not answering: the volume is slow or gone" })
+        func shows3(_ error: (String?) -> Bool) -> Bool {
+            layers[0].mediaStatus.withLock { $0.kind == "still" && $0.name == "3.png" && $0.folder == 1 && $0.file == 3 && error($0.error) }
+        }
+        #expect(await waitUntil { shows3 { $0 == "1/1 1.png is not answering: the volume is slow or gone" } })
         opens.held.withLock { $0 = [] }
-        #expect(await waitUntil { layers[0].mediaStatus.withLock { $0.file == 1 && $0.error != nil && $0.error != "not answering: the volume is slow or gone" } })
+        #expect(await waitUntil { shows3 { $0?.hasPrefix("1/1 1.png: ") == true } })
         try await Task.sleep(for: .milliseconds(300))  // nothing to wait for: no hand-off follows the status
         #expect(Self.take(layers[0]) == nil, "a late failure cut the layer to black")
+        #expect(shows3 { $0?.hasPrefix("1/1 1.png: ") == true })
+    }
+
+    /// A failure within the deadline is unchanged (B299): no media is handed over and the status is the failed file's.
+    @Test func aFailureWithinTheDeadlineHandsNoMedia() async throws {
+        let opens = Opens()
+        opens.failing.withLock { $0 = ["2.png"] }
+        let (loader, layers) = try Self.loader(layers: 1, opens: opens)
+        loader.start()
+        defer { loader.stop() }
         Self.select(layers[0], 2, loader)
-        #expect(await waitUntil { Self.take(layers[0]) == MediaKey(packed: 0) }, "a failure within the deadline hands over no media")
+        #expect(await waitUntil { Self.take(layers[0]) == MediaKey(packed: 0) })
+        #expect(layers[0].mediaStatus.withLock { $0.file == 2 && $0.name == "2.png" && $0.error != nil })
+    }
+
+    /// A display the layer still shows while a file selection does not come (given up, or failed after the give-up)
+    /// stays tracked: its status keeps the display with the error, the capture poll does not clear that error, and the
+    /// display is halted when it is bound as an output.
+    @Test(arguments: [false, true])
+    func aDisplayOnScreenStaysTrackedWhileAFileDoesNotCome(failsLate: Bool) async throws {
+        let opens = Opens()
+        opens.held.withLock { $0 = ["1.png"] }
+        if failsLate { opens.failing.withLock { $0 = ["1.png"] } }
+        let (loader, layers) = try Self.loader(layers: 1, opens: opens, deadline: .milliseconds(50))
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let catalog = LiveCatalog(.screens)
+        catalog.onChange = { [loader] in loader.changed(.screens) }
+        loader.screensCatalog = catalog
+        let display = ScreenInputTests.display(2, "uuid-b", "DELL U2720Q")
+        let other = ScreenInputTests.display(1, "uuid-a", "Built-in Retina Display")
+        catalog.update(running: LiveCatalog.screens([other, display], bound: []))
+        loader.screenFactory = { _ in ScreenInputTests.input(device) }
+        loader.start()
+        defer { loader.stop() }
+        defer { opens.held.withLock { $0 = [] } }
+        layers[0].wanted.store(MediaKey(folder: 0, file: 22).packed, ordering: .relaxed)
+        loader.wake.signal()
+        #expect(await waitUntil { layers[0].pending.withLock { $0.playback?.live } != nil })
+        let input = try #require(layers[0].pending.withLock { $0.playback?.live as? CaptureInput })
+        #expect(Self.take(layers[0]) == MediaKey(folder: 0, file: 22))
+        Self.select(layers[0], 1, loader)
+        let expected = failsLate ? "1/1 1.png: " : "1/1 1.png is not answering: the volume is slow or gone"
+        #expect(await waitUntil { layers[0].mediaStatus.withLock { $0.error } == "1/1 1.png is not answering: the volume is slow or gone" })
+        if failsLate { opens.held.withLock { $0 = [] } }
+        func showsDisplay() -> Bool {
+            layers[0].mediaStatus.withLock { $0.kind == "live" && $0.name == "Display: DELL U2720Q" && $0.error?.hasPrefix(expected) == true }
+        }
+        #expect(await waitUntil { showsDisplay() })
+        try await Task.sleep(for: .milliseconds(300))  // nothing to wait for: three capture polls keep the error
+        #expect(showsDisplay(), "the capture poll cleared the error, or the status no longer shows the display")
+        catalog.update(running: LiveCatalog.screens([other, display], bound: ["uuid-b"]))
+        #expect(await waitUntil { !input.alive }, "the display bound as an output was not halted")
+        #expect(layers[0].mediaStatus.withLock { $0.error } == "not running")
+        #expect(Self.take(layers[0]) == nil)
     }
 
     /// A selection that is not a file (clear, a missing number, a live input) is handed over at once while an open is in
