@@ -123,10 +123,13 @@ public final class OSCFeedbackServer: @unchecked Sendable {
         }
     }
 
-    /// Every new inbound UDP flow: the fixed target's own one becomes the way to reach it.
-    func adopt(_ source: OSCSource) {
-        guard let fixed, fixed.port == source.port, Self.sameHost(fixed.host, source.host) else { return }
+    /// Every new inbound UDP flow: the fixed target's own one becomes the way to reach it; true for that one. Once
+    /// that flow is cancelled, a connection of our own to the same host:port fails with EADDRINUSE (measured), so the
+    /// receiver keeps it (B268).
+    func adopt(_ source: OSCSource) -> Bool {
+        guard let fixed, fixed.port == source.port, Self.sameHost(fixed.host, source.host) else { return false }
         queue.async { [self] in useFlow(source, as: .init(host: fixed.host, port: fixed.port)) }
+        return true
     }
 
     /// Everything at or below the prefix goes out again at the next tick, changed or not (every cue go).

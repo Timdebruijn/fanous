@@ -643,6 +643,8 @@ public final class Engine: @unchecked Sendable {
                     "showMode": .bool(self.showMode.isOn), "uptimeSeconds": .number(Date().timeIntervalSince(startedAt).rounded()),
                     "totalFrames": .number(Double(metrics.totalFrames.load(ordering: .relaxed))), "totalMissed": .number(Double(metrics.totalMissed.load(ordering: .relaxed))),
                     "totalLate": .number(Double(metrics.totalLate.load(ordering: .relaxed))), "pid": .number(Double(getpid())),
+                    // descriptors in use, to see growth in a soak (B268); the limit is in the log at start
+                    "openFiles": .number(Double(((try? FileManager.default.contentsOfDirectory(atPath: "/dev/fd").count) ?? 1) - 1)),
                 ]
                 // ticks that blocked on the GPU with the ring of 8 committed buffers full, since start (B105)
                 if let render = self.render {

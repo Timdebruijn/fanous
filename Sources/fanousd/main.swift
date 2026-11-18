@@ -109,6 +109,18 @@ while let argument = arguments.next() {
     }
 }
 
+// B268: launchd starts agents with a soft open-file limit of 256, a shell with a far higher one. Every start gets the
+// same, so a test instance sees what the installed engine sees: OPEN_MAX (10240), or the hard limit if that is lower.
+// NSFileHandle's +initialize raises the soft limit by a rule of its own (measured: 256 to 2560, 10240 to 12544), so
+// it runs first.
+var files = rlimit()
+getrlimit(RLIMIT_NOFILE, &files)
+let launchFiles = files.rlim_cur
+_ = FileHandle.standardError
+getrlimit(RLIMIT_NOFILE, &files)
+files.rlim_cur = min(rlim_t(OPEN_MAX), files.rlim_max)
+let filesError = setrlimit(RLIMIT_NOFILE, &files) == 0 ? nil : String(cString: strerror(errno))
+
 do {
     try AppPaths.ensureDirectories()
 } catch {
@@ -126,6 +138,9 @@ _ = ftruncate(lockDescriptor, 0)
 _ = "\(getpid())\n".withCString { pwrite(lockDescriptor, $0, strlen($0), 0) }
 EngineLogging.bootstrap(fileURL: AppPaths.logs.appending(path: "fanousd.log"), level: ProcessInfo.processInfo.environment["FANOUS_LOG"] == "debug" ? .debug : .info)
 let logger = Logger(label: "fanousd")
+getrlimit(RLIMIT_NOFILE, &files)
+logger.info("open files limit", metadata: ["limit": "\(files.rlim_cur)", "at launch": "\(launchFiles)"])
+if let filesError { logger.warning("open files limit not raised", metadata: ["error": "\(filesError)"]) }
 if let problem = AppPaths.homeOverrideProblem { logger.warning("\(problem)") }
 if let home = AppPaths.homeOverride { logger.notice("FANOUS_HOME: data, logs, TLS and the default library under \(home.path)") }
 var scene: SceneConfig?

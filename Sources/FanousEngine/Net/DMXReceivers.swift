@@ -16,12 +16,14 @@ public final class ArtNetReceiver: @unchecked Sendable {
     private var listener: NWListener?
     private let port: UInt16
     private let failed = Mutex<String?>(nil)
+    let flows: UDPFlows
 
     public init(store: DMXStore, logger: Logger, nodeName: String, port: UInt16 = ArtNet.port) {
         self.store = store
         self.logger = logger
         self.nodeName = nodeName
         self.port = port
+        flows = UDPFlows(queue: store.queue, logger: logger, name: "Art-Net")
     }
 
     /// The port listened on, once the listener is ready (nil or 0 before). Differs from the one given only for port 0
@@ -47,16 +49,21 @@ public final class ArtNetReceiver: @unchecked Sendable {
         listener.newConnectionHandler = { [weak self] connection in
             guard let self else { return connection.cancel() }
             connection.start(queue: store.queue)
-            receive(on: connection)
+            receive(on: flows.adopt(connection))
         }
         listener.start(queue: store.queue)
         self.listener = listener
     }
 
-    public func stop() { listener?.cancel() }
+    public func stop() {
+        listener?.cancel()
+        flows.stop()
+    }
 
-    private func receive(on connection: NWConnection) {
+    private func receive(on flow: UDPFlows.Flow) {
+        let connection = flow.connection
         connection.receiveMessage { [self] data, _, _, error in
+            flows.touch(flow)
             if let data, let packet = try? ArtNet.parse(Array(data)) {
                 let source = Self.host(of: connection.endpoint)
                 switch packet {
@@ -65,8 +72,8 @@ public final class ArtNetReceiver: @unchecked Sendable {
                 default: break
                 }
             }
-            if error != nil { return connection.cancel() }
-            receive(on: connection)
+            if error != nil { return flows.release(flow) }
+            receive(on: flow)
         }
     }
 
@@ -269,6 +276,7 @@ public final class OSCReceiver: @unchecked Sendable {
     private var tcp: NWListener?
     /// B36: `get`, `subscribe`, `unsubscribe` and `ping`; nil ignores them.
     private let feedback: OSCFeedbackServer?
+    let flows: UDPFlows
 
     /// OSC in; 8001 next to it is reserved for OSC out (DESIGN.md OPEN-24).
     public static let defaultPort: UInt16 = 8000
@@ -278,6 +286,7 @@ public final class OSCReceiver: @unchecked Sendable {
         self.logger = logger
         self.port = port
         self.feedback = feedback
+        flows = UDPFlows(queue: store.queue, logger: logger, name: "OSC")
     }
 
     /// The UDP port listened on, once the listener is ready (nil or 0 before). Differs from the one given only for port 0
@@ -296,8 +305,9 @@ public final class OSCReceiver: @unchecked Sendable {
             guard let self else { return connection.cancel() }
             connection.start(queue: store.queue)
             let source = Self.source(connection) { connection.send(content: Data($0), completion: .idempotent) }
-            feedback?.adopt(source)
-            receiveDatagrams(on: connection, from: source)
+            // the fixed feedback target's own flow carries its feedback: kept however long it is silent (B268)
+            let fixed = feedback?.adopt(source) ?? false
+            receiveDatagrams(on: flows.adopt(connection, pinned: fixed), from: source)
         }
         udp.start(queue: store.queue)
         self.udp = udp
@@ -321,13 +331,15 @@ public final class OSCReceiver: @unchecked Sendable {
     public func stop() {
         udp?.cancel()
         tcp?.cancel()
+        flows.stop()
     }
 
-    private func receiveDatagrams(on connection: NWConnection, from source: OSCSource) {
-        connection.receiveMessage { [self] data, _, _, error in
+    private func receiveDatagrams(on flow: UDPFlows.Flow, from source: OSCSource) {
+        flow.connection.receiveMessage { [self] data, _, _, error in
+            flows.touch(flow)
             if let data { handle(Array(data), from: source) }
-            if error != nil { return connection.cancel() }
-            receiveDatagrams(on: connection, from: source)
+            if error != nil { return flows.release(flow) }
+            receiveDatagrams(on: flow, from: source)
         }
     }
 
@@ -376,6 +388,112 @@ public final class OSCReceiver: @unchecked Sendable {
             } else {
                 for element in bundle.elements { dispatch(element, from: source) }
             }
+        }
+    }
+}
+
+/// The inbound UDP flows of one `NWListener` (B268): it gives every source address and port an `NWConnection`, and a
+/// descriptor, that stays until it is cancelled, so senders that come and go (an OSC app that rebinds its socket, a
+/// flood of source ports) would use up the process's open-file limit. A flow silent for `idle` seconds is cancelled
+/// (its sender's next datagram makes a new one). Above `cap` live flows the one silent longest goes, among those that
+/// have delivered a datagram (a flow is never cancelled before its first one is read; a burst of new senders runs over
+/// the cap until it is). A burst far over the cap loses some datagrams of new senders (a flood). A pinned flow is never
+/// cancelled. DMX queue only: a datagram costs a store of the time into its flow, no lookup, no lock, no allocation.
+final class UDPFlows: @unchecked Sendable {
+    final class Flow: @unchecked Sendable {
+        let connection: NWConnection
+        fileprivate let pinned: Bool
+        fileprivate var lastSeen = DispatchTime.now().uptimeNanoseconds
+        fileprivate var read = false
+        fileprivate var live = true
+
+        fileprivate init(_ connection: NWConnection, pinned: Bool) {
+            self.connection = connection
+            self.pinned = pinned
+        }
+    }
+
+    /// Twice the OSC subscription lifetime (60 s): a subscriber that renews in time keeps its flow, and with it the
+    /// way its feedback goes out. A console sends Art-Net at least every few seconds; a sender silent longer comes
+    /// back on a new flow.
+    static let idle: Double = 2 * OSCSubscriptions.lifetime
+    /// Far more senders than a show has; 256 descriptors per receiver once a burst is read.
+    static let cap = 256
+
+    private let queue: DispatchQueue
+    private let logger: Logger
+    private let name: String
+    /// Nanoseconds; tests set it and `cap` before the receiver starts.
+    var idle = UInt64(UDPFlows.idle * 1e9)
+    var cap = UDPFlows.cap
+    private var timer: DispatchSourceTimer?
+    private var lastCapWarning: UInt64 = 0
+    /// DMX queue only.
+    private(set) var flows: [Flow] = []
+
+    init(queue: DispatchQueue, logger: Logger, name: String) {
+        self.queue = queue
+        self.logger = logger
+        self.name = name
+    }
+
+    deinit { timer?.cancel() }
+
+    /// A new flow (DMX queue).
+    func adopt(_ connection: NWConnection, pinned: Bool = false) -> Flow {
+        let flow = Flow(connection, pinned: pinned)
+        flows.append(flow)
+        if timer == nil {
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            let interval = DispatchTimeInterval.nanoseconds(Int(idle / 4))
+            timer.schedule(deadline: .now() + interval, repeating: interval)
+            timer.setEventHandler { [weak self] in self?.sweep() }
+            timer.resume()
+            self.timer = timer
+        }
+        return flow
+    }
+
+    /// A datagram arrived on `flow` (DMX queue, every datagram).
+    func touch(_ flow: Flow) {
+        flow.lastSeen = DispatchTime.now().uptimeNanoseconds
+        if !flow.read {
+            flow.read = true
+            if flows.count > cap { trim() }
+        }
+    }
+
+    /// Cancels the flow and forgets it (DMX queue); a second call does nothing.
+    func release(_ flow: Flow) {
+        guard flow.live else { return }
+        flow.live = false
+        flow.connection.cancel()
+        flows.removeAll { $0 === flow }
+    }
+
+    /// Down to `cap` flows, the one silent longest first, as far as read and unpinned flows allow.
+    private func trim() {
+        while flows.count > cap, let oldest = flows.lazy.filter({ $0.read && !$0.pinned }).min(by: { $0.lastSeen < $1.lastSeen }) {
+            let now = DispatchTime.now().uptimeNanoseconds
+            if now - lastCapWarning > 60_000_000_000 {
+                lastCapWarning = now
+                logger.warning("\(name): more than \(cap) UDP senders at once; the one silent longest is dropped", metadata: ["dropped": "\(oldest.connection.endpoint)"])
+            }
+            release(oldest)
+        }
+    }
+
+    private func sweep() {
+        let now = DispatchTime.now().uptimeNanoseconds
+        for flow in flows where !flow.pinned && now - flow.lastSeen > idle { release(flow) }
+    }
+
+    /// The listener stopped: every flow goes (from any thread).
+    func stop() {
+        queue.async { [self] in
+            timer?.cancel()
+            timer = nil
+            for flow in flows { release(flow) }
         }
     }
 }

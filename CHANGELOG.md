@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine (B268): the engine sets its open-file limit to 10240 at start, also under launchd (which starts it with
+  256) and from a shell (far more), and logs it; Art-Net and OSC forget a sender silent for two minutes and keep
+  at most 256 at once, so senders that come and go no longer use up descriptors; `/metrics` has `openFiles` (PR #N).
 - Engine (B265): decoding a corrupt HAP frame returns an error instead of reading outside the sample (a crash in
   the thumbnailer or on a layer); the vendored `hap.c` checks chunk offsets, sizes and section lengths (PR #392).
 - Release: 1.0.0-rc.14 is on GitHub as a pre-release with the signed, notarized dmg, built from main bcdb5f3
