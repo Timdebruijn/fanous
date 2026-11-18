@@ -319,7 +319,7 @@ public final class Engine: @unchecked Sendable {
         let fps = startCanvas.fps
         ingest.shouldYield = { [weak self] in
             let budget = 0.7 / (self?.canvasSwitch?.rendered.fps ?? fps) * 1e6
-            return metrics.recent(seconds: 0.25, now: CACurrentMediaTime()).contains { Double($0.cpuMicros + $0.gpuMicros) > budget }
+            return metrics.recent(seconds: 0.25, now: CACurrentMediaTime()).contains { Double($0.cpuMicros) + Double($0.gpuMicros) > budget }
         }
         if resumeShow != nil { ingest.paused = true }  // DESIGN.md §14: before the first job can start
         ingest.start()

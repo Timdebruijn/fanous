@@ -14,7 +14,7 @@ struct MetricsMicrosTests {
         #expect(Compositor.micros(.infinity) == 4_000_000_000)
         #expect(Compositor.micros(-0.002) == 0)
         #expect(Compositor.micros(-.infinity) == 0)
-        #expect(Compositor.micros(.nan) == 4_000_000_000)  // min(4e9, nan) keeps 4e9: no trap, the ceiling
+        #expect(Compositor.micros(.nan) == 0)  // not the ceiling: one NaN would hold the maximum at 4000 s for the whole window
         #expect(Compositor.micros(0.0042) == 4200)
     }
 }
