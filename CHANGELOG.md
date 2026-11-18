@@ -10,11 +10,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Engine (B278, B342): a movie frame that does not decode is skipped after a 15 ms pause instead of tried for ever every
-  50 ms with a log line each time; skipped frames are logged at most once every 10 s with a count, and half a second
-  without a decoded frame shows the decoder error on the layer (Layers screen, readiness) until a frame decodes again or
-  the clip changes, with one line, a count every 10 s and one line on recovery; a VideoToolbox session that went invalid
-  is made again, at most once a second (PR #411).
+- Engine (B278, B342): a movie frame that does not decode is skipped at once and the decode thread pauses 15 ms, instead
+  of the same frame being tried for ever every 50 ms with a log line each time; half a second without a decoded frame
+  shows the decoder error on the layer (Layers screen, readiness) until a frame decodes again or the clip changes; the
+  skip lines, and the failing, still-failing and recovered lines, each come at most once every 10 s with a count of what
+  was held back (a recovered line always follows the failing line it pairs with); a VideoToolbox session that went
+  invalid is made again, at most once a second (PR #411).
 - Engine (B270): an HTTPS connection reads and parses the next request only once the previous response has left, so
   a client that pipelines requests and never reads no longer makes the engine queue responses without bound
   (PR #397).

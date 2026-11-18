@@ -208,9 +208,11 @@ and a count, at most once every 10 seconds. A bad frame where playback
 starts (the start of the file, a seek, a retrigger, a cue jump) is not
 skipped: the layer keeps what it showed before, the frame before the seek
 or the previous clip, until a frame decodes. When no frame decodes for half
-a second, the Layers row shows the decoder error (see above), the log says
-`decode failing` once and `decode still failing` with a count at most every
-10 seconds, and `decode recovered` when a frame decodes again.
+a second, the Layers row shows the decoder error (see above) and the log
+says `decode failing`, then `decode still failing` with a count, and
+`decode recovered` when a frame decodes again. These lines too come at most
+once every 10 seconds, each with the number of lines held back, so a
+damaged clip that loops does not fill the log.
 
 ## Outputs stay black although the layers play
 

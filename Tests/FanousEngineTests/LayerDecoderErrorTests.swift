@@ -131,14 +131,15 @@ import VideoToolbox
     }
 
     /// A VideoToolbox session that went invalid (made so here through the API, as sleep and wake or a GPU reset would,
-    /// not measured) is made again and the frame decodes; a second one within a second is not. Before, every later frame
-    /// failed with -12903 until the file was selected again.
+    /// not measured) is made again and the frame decodes; a second one within `rebuildEvery` is not. Before, every later
+    /// frame failed with -12903 until the file was selected again.
     @Test func anInvalidSessionIsMadeAgain() async throws {
         let url = try tempDir("fanous-decode-errors").appending(path: "prores.mov")
         try await writePatternMovie(to: url, size: (320, 176), fps: 25, frames: 4, codec: .proRes422HQ)
         let source = try await MovieSource.open(url: url, device: try #require(MTLCreateSystemDefaultDevice()), poolSize: 1)
         let (logger, lines) = Self.capture()
         source.logger = logger
+        source.rebuildEvery = 3600  // the second invalidation below falls inside the interval however slow the Mac
         let frame = DecodedFrame(poolIndex: 0)
         try source.decode(frame: 0, into: frame)
         // the session through reflection, so the same test runs against code without a seam
@@ -155,6 +156,6 @@ import VideoToolbox
         #expect(try patternBarX(frame, size: (320, 176)) == 8, "frame 1 as drawn on stage")
         try invalidate()
         #expect(throws: MovieError.self) { try source.decode(frame: 2, into: frame) }
-        #expect(source.sessionRebuilds == 1, "at most one new session a second")
+        #expect(source.sessionRebuilds == 1, "at most one new session per interval")
     }
 }
