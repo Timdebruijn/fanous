@@ -752,7 +752,7 @@ public final class Compositor: @unchecked Sendable {
         let direction: Int
         if let master {
             speed = Double(abs(master.clock.rate / master.clock.fps)) * 100
-            frameIndex = playback.clock.finished && p.playMode.endsBlack ? nil : Int(playback.clock.position)
+            frameIndex = playback.clock.finished && p.playMode.endsBlack ? nil : playback.clock.frame(lo: 0, hi: last)
             direction = playback.clock.direction < 0 ? -1 : 1
         } else {
             speed = Double(p.speed * ctx.masterSpeed) * 100

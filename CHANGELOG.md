@@ -9,12 +9,18 @@ day it was built. New entries go under Unreleased. The design each phase
 implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
+- Engine (B372): a playing movie layer shows the frame its clock is on, at every rate. The frame is picked from the
+  whole decode ring, so the layer catches up after a skipped or unseen tick and keeps up at two or more frames per
+  tick. The clock's frame turns over 11/24 of a frame before the frame starts (it rounded down), so at matched rates
+  (60p on 60 Hz) it no longer repeats and skips about one tick in four, 25p on 50 Hz plays 2-2-2-2 instead of a mix of
+  1, 2 and 3, a bounce shows its end frames, a once-then-black clip shows its last frame, and the tick of a trigger
+  shows the first frame. The picture is up to 11/24 of a frame earlier against the sound than before (PR #NNN).
 
 - Engine (B364): a playing movie layer no longer sits on 2 frames of every 11 (with the 8-frame ring): the decode
   thread went back to the requested frame whenever it was ahead of it, so the ring held two frames in turn; it now
-  fills the ring with the frames ahead in play direction. The layer advances at most one frame per tick, so after a
-  skipped or unseen tick it stays that many frames late until it is retriggered or the ring drains, and at two or
-  more frames per tick it stalls and jumps (B372) (PR #413).
+  fills the ring with the frames ahead in play direction. Until B372 the layer advanced at most one frame per tick, so
+  after a skipped or unseen tick it stayed that many frames late until it was retriggered or the ring drained, and at
+  two or more frames per tick it stalled and jumped (PR #413).
 - Engine (B270): an HTTPS connection reads and parses the next request only once the previous response has left, so
   a client that pipelines requests and never reads no longer makes the engine queue responses without bound
   (PR #397).

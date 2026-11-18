@@ -332,11 +332,18 @@ display link's `targetTimestamp`:
   and restarts; the compositor shows the previous frame (or black, per layer
   setting) until the first new frame is ready, then starts the dissolve if
   dissolve > 0.
-- Frame selection: the compositor picks the ring frame whose pts is the
-  closest at-or-before `position`; frames older than that are released to the
-  pool. There is **no frame blending** in v1 (nearest frame), which keeps
-  25/30/50/60 fps content on any output rate deterministic. `[OPEN-4]`
-  optional frame blending later.
+- Frame selection: the clock's frame is `⌊position + 11/24⌋` (a loop past its
+  out point shows its in point again), so frame k shows from position
+  k − 11/24 to k + 13/24. Rounding down would put the clock on a frame boundary
+  every tick at matched rates (a trigger starts on a whole frame), and half a
+  frame would do the same at half rates; 11/24 stays 1/24 frame clear of both,
+  and of the thirds, quarters and twelfths of 25p and 50p on 60 Hz. A trigger's
+  tick shows the first frame; a once mode ends when the clock's frame passes
+  the out point. The compositor picks, from the whole ring, the frame closest
+  at-or-before the clock's frame; frames older than that are released to the
+  pool (the last two shown stay one tick for the GPU). There is **no frame
+  blending** in v1 (nearest frame), which keeps 25/30/50/60 fps content on any
+  output rate deterministic. `[OPEN-4]` optional frame blending later.
 - Media of any frame rate is supported; the clock is in media frames so
   speed 100 % always means native rate.
 
