@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: the hardware table has the M6 (tier 1 Base; three external displays on the Mac mini and 153 or 170 GB/s
+  memory bandwidth, from Apple's Mac mini tech specs; the ProRes engine count is not stated there) (PR #418).
 - Release: 1.0.0-rc.15 is on GitHub as a pre-release with the signed, notarized dmg, built from main 074d960
   (PR #417).
 

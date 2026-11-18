@@ -557,7 +557,7 @@ labelled "not yet benchmarked".
 
 | Tier | Chips | Media engines (Apple spec) | Expected max layers, canvas 1080p60 | Expected max layers, canvas 4K60 | Notes |
 |---|---|---|---|---|---|
-| **1 Base** | M2, M3, M4, M5 | 1 | 6 × 1080p60 ProRes 422 HQ · 8 × 1080p60 HAP Q | 2 × 4K60 ProRes HQ · 3 × 4K60 HAP Q | 8 GB/16 GB memory limits ring depth; 2 external displays |
+| **1 Base** | M2, M3, M4, M5, M6 | 1 | 6 × 1080p60 ProRes 422 HQ · 8 × 1080p60 HAP Q | 2 × 4K60 ProRes HQ · 3 × 4K60 HAP Q | 8 GB/16 GB memory limits ring depth; 2 external displays (3 on the M6 Mac mini) |
 | **2 Pro** (reference: M1 Pro) | M1 Pro, M2 Pro, M3 Pro, M4 Pro, (M5 Pro) | 1 | **Measured 2026-10-23 (M1 Pro, 32 GB):** 16 × 1080p60 ProRes 422 HQ (cap) · 16 × 1080p60 HAP Q (cap) | **Measured:** 16 × 4K30 ProRes HQ (cap) · 16 × 4K30 HAP Q (cap, ring 8) · 3–7 × 4K60 ProRes HQ (decode jitter, Phase 3) · ≥ 4 × 4K60 HAP Q (ring 8) | all v1 acceptance criteria are defined on this tier first; details in `docs/benchmarks/README.md`. **Phase 3:** the caps hold with both effect slots on every layer for the per-pixel effects; blur and edge cost ≈ 1.6–1.9 ms per 1080p layer each (2–3 layers with both at 1080p60), a dissolve costs one extra layer |
 | **3 Max** | M1 Max, M2 Max, M3 Max, M4 Max, (M5 Max) | 2 | 16 (cap) | 8 × 4K60 ProRes HQ · 8 × 4K60 HAP Q | 4 external displays |
 | **4 Ultra** | M1 Ultra, M2 Ultra, M3 Ultra | 4 | 16 (cap) | 16 (cap) | 5+ displays |
