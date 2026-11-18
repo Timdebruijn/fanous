@@ -61,10 +61,10 @@ public enum OutputBinding {
 final class SecondaryDriver: @unchecked Sendable {
     private var thread: PacedThread?
     /// Swapped on the main actor at every mapping edit while the thread presents (B273): the writer locks, the thread
-    /// only tries and on a busy lock presents last frame's set once more, so it never waits and holds its own reference.
+    /// only tries and on a busy lock presents the set it took last, so it never waits and holds its own reference.
     var set: OutputSet {
         get { setBox.withLock { $0 } }
-        set { setBox.withLock { $0 = newValue } }
+        set { _ = setBox.withLock { old in defer { old = newValue }; return old } }  // the old set is freed after the unlock, not under it
     }
     private let setBox: Mutex<OutputSet>
 

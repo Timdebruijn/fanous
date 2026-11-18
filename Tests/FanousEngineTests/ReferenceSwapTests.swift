@@ -12,9 +12,10 @@ import Testing
 @testable import FanousEngine
 
 /// B273: a reference that one thread swaps while a render or feed thread reads it. Each test swaps while the reader
-/// runs; the swap itself is the data race, which only ThreadSanitizer shows (`swift test --sanitize=thread --filter
+/// runs; the swap itself is the data race, which ThreadSanitizer shows (`swift test --sanitize=thread --filter
 /// ReferenceSwap`, docs/DEVELOPMENT.md): on the old code it reports the race, after the fix it is clean. Without TSan
-/// the tests check that the swapped value reaches the reader.
+/// the tests check that the swapped value reaches the reader; only the offsets test also fails without it on the old
+/// code (the tick's unretained read meets the writer's release: the process aborts on a freed `TimecodeOffsets`).
 @Suite(.cleansTempFiles)
 struct ReferenceSwapGPUTests {
     /// `Compositor.timecodeOffsets`, written by Control (`timecode.set`) while the tick chases.

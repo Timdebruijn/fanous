@@ -31,10 +31,10 @@ public final class Compositor: @unchecked Sendable {
     /// Timecode for layers in the Timecode play mode (DESIGN.md §15.1); offsets in frames of the timecode rate.
     nonisolated(unsafe) public var timecode: TimecodeClock?
     /// Replaced as one reference by Control (`timecode.set`) while the tick runs (B273): taken once per tick like
-    /// `layerCanvas`, without waiting; on a busy lock the tick chases with last tick's offsets.
+    /// `layerCanvas`, without waiting; on a busy lock the tick chases with the offsets it took last.
     public var timecodeOffsets: TimecodeOffsets {
         get { timecodeOffsetsBox.withLock { $0 } }
-        set { timecodeOffsetsBox.withLock { $0 = newValue } }
+        set { _ = timecodeOffsetsBox.withLock { old in defer { old = newValue }; return old } }  // the old value is freed after the unlock, not under it
     }
     private let timecodeOffsetsBox = Mutex(TimecodeOffsets(project: 0, layers: [:]))
     private var tickTimecodeOffsets = TimecodeOffsets(project: 0, layers: [:])
@@ -406,7 +406,7 @@ public final class Compositor: @unchecked Sendable {
         drawItems.removeAll(keepingCapacity: true)
 
         layerCanvasBox.withLockIfAvailable { tickLayerCanvas = $0 }  // busy: last tick's assignment once more
-        timecodeOffsetsBox.withLockIfAvailable { tickTimecodeOffsets = $0 }  // busy: last tick's offsets once more
+        timecodeOffsetsBox.withLockIfAvailable { tickTimecodeOffsets = $0 }  // busy: the offsets taken last
         sync?.receiver.table.withLockIfAvailable { syncTable.copy(from: $0) }  // busy: last tick's table once more
         syncClocks.removeAll(keepingCapacity: true)
         // Everything that is not GPU work: hand-off, clocks, audio, decoder requests, frame selection.
