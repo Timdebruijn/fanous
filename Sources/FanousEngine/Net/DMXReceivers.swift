@@ -305,9 +305,11 @@ public final class OSCReceiver: @unchecked Sendable {
             guard let self else { return connection.cancel() }
             connection.start(queue: store.queue)
             let source = Self.source(connection) { connection.send(content: Data($0), completion: .idempotent) }
-            // the fixed feedback target's own flow carries its feedback: kept however long it is silent (B268)
+            // the fixed feedback target's own flow carries its feedback: kept however long it is silent (B268); a
+            // cancelled flow is no longer a subscriber's reply path
             let fixed = feedback?.adopt(source) ?? false
-            receiveDatagrams(on: flows.adopt(connection, pinned: fixed), from: source)
+            let flow = flows.adopt(connection, pinned: fixed) { [feedback] in feedback?.release(source) }
+            receiveDatagrams(on: flow, from: source)
         }
         udp.start(queue: store.queue)
         self.udp = udp
@@ -396,35 +398,42 @@ public final class OSCReceiver: @unchecked Sendable {
 /// descriptor, that stays until it is cancelled, so senders that come and go (an OSC app that rebinds its socket, a
 /// flood of source ports) would use up the process's open-file limit. A flow silent for `idle` seconds is cancelled
 /// (its sender's next datagram makes a new one). Above `cap` live flows the one silent longest goes, among those that
-/// have delivered a datagram (a flow is never cancelled before its first one is read; a burst of new senders runs over
-/// the cap until it is). A burst far over the cap loses some datagrams of new senders (a flood). A pinned flow is never
-/// cancelled. DMX queue only: a datagram costs a store of the time into its flow, no lookup, no lock, no allocation.
+/// have delivered a datagram and been silent for at least `floor`; when none qualifies the table runs over the cap.
+/// A pinned flow is never cancelled. DMX queue only: a datagram costs a store of the time into its flow, no lookup,
+/// no lock, no allocation.
 final class UDPFlows: @unchecked Sendable {
     final class Flow: @unchecked Sendable {
         let connection: NWConnection
         fileprivate let pinned: Bool
-        fileprivate var lastSeen = DispatchTime.now().uptimeNanoseconds
+        fileprivate let released: (() -> Void)?
+        /// Uptime nanoseconds of the last datagram (tests set it back).
+        var lastSeen = DispatchTime.now().uptimeNanoseconds
         fileprivate var read = false
         fileprivate var live = true
 
-        fileprivate init(_ connection: NWConnection, pinned: Bool) {
+        fileprivate init(_ connection: NWConnection, pinned: Bool, released: (() -> Void)?) {
             self.connection = connection
             self.pinned = pinned
+            self.released = released
         }
     }
 
-    /// Twice the OSC subscription lifetime (60 s): a subscriber that renews in time keeps its flow, and with it the
-    /// way its feedback goes out. A console sends Art-Net at least every few seconds; a sender silent longer comes
-    /// back on a new flow.
+    /// Senders do not stay silent this long in a show: a console sends Art-Net continuously or at least every few
+    /// seconds. One that does comes back on a new flow. (An OSC subscriber that listens on the port it sends from but
+    /// renews from another port loses its reply path with it: B349.)
     static let idle: Double = 2 * OSCSubscriptions.lifetime
-    /// Far more senders than a show has; 256 descriptors per receiver once a burst is read.
-    static let cap = 256
+    /// Per receiver; two receivers hold at most 2048 of the 10240 descriptors the engine sets at start. A sender that
+    /// uses a new port per message at 10 Hz makes 1200 flows in the idle time: the oldest go.
+    static let cap = 1024
+    /// Only a flow silent this long may go for the cap: a sender that just delivered keeps its flow.
+    static let floor: Double = 5
 
     private let queue: DispatchQueue
     private let logger: Logger
     private let name: String
-    /// Nanoseconds; tests set it and `cap` before the receiver starts.
+    /// Nanoseconds; tests set them and `cap` before the receiver starts.
     var idle = UInt64(UDPFlows.idle * 1e9)
+    var floor = UInt64(UDPFlows.floor * 1e9)
     var cap = UDPFlows.cap
     private var timer: DispatchSourceTimer?
     private var lastCapWarning: UInt64 = 0
@@ -439,9 +448,9 @@ final class UDPFlows: @unchecked Sendable {
 
     deinit { timer?.cancel() }
 
-    /// A new flow (DMX queue).
-    func adopt(_ connection: NWConnection, pinned: Bool = false) -> Flow {
-        let flow = Flow(connection, pinned: pinned)
+    /// A new flow (DMX queue); `released` runs on the DMX queue when it is cancelled.
+    func adopt(_ connection: NWConnection, pinned: Bool = false, released: (() -> Void)? = nil) -> Flow {
+        let flow = Flow(connection, pinned: pinned, released: released)
         flows.append(flow)
         if timer == nil {
             let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -469,12 +478,15 @@ final class UDPFlows: @unchecked Sendable {
         flow.live = false
         flow.connection.cancel()
         flows.removeAll { $0 === flow }
+        flow.released?()
     }
 
-    /// Down to `cap` flows, the one silent longest first, as far as read and unpinned flows allow.
+    /// Down to `cap` flows, the one silent longest first, as far as flows outside the floor allow.
     private func trim() {
-        while flows.count > cap, let oldest = flows.lazy.filter({ $0.read && !$0.pinned }).min(by: { $0.lastSeen < $1.lastSeen }) {
-            let now = DispatchTime.now().uptimeNanoseconds
+        let now = DispatchTime.now().uptimeNanoseconds
+        while flows.count > cap,
+            let oldest = flows.lazy.filter({ $0.read && !$0.pinned && now - $0.lastSeen >= self.floor }).min(by: { $0.lastSeen < $1.lastSeen })
+        {
             if now - lastCapWarning > 60_000_000_000 {
                 lastCapWarning = now
                 logger.warning("\(name): more than \(cap) UDP senders at once; the one silent longest is dropped", metadata: ["dropped": "\(oldest.connection.endpoint)"])
@@ -486,6 +498,7 @@ final class UDPFlows: @unchecked Sendable {
     private func sweep() {
         let now = DispatchTime.now().uptimeNanoseconds
         for flow in flows where !flow.pinned && now - flow.lastSeen > idle { release(flow) }
+        if flows.count > cap { trim() }
     }
 
     /// The listener stopped: every flow goes (from any thread).

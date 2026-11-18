@@ -123,13 +123,28 @@ public final class OSCFeedbackServer: @unchecked Sendable {
         }
     }
 
-    /// Every new inbound UDP flow: the fixed target's own one becomes the way to reach it; true for that one. Once
-    /// that flow is cancelled, a connection of our own to the same host:port fails with EADDRINUSE (measured), so the
-    /// receiver keeps it (B268).
+    /// Every new inbound UDP flow: the fixed target's own one, or a confirmed subscriber's, becomes the way to reach
+    /// it (B268: a subscriber whose flow was cancelled is answered on its new one from its next datagram). True for the
+    /// fixed target's: once that flow is cancelled, a connection of our own to the same host:port fails with
+    /// EADDRINUSE (measured), so the receiver keeps it.
     func adopt(_ source: OSCSource) -> Bool {
-        guard let fixed, fixed.port == source.port, Self.sameHost(fixed.host, source.host) else { return false }
-        queue.async { [self] in useFlow(source, as: .init(host: fixed.host, port: fixed.port)) }
-        return true
+        let isFixed = fixed.map { $0.port == source.port && Self.sameHost($0.host, source.host) } ?? false
+        queue.async { [self] in
+            if isFixed, let fixed {
+                useFlow(source, as: .init(host: fixed.host, port: fixed.port))
+            } else if table.isConfirmed(.init(host: source.host, port: source.port)) {
+                useFlow(source)
+            }
+        }
+        return isFixed
+    }
+
+    /// An inbound UDP flow was cancelled (B268): its reply closure is dead, so it is no longer the way to that host:port.
+    /// `send` then opens a connection of its own, which mostly stays in `waiting(EADDRINUSE)` (53 of 60 test runs: it
+    /// comes while the cancelled flow's socket is still there): that host:port gets nothing until it sends again and
+    /// `adopt` binds its new flow (B349).
+    func release(_ source: OSCSource) {
+        queue.async { [self] in flows[.init(host: source.host, port: source.port)] = nil }
     }
 
     /// Everything at or below the prefix goes out again at the next tick, changed or not (every cue go).
