@@ -21,6 +21,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fix (B261): a WebSocket `unsub` with an id that is negative or above 2^32 − 1 is ignored like an unknown id instead of stopping the engine; any client could send it after `hello` (PR #388).
 - Fix (B262): `timecode.set` refuses a new `layerOffsets` key that is not a layer number as written (`01`, `+1`; a stored one is kept), and a project that already
   holds two keys for one layer no longer crashes the engine at every start: the canonical key wins (PR #389).
+- Fix (B263): a command buffer that never started on the GPU no longer traps the render thread when the Mac has been up
+  more than 71.6 minutes; frame times in the metrics are clamped and such a buffer books no GPU time (PR #391).
 
 ## 1.0.0-rc.14 — 2026-11-17
 

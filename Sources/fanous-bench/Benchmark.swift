@@ -197,7 +197,7 @@ enum Benchmark {
             let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"), logger: logger)
             queue.shouldYield = {
                 let budget = 0.7 / fps * 1e6
-                return metrics.recent(seconds: 0.25, now: CACurrentMediaTime()).contains { Double($0.cpuMicros + $0.gpuMicros) > budget }
+                return metrics.recent(seconds: 0.25, now: CACurrentMediaTime()).contains { Double($0.cpuMicros) + Double($0.gpuMicros) > budget }
             }
             queue.start()
             _ = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "ingested.mov"), kind: .transcode(codec: .hap(.hapQ))))

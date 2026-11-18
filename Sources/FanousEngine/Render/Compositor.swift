@@ -137,6 +137,10 @@ public final class Compositor: @unchecked Sendable {
     /// 3600 s 240 of the 256 rates jumped, up to half a cycle. A smaller wrap also keeps the Float
     /// clock fine: about 0.0005 cycle at 30 Hz. The 255 belongs to the 8-bit grid: a 16-bit rate would need its own wrap.
     static let timeWrap: Double = 255
+    /// Seconds as whole microseconds for a metrics record, clamped to 0…4e9, NaN to 0: a negative, infinite or NaN
+    /// difference, or one past 4294.97 s (a command buffer that never started reports GPU start 0, so end − start is the
+    /// host uptime), would trap the plain `UInt32` conversion on the render thread (B263).
+    static func micros(_ seconds: Double) -> UInt32 { UInt32(max(0, min(seconds * 1e6, 4e9))) }  // this argument order sends NaN to 0
     /// This tick reused the last canvas: its own selection is still in `drawItems` (`drawLayer`).
     private var reusedThisTick = false
     private var canvasValid = false
@@ -385,7 +389,7 @@ public final class Compositor: @unchecked Sendable {
         let snapshot = parameters.read()
         if snapshot.sequence != lastSequence {
             lastSequence = snapshot.sequence
-            if snapshot.receivedAt > 0 { record.dmxToPhotonMicros = UInt32(max(0, min(4e9, (target - snapshot.receivedAt) * 1e6))) }
+            if snapshot.receivedAt > 0 { record.dmxToPhotonMicros = Self.micros(target - snapshot.receivedAt) }
         }
 
         let wantsPixels = needsPixels(drawable: drawable)
@@ -466,7 +470,7 @@ public final class Compositor: @unchecked Sendable {
             idleTicks.wrappingAdd(1, ordering: .relaxed)
             record.idle = true
             record.textureMisses = frame.misses
-            record.cpuMicros = UInt32((CACurrentMediaTime() - cpuStart) * 1e6)
+            record.cpuMicros = Self.micros(CACurrentMediaTime() - cpuStart)
             _ = metrics.write(record)
             return
         }
@@ -557,7 +561,7 @@ public final class Compositor: @unchecked Sendable {
         }
 
         record.textureMisses = frame.misses
-        record.cpuMicros = UInt32((CACurrentMediaTime() - cpuStart) * 1e6)
+        record.cpuMicros = Self.micros(CACurrentMediaTime() - cpuStart)
         let slot = metrics.write(record)
         commandBuffer.commit()
         if let oldest = inFlight[nextInFlight].buffer {
@@ -583,7 +587,8 @@ public final class Compositor: @unchecked Sendable {
             gpuErrors.wrappingAdd(1, ordering: .relaxed)
             lastGPUError = "\(buffer.error.map { "\($0)" } ?? "unknown")"
         }
-        let gpuMicros = UInt32(max(0, (buffer.gpuEndTime - buffer.gpuStartTime) * 1e6))
+        // GPU start 0 = it never started (Metal header): no GPU time to book
+        let gpuMicros = buffer.gpuStartTime > 0 ? Self.micros(buffer.gpuEndTime - buffer.gpuStartTime) : 0
         metrics.complete(slot: inFlight[i].slot, gpuMicros: gpuMicros, late: buffer.gpuEndTime > inFlight[i].target)
         inFlight[i].buffer = nil
     }
