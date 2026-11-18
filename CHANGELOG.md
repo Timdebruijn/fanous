@@ -32,6 +32,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   past 2147483647, a patch address where the fixture does not fit in the universe, a layer count below 1 or past 64, a negative or
   oversized canvas, a mapping mesh or wall grid past any real size; the file keeps the value, which is ignored or makes the command
   that meets it refuse (PR #393).
+- Fix (B295): a HAP file whose width or height is not a multiple of 4 (1366 × 768, 1920 × 1082) plays and gets a
+  thumbnail; the decode buffer and the upload count whole 4 × 4 blocks, and a frame that decodes to fewer bytes than its
+  track size needs is refused instead of read past its end (PR #394).
 
 ## 1.0.0-rc.14 — 2026-11-17
 

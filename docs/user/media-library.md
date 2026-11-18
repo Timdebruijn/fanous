@@ -166,7 +166,7 @@ with the same number, and the original moves to `_originals/` in the folder.
 
 | Codec | Pick it for |
 |---|---|
-| **HAP Q** (the default) | Most clips: light to play, good quality, large files. Every HAP needs a width and height that are multiples of 4 (854 × 480 and 1366 × 768 are refused): pick ProRes for those |
+| **HAP Q** (the default) | Most clips: light to play, good quality, large files. Fanous writes HAP only at a width and height that are multiples of 4 (854 × 480 and 1366 × 768 are refused): pick ProRes for those. A HAP file of such a size from another tool plays as it is |
 | **HAP** | Lighter still, lower quality |
 | **HAP Alpha** | A clip with transparency, HAP-style |
 | **ProRes 422 HQ** | Most clips when disk space matters more than CPU, and any size; what Import uses |
