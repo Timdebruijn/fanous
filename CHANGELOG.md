@@ -23,6 +23,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   configured are capped at 256 held in all, sACN sources at 16 per universe (a higher priority replaces the lowest,
   never the winner), Art-Net sequence state at 16 senders; "DMX receiving" lines come from a budget of 512 that refills
   one per 15 s, and the caps warn once a minute with counts (PR #400).
+- Engine (B267): a library file or an ingest job that the engine stopped in twice (a crash, a kill, a power cut) is
+  listed as unreadable or failed with the reason and not tried a third time, so a file that stops the engine while
+  the library reads it, or an ingest job, no longer stops it at every start; such a still is no image mask. Failing
+  moves or deletes no file; a job stopped after its result was in place is done and leaves its original where it was;
+  a changed file or a re-queued job is tried again. A decode outside the library (a layer, a mask still cached as
+  playable) is B348 (PR #401).
 - Engine (B265): decoding a corrupt HAP frame returns an error instead of reading outside the sample (a crash in
   the thumbnailer or on a layer); the vendored `hap.c` checks chunk offsets, sizes and section lengths (PR #392).
 - Release: 1.0.0-rc.14 is on GitHub as a pre-release with the signed, notarized dmg, built from main bcdb5f3
