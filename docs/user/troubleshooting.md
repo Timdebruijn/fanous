@@ -43,7 +43,10 @@ installed" when all is well ([The user interface](ui.md#menus-of-the-app-window)
    status bar reads "Show mode resumed after the engine restarted at
    HH:MM" and the projectors show a picture.
 2. Log in again on every iPad; the logins did not survive the restart.
-3. Go to the section's first cue: no cue is current after a restart.
+3. The cue that was current is current again with the values the cues
+   held; clips start from their first frame (except on layers that chase
+   timecode) and a timecode trigger that fell meanwhile did not fire: Go
+   fires the next cue.
 4. Programmer, System screen: acknowledge again what the red banner "Show
    mode is on with blocking items" names; acknowledgements did not survive
    either.
@@ -268,7 +271,8 @@ layer's audio channels on the console (volume, mute); audio plays only at
   not exist fires nothing. Only `/fanous/show/mode 1` is refused, while
   readiness blocks: the OSC panel says so in red ("Refused at …") and the
   [log](#logs) has "OSC/MIDI command refused".
-- After an engine restart no cue is current: Go to the right one.
+- After an engine start outside show mode no cue is current: Go to the
+  right one. In show mode a crash or a restart keeps the current cue.
 
 ## LTC does not lock
 

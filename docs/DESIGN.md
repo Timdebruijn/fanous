@@ -4808,8 +4808,10 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   re-plug; previous modes persisted in `display-modes.json` and restored on
   the next start after a crash outside show mode; unavailable modes are a non-blocking `warn` readiness item).
   **Show mode survives a crash (as built 2026-10-26):** `show-state.json`
-  (`{on, since, written, restart?}`; files with the earlier `boot` key still load) is written
-  on entering (inside the controller's state lock, refreshed every 30 s) and
+  (`{on, since, written, restart?, cue?, cueNumber?, held?}`; files with the earlier `boot` key still load) is written
+  on entering (inside the controller's state lock, refreshed every 30 s, and on the feed queue when the
+  cue list's state changes, only the newest of a burst: `cue` and `cueNumber` the current cue, `held` the values the
+  cues hold by owning cue id, `"Layer 1/intensity"` → raw, a running fade at its target, B284) and
   removed on leaving. `Engine.stop` leaves show mode, so SIGTERM (launchd stop,
   Stop Engine, Stop Engine and Quit, logout, bootout) clears it; once the stop
   has begun, entering is refused. Engine › Restart Engine (and the shell's
@@ -4826,7 +4828,14 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   runs at the first display sync. The log says "show mode resumed after an
   unclean stop" or "show mode kept across a restart", and live `show.resumedAt`
   (with `show.resumedRestart` telling a kept-for-restart resume from an unclean
-  stop, B181) drives the status-bar and System notice until show mode is left. The first
+  stop, B181) drives the status-bar and System notice until show mode is left. A resume puts
+  `held` back as the cue list's held values with their owners, at once, dropping what a cue no
+  longer in the list held, and `cue` as the current cue if it is still in the list, else the
+  nearest cue numbered before `cueNumber` (B284, "cue position resumed"), applied in one step with
+  the list so only the resumed state is reported; no fade, no follow, timecode unarmed until its
+  next frame. A field or a `held` entry that does not decode is left out; show mode still resumes. `Engine.stop` stops the cue runner
+  and drains the feed queue before the show state is kept. Playback positions and values a console
+  or the UI set are not restored (B334). The first
   display sync is then an apply, not a restore: displays already in their show
   mode are not switched and the ledger is kept for the restore on leaving (no
   flip-flop). The show lock lives in the project document; a lock change is

@@ -95,6 +95,8 @@ public final class Engine: @unchecked Sendable {
     private var lastMIDISettings = MIDISettings()
     private var cues: CueRunner?
     private var lastCues = CueList()
+    /// B284: the newest cue list state the feed queue has not written yet.
+    private let unsavedCueState = Mutex<(current: Cue?, targets: [UUID: [CueValue]])?>(nil)
     /// Internal: a test reads and watches it (B200).
     let showMode: ShowModeController
     /// The last run's items, the acknowledgements (B163) and the run numbers (B187).
@@ -430,9 +432,34 @@ public final class Engine: @unchecked Sendable {
         }
         // Phase 7: cues, timecode, show mode (DESIGN.md §14–15)
         let cues = CueRunner(dmx: dmx)
-        cues.replace(list: ShowCommands.cueList(from: project))
-        lastCues = ShowCommands.cueList(from: project)
+        // B284: the current cue and the held values go into the show-state file, written on the feed queue like `touch()`,
+        // not on the cue queue; a burst of GOs writes only the newest
+        cues.onStateChange = { [weak self] current, targets in self?.handOverCueState(current, targets) }
+        let cueList = ShowCommands.cueList(from: project)
+        // B284: a resumed show is back on its cue with the values the cues held, in the same step as the list (so the
+        // runner never reports the empty state in between); nothing fades or follows
+        let resumeCues = resumeShow.flatMap { $0.cue != nil || $0.held != nil ? $0 : nil }
+        cues.replace(list: cueList, resuming: resumeCues.map { ($0.cue, $0.cueNumber, $0.targets) })
+        lastCues = cueList
         self.cues = cues
+        if let resumeCues {
+            // the enter below writes the file: with the state the runner lands on (the same resume on a scratch engine:
+            // the fallback cue, gone owners dropped, raws clamped), not the controller's empty one nor the stored one, so
+            // this write and the runner's report are the same whichever lands last
+            var landed = CueEngine(list: cueList)
+            landed.resume(current: resumeCues.cue, number: resumeCues.cueNumber, targets: resumeCues.targets)
+            let targets = landed.targets
+            showMode.setCue(landed.current?.id, number: landed.current?.number, targets: targets)
+            let values = "\(targets.values.reduce(0) { $0 + $1.count })"
+            let stored = resumeCues.cueNumber.map { "\($0)" } ?? "?"
+            if let cue = landed.current {
+                logger.warning(
+                    cue.id == resumeCues.cue ? "cue position resumed" : "cue position resumed on an earlier cue: the cue is no longer in the cue list",
+                    metadata: ["cue": "\(cue.number)", "name": "\(cue.name)", "stored": "\(stored)", "values": "\(values)"])
+            } else {
+                logger.warning("cue position not resumed: the cue is no longer in the cue list", metadata: ["stored": "\(stored)", "values": "\(values)"])
+            }
+        }
         timecodeClock.onFrame = { [weak self] timecode, _ in self?.cues?.timecode(timecode) }
         ControlCommands.register(on: store, hooks: ControlCommands.Hooks(set: { dmx.setUI($0, $1, raw: $2) }, release: { dmx.releaseUI($0) }, keep: { dmx.keepUI($0) }))
         ShowCommands.register(
@@ -1102,6 +1129,19 @@ public final class Engine: @unchecked Sendable {
                 if d.isDefault { try? entry.set(true, at: "/default") }
                 return entry
             })
+    }
+
+    /// B284, on the cue queue: keeps the newest state and queues one write on the feed queue unless one is pending.
+    private func handOverCueState(_ current: Cue?, _ targets: [UUID: [CueValue]]) {
+        let queued = unsavedCueState.withLock { pending in
+            defer { pending = (current, targets) }
+            return pending != nil
+        }
+        guard !queued else { return }
+        feedQueue.async { [self] in
+            guard let state = unsavedCueState.withLock({ pending in defer { pending = nil }; return pending }) else { return }
+            showMode.setCue(state.current?.id, number: state.current?.number, targets: state.targets)
+        }
     }
 
     private func cueLive() -> JSONValue {
@@ -2034,11 +2074,13 @@ public final class Engine: @unchecked Sendable {
         citp?.stop()
         // Engine › Restart Engine keeps show mode (and the switched display modes) for the next start; every other
         // stop leaves it. Either way no enter after this point.
+        // B284: a GO still queued, and its hand-over to the feed queue, land before the state is kept, not after
+        cues?.stop()
+        feedQueue.sync {}
         let keepShow = showMode.stop(keepingState: restartPendingFile.map { ShowModeState.takeRestartMarker(at: $0) } ?? false)
         ltc?.stop()
         mtc?.stop()
         midi?.stop()
-        cues?.stop()
         if let coordinator, let displayManager {
             MainActor.assumeIsolated {
                 displayManager.stop()

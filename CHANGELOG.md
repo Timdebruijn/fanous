@@ -32,6 +32,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Engine (B346): cues of a hand-written or imported `project.json` without a UUID id get one when the project loads,
   so a project change no longer drops the current cue and the values the cues hold, and `cue.set`/`cue.remove` find
   them; the file has the ids from its next save (PR #403).
+- Engine (B284): when show mode resumes after a crash or Engine › Restart Engine, the cue list is back on the cue
+  that was current with the values the cues held, a running fade at its end and no follow replayed; GO and Back go
+  where they would have gone (PR #398).
 - Engine (B265): decoding a corrupt HAP frame returns an error instead of reading outside the sample (a crash in
   the thumbnailer or on a layer); the vendored `hap.c` checks chunk offsets, sizes and section lengths (PR #392).
 - Release: 1.0.0-rc.14 is on GitHub as a pre-release with the signed, notarized dmg, built from main bcdb5f3
