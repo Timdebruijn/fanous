@@ -14,7 +14,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   tick. The clock's frame turns over 11/24 of a frame before the frame starts (it rounded down), so at matched rates
   (60p on 60 Hz) it no longer repeats and skips about one tick in four, 25p on 50 Hz plays 2-2-2-2 instead of a mix of
   1, 2 and 3, a bounce shows its end frames, a once-then-black clip shows its last frame, and the tick of a trigger
-  shows the first frame. The picture is up to 11/24 of a frame earlier against the sound than before (PR #NNN).
+  shows the first frame. The picture is up to 11/24 of a frame earlier against the sound than before (PR #415).
 
 - Engine (B364): a playing movie layer no longer sits on 2 frames of every 11 (with the 8-frame ring): the decode
   thread went back to the requested frame whenever it was ahead of it, so the ring held two frames in turn; it now
