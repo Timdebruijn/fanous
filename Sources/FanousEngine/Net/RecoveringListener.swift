@@ -54,7 +54,8 @@ final class RecoveringListener: @unchecked Sendable {
 
     func start() throws { try open() }
 
-    /// Cancels the listener and any attempt still to come (from any thread but `queue`'s own synchronous work).
+    /// Cancels the listener and any attempt still to come. From any thread, also from inside `queue` (it only
+    /// dispatches); from then on only `.cancelled` reaches `onState`.
     func stop() {
         queue.async { [self] in
             stopped = true
@@ -77,6 +78,12 @@ final class RecoveringListener: @unchecked Sendable {
     /// The listener's state handler, on `queue`. Tests hand it a `.failed` they cannot cause on a ready listener.
     func stateChanged(_ state: NWListener.State, of listener: NWListener) {
         guard listener === current.withLock({ $0 }) else { return }  // a failed one's own `.cancelled`
+        // a `.ready` queued before the stop (an attempt that ran just before it) must not start a beacon or a Bonjour
+        // registration that nothing cancels any more
+        guard !stopped else {
+            if case .cancelled = state { onState(state, listener) }
+            return
+        }
         switch state {
         case .ready:
             attempts = 0

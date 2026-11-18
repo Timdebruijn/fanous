@@ -94,6 +94,9 @@ again" or "OSC UDP failed; trying again", the engine runs without that
 listener and tries again every 5 s at most, so it listens again within 5 s
 of that program quitting; the readiness items **Art-Net port 6454
 available** and **OSC port 8000 available** warn meanwhile ([known limitations](reference/known-limitations.md#show-mode-and-the-machine)).
+The OSC item covers TCP 8000 too: a program that holds only TCP 8000 (a
+development web server, say) keeps it on a warning while OSC over UDP
+works; "OSC TCP listening" in the log says when TCP is back.
 
 ## The iPad warns about the certificate
 
@@ -162,6 +165,11 @@ The fixtures hold their last values meanwhile, unless the universe's
    reads "not listening: …" on **Art-Net port 6454 available** or **OSC
    port 8000 available**. "… waiting for a usable network" means macOS
    holds the listener until a network is up; it goes on by itself.
+   OSC feedback: a subscribed controller gets feedback again once it sends
+   anything (at the latest its renewal within 60 s); the fixed feedback
+   target (`oscFeedback` in `settings.json`) gets it again only when it sends something itself,
+   so a target that only listens may need Engine › Restart Engine until
+   that is fixed (B352).
 
 Done when the pill turns green.
 
@@ -310,8 +318,11 @@ enable a network MIDI session, then choose it under Device or All sources.
 ## A CITP console does not see Fanous
 
 - System › Network, CITP line: "not running" means the CITP server did not
-  start (the log says "CITP start failed"); otherwise it shows the TCP port,
-  the consoles and the open streams.
+  start (the log says "CITP start failed"), or its listener is down for the
+  moment ("CITP listener failed; trying again"): then consoles already
+  connected stay connected and may keep streaming, although the line hides
+  them until "CITP listening". Otherwise it shows the TCP port, the
+  consoles and the open streams.
 - Same subnet as the console, and multicast must pass the network (managed
   switches: check multicast settings); not with `--no-network`.
 - Firewall: `fanousd` needs outgoing UDP to 224.0.0.180 and 239.224.0.180
@@ -398,7 +409,7 @@ log show --predicate 'subsystem == "org.fanous"' --last 1h
 
 | Line | Means |
 |---|---|
-| "HTTPS listener failed; trying again", "Art-Net listener failed; trying again", "OSC UDP failed; trying again", "OSC TCP failed; trying again" | That listener could not open or stopped working (a port another program holds, the network gone); the engine runs without it and makes it again every 5 s at most, logging the next line only when the outcome changes: "HTTPS listening", "Art-Net listening", "OSC listening" when it is back |
+| "HTTPS listener failed; trying again", "Art-Net listener failed; trying again", "OSC UDP failed; trying again", "OSC TCP failed; trying again" | That listener could not open or stopped working (a port another program holds, the network gone); the engine runs without it and makes it again every 5 s at most, logging the next line only when the outcome changes: "HTTPS listening", "Art-Net listening", "OSC listening" (UDP), "OSC TCP listening" when it is back |
 | "… waiting for a usable network" | macOS holds that listener until a network is up; it listens by itself then |
 | "CITP listener failed; trying again" | The CITP server's port stopped working; the console does not list Fanous until "CITP listening" (a new port, announced by the next beacon) |
 | "sACN port in use; running without sACN" | The readiness item warns too |

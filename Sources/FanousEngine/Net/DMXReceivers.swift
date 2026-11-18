@@ -316,6 +316,8 @@ public final class OSCReceiver: @unchecked Sendable {
                     on: connection, decoder: SLIPDecoder(), from: Self.source(connection) { connection.send(content: Data(SLIPDecoder.encode($0)), completion: .idempotent) })
             }
             return tcp
+        } onState: { [logger, port] state, tcp in
+            if case .ready = state { logger.info("OSC TCP listening", metadata: ["tcp": "\(tcp.port?.rawValue ?? port)"]) }
         }
     }
 

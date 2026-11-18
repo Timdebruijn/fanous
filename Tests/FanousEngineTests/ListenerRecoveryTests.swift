@@ -90,8 +90,8 @@ import Testing
         #expect(answered, "no pong on \(holder.port)")
     }
 
-    /// Failures in a row wait 10, 20, 40, 40 … ms (at least: a timer never fires early) and log one line; a different
-    /// error logs again; a ready listener resets the backoff. `make` counts the attempts.
+    /// Failures in a row wait 10, 20, 40, 40 … ms (at least: a timer never fires early) and log one line; once a listener
+    /// was ready, the next failure logs again, also with the same text. `make` counts the attempts.
     @Test func repeatedFailuresBackOffAndLogOncePerChange() async throws {
         let holder = try Self.holdUDP()
         var held = true
@@ -125,8 +125,12 @@ import Testing
         #expect(await waitUntil { keeper.failure == nil && keeper.listener?.port?.rawValue == holder.port })
         // listening again: the next failure is a change and logs, also with the same error text as before
         let listener = try #require(keeper.listener)
-        queue.sync { keeper.stateChanged(.failed(.posix(.ENETDOWN)), of: listener) }
-        #expect(keeper.failure == "\(NWError.posix(.ENETDOWN)), trying again")
+        // read in the same block: the retry is 10 ms out and clears the failure once its listener is ready
+        let failure = queue.sync {
+            keeper.stateChanged(.failed(.posix(.ENETDOWN)), of: listener)
+            return keeper.failure
+        }
+        #expect(failure == "\(NWError.posix(.ENETDOWN)), trying again")
         #expect(await waitUntil { keeper.failure == nil })
         #expect(failedLines().count == 2, "\(failedLines())")
     }
@@ -156,6 +160,32 @@ import Testing
         #expect(attempts.withLock { $0 } <= 2)  // the first, and one that may have begun before the stop
         #expect(keeper.listener == nil || keeper.listener?.state == .cancelled)
         #expect(await waitUntil { UDPFlowTests.sockets(on: holder.port) == 0 }, "\(UDPFlowTests.sockets(on: holder.port)) sockets on the port after stop")
+    }
+
+    /// A `.ready` that reaches the handler after `stop()` (an attempt that ran just before the stop) is not passed on:
+    /// CITP would start its beacon and HTTPS register `_https._tcp` again with nothing left to cancel them. Only
+    /// `.cancelled` passes. Driven through the handler: the order of a real retry and a stop cannot be forced.
+    @Test func statesAfterStopReachOnlyCancelled() async throws {
+        let picked = try Self.holdUDP()  // a free port, picked by the kernel
+        close(picked.fd)
+        let queue = DispatchQueue(label: "test.listener")
+        let seen = Mutex<[String]>([])
+        let keeper = RecoveringListener(name: "Test listener", queue: queue, logger: testLogger) {
+            let parameters = NWParameters.udp
+            parameters.allowLocalEndpointReuse = true
+            let listener = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: picked.port)!)
+            listener.newConnectionHandler = { $0.cancel() }
+            return listener
+        } onState: { state, _ in
+            seen.withLock { $0.append("\(state)") }
+        }
+        try keeper.start()
+        #expect(await waitUntil { seen.withLock { $0.contains("ready") } })
+        let listener = try #require(keeper.listener)
+        queue.sync { keeper.stop() }  // from inside the queue, as CITP does: it only dispatches
+        queue.sync { keeper.stateChanged(.ready, of: listener) }  // after the stop's block
+        #expect(await waitUntil { seen.withLock { $0.last == "cancelled" } })
+        #expect(seen.withLock { $0.filter { $0 == "ready" }.count } == 1, "\(seen.withLock { $0 })")
     }
 
     /// A subscribed controller across a failure of the OSC UDP listener after it was ready: the old listener's flows,
