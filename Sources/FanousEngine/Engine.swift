@@ -146,8 +146,12 @@ public final class Engine: @unchecked Sendable {
     private var dmxTimer: DispatchSourceTimer?
     private(set) var autosave: DispatchWorkItem?
     /// The file `start` loaded the project from; nil before, so an engine that never started (a test) writes no
-    /// project file (B240). A test sets a temporary one.
+    /// project file (B240). A test sets a temporary one. Also nil when an unreadable file could not be kept aside (B281):
+    /// nothing may be written over it.
     var projectFile: URL?
+    /// B281: the notice of an unreadable project at start, removed when readiness item `project` is acknowledged; nil
+    /// before `start`.
+    private var projectNotice: URL?
     /// The shell's Engine › Restart Engine marker, which `stop` takes; nil before `start`, so a stop of an engine that
     /// never started (a test) removes no marker (B242).
     var restartPendingFile: URL?
@@ -237,7 +241,8 @@ public final class Engine: @unchecked Sendable {
         let versions = ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger)
         let start = versions.startProject(from: AppPaths.projectFile)
         var loadedProject = start.project
-        projectFile = AppPaths.projectFile
+        projectFile = start.saves ? AppPaths.projectFile : nil
+        projectNotice = ProjectVersions.noticeFile(for: AppPaths.projectFile)
         projectProblem.withLock { $0 = start.problem }
         for issue in ProjectDocument.wallEntries(from: loadedProject ?? .null).issues { logger.warning("projector wall skipped", metadata: ["entry": "\(issue)"]) }
         let startCanvas = Self.startCanvas(project: loadedProject, scene: options.scene)
@@ -411,7 +416,7 @@ public final class Engine: @unchecked Sendable {
         // B23: a version of the project as loaded, then one every 10 minutes when it changed, and one per show-mode enter
         versions.registerCommands(on: store, showModeOn: { [weak self] in self?.showMode.isOn ?? false })
         self.versions = versions
-        let startProject = start.problem == nil ? loadedProject : nil  // a version that runs is one already (B281)
+        let startProject = start.fromVersion ? nil : loadedProject  // a version that runs is one already (B281)
         versionsQueue.async {
             if let startProject { versions.saveAutomatic(startProject, reason: .start) } else { _ = versions.list() }
         }
@@ -1289,6 +1294,14 @@ public final class Engine: @unchecked Sendable {
         let blocking = readiness.withLock { ledger in
             ledger.acknowledge(id, on)
             return ledger.items.filter(\.blocks).map(\.id)
+        }
+        // B281: acknowledged for good: the next start no longer reports it; Take back writes the notice again
+        if id == "project", let projectNotice, let problem = projectProblem.withLock({ $0 }) {
+            do {
+                if on {
+                    if FileManager.default.fileExists(atPath: projectNotice.path) { try FileManager.default.removeItem(at: projectNotice) }
+                } else { try Data(problem.utf8).write(to: projectNotice, options: .atomic) }
+            } catch { logger.error("project start notice not changed", metadata: ["error": "\(error)"]) }
         }
         if showMode.isOn {
             let metadata: Logger.Metadata = ["item": "\(id)", "blocking": "\(blocking.isEmpty ? "none" : blocking.joined(separator: ", "))"]

@@ -510,6 +510,15 @@ public enum ProjectDocument {
         return aside
     }
 
+    /// B281: keeps an unreadable file's bytes next to it as `project.json.unreadable-<time>` while it stays in place: a
+    /// hard link (needs no space; the atomic save over the file leaves the link's bytes alone), or a copy where the
+    /// volume cannot link. Throws when neither works, also when that name exists.
+    public static func keepAside(_ url: URL, now: Date = Date()) throws -> URL {
+        let aside = url.appendingPathExtension("unreadable-" + ProjectVersions.stamp(now.timeIntervalSince1970))
+        do { try FileManager.default.linkItem(at: url, to: aside) } catch { try FileManager.default.copyItem(at: url, to: aside) }
+        return aside
+    }
+
     public static func save(_ document: JSONValue, to url: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]

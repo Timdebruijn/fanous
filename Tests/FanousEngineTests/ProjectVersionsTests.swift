@@ -84,10 +84,17 @@ struct ProjectVersionsTests {
         #expect(try Data(contentsOf: aside) == bytes, "the damaged file is kept byte for byte")
         #expect(ProjectDocument.load(from: file) == start.project, "project.json is the version now, so a second restart finds it")
         let problem = try #require(start.problem)
-        #expect(problem.contains("running version \"Show mode\""))
+        #expect(problem.contains("running project \"Doors\" from version \"Show mode\""))
         #expect(problem.contains(aside.lastPathComponent))
         #expect(problem.contains("newer Fanous (schema 2)") == (damage == .newerSchema), "a downgrade is named, not called damage")
+        #expect(start.saves && start.fromVersion)
         #expect(f.versions.list().count == 2, "the fallback writes no version")
+
+        // the notice outlives a restart (project.json reads now) until the item is acknowledged, which removes it
+        let again = f.versions.startProject(from: file)
+        #expect(again.project == start.project && again.problem == problem && !again.fromVersion)
+        try FileManager.default.removeItem(at: ProjectVersions.noticeFile(for: file))
+        #expect(f.versions.startProject(from: file).problem == nil)
     }
 
     @Test func aDamagedNewestVersionFallsBackToTheOneBefore() throws {
@@ -103,7 +110,7 @@ struct ProjectVersionsTests {
 
         let start = f.versions.startProject(from: file)
         #expect(start.project?["name"]?.string == "Doors")
-        #expect(start.problem?.contains("running version \"Periodic\"") == true)
+        #expect(start.problem?.contains("from version \"Periodic\"") == true)
     }
 
     @Test func noUsableVersionStartsANewProjectAsBefore() throws {
@@ -123,6 +130,48 @@ struct ProjectVersionsTests {
         #expect(start.problem?.contains("no version restores") == true)
         #expect(!FileManager.default.fileExists(atPath: file.path), "nothing is written over: the new project's autosave makes the file")
         #expect(try Data(contentsOf: f.base.appending(path: "project.json.unreadable-20261118T112320.000Z")) == Data("{".utf8))
+    }
+
+    /// B281: a full disk lets the link be made but not the save: the damaged file stays `project.json` and the next
+    /// start falls back again.
+    @Test func aVersionThatCannotBeWrittenLeavesTheDamagedFileInPlace() throws {
+        let f = Self.make()
+        let file = f.base.appending(path: "project.json")
+        _ = try f.versions.save(f.store.project, name: "Periodic", automatic: true)
+        try Data("{".utf8).write(to: file)
+        struct DiskFull: Error {}
+
+        let start = f.versions.startProject(from: file, now: Date(timeIntervalSince1970: 1_795_001_000), save: { _, _ in throw DiskFull() })
+        #expect(start.project != nil && start.saves && start.fromVersion)
+        #expect(start.problem?.contains("not written to project.json (DiskFull()), so the next start falls back again") == true)
+        #expect(try Data(contentsOf: file) == Data("{".utf8), "the damaged file is still project.json")
+        #expect(try Data(contentsOf: f.base.appending(path: "project.json.unreadable-20261118T112320.000Z")) == Data("{".utf8))
+
+        let next = f.versions.startProject(from: file, now: Date(timeIntervalSince1970: 1_795_001_100))
+        #expect(next.fromVersion && next.problem?.contains("the file is kept as project.json.unreadable-20261118T112500.000Z") == true)
+        #expect(ProjectDocument.load(from: file) == next.project)
+        #expect(try Data(contentsOf: f.base.appending(path: "project.json.unreadable-20261118T112320.000Z")) == Data("{".utf8), "the save leaves the link's bytes")
+    }
+
+    /// B281: a file that can be neither linked, copied nor moved aside is the only copy: the engine saves no project.
+    @Test func aFileThatCannotBeKeptAsideIsNeverWrittenOver() throws {
+        let f = Self.make()
+        let file = f.base.appending(path: "project.json")
+        _ = try f.versions.save(f.store.project, name: "Periodic", automatic: true)
+        try Data("{".utf8).write(to: file)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: f.base.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: f.base.path) }
+
+        let start = f.versions.startProject(from: file)
+        #expect(start.project != nil && !start.saves)
+        #expect(start.problem?.contains("could not be kept aside") == true)
+        #expect(start.problem?.hasSuffix("changes are not saved, so nothing is written over it") == true)
+        for id in f.versions.list().map(\.id) { try FileManager.default.removeItem(at: f.directory.appending(path: id + ".json")) }
+        let empty = f.versions.startProject(from: file)
+        #expect(empty.project == nil && !empty.saves)
+        #expect(empty.problem?.contains("no version restores and it could not be moved aside") == true)
+        #expect(try Data(contentsOf: file) == Data("{".utf8))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: f.base.path).sorted() == ["project.json", "versions"])
     }
 
     /// B281: the operator sees it on the System screen (and, in show mode, in the status bar) until acknowledged.
