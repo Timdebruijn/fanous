@@ -7,6 +7,7 @@ import CHap
 import CoreVideo
 import Foundation
 import IOSurface
+import Logging
 import Metal
 import VideoToolbox
 
@@ -125,6 +126,10 @@ public final class MovieSource: @unchecked Sendable {
     private let description: CMFormatDescription
     /// ProRes sessions made again after one went invalid (B278); decode thread, tests.
     private(set) var sessionRebuilds = 0
+    /// When a session was last made again: at most one a second, so sessions that keep going invalid are not remade per try.
+    private var lastRebuild: ContinuousClock.Instant?
+    /// Where a session made again is logged; the layer's decoder sets it.
+    var logger: Logger?
     private let asset: AVAsset
     private let track: AVAssetTrack
     private let generator: AVSampleBufferGenerator
@@ -272,14 +277,19 @@ public final class MovieSource: @unchecked Sendable {
             return status != noErr ? status : output.status
         }
         var status = decode(session)
-        // B278: a session that went invalid (sleep and wake, a GPU reset) is made again once, as at open, and the frame
-        // tried again; when it cannot be made the old one stays and the error goes to the decode thread
-        if status == kVTInvalidSessionErr, let fresh = try? Self.makeSession(description, codec: info.codec) {
+        // B278: a session that went invalid (sleep and wake, a GPU reset) is made again, as at open, at most once a second,
+        // and the frame tried again. When it cannot be made the old one stays and the creation error (-12913 busy, -12906
+        // no decoder) is what this frame throws, so the layer's status and the decode log say why.
+        if status == kVTInvalidSessionErr, lastRebuild.map({ $0.duration(to: .now) >= .seconds(1) }) ?? true {
+            lastRebuild = .now
+            let fresh = try Self.makeSession(description, codec: info.codec)
             VTDecompressionSessionInvalidate(session)
             self.session = fresh.0
             softwareDecoder = fresh.1
             surfaceTextures.removeAll()  // the old session's surfaces: their ids may come back for new ones
             sessionRebuilds += 1
+            logger?.warning("decoder session made again", metadata: ["file": "\(url.lastPathComponent)", "after": "\(status)"])
+            if fresh.1 { logger?.warning("software ProRes decoder: the hardware one refused this frame size (B5)", metadata: ["file": "\(url.lastPathComponent)", "size": "\(info.width)x\(info.height)"]) }
             status = decode(fresh.0)
         }
         guard status == noErr, let buffer = output.buffer else { throw MovieError.decoder(status) }

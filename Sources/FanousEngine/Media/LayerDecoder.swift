@@ -34,6 +34,7 @@ public final class LayerDecoder: @unchecked Sendable {
         self.source = source
         self.ring = ring
         self.logger = logger
+        source.logger = logger  // a session made again is logged (B278)
     }
 
     public func start(name: String) {
@@ -97,59 +98,55 @@ public final class LayerDecoder: @unchecked Sendable {
         }
     }
 
-    // B278: the error path. A frame gets `Self.tries` tries (a read that fails once on a slow volume succeeds on the
-    // next), then it is skipped: the ring keeps its last good frame and the thread goes on with the next one. Skipped
-    // frames with no good one between are tried with a pause that grows from 50 ms; a run that lasts `failingAfter` is a
-    // failing file: the layer's status carries the error (B342), and the log gets one line when it starts, a count at
-    // most every `reportEvery` and one line when it recovers. One bad frame on stage (the thread may come back to it
-    // while the clock still shows it) stays one log line and never reaches the status.
+    // B278: the error path. A frame that fails is skipped: the ring keeps its last good frame, the thread pauses
+    // `pauseAfterError` and goes on (with an empty ring it goes on with the requested frame, which may be the same one).
+    // Skipped frames with no good one between, for `failingAfter` of wall time, are a failing file: the layer's status
+    // carries the error (B342) and the log gets `decode failing` once, a count at most every `reportEvery` and
+    // `decode recovered` once. Skips before that are logged at most once per `reportEvery`, with a count.
 
-    /// Tries of one frame before it is skipped.
-    static let tries = 3
-    /// Seconds a run of skipped frames lasts before the layer reads as failing.
+    /// Wall time from the first skipped frame of a run (no good frame between) to the layer reading as failing.
     var failingAfter = 0.5
-    /// The longest pause between skipped frames; it starts at 50 ms and doubles.
-    var longestPause = 1.0
-    /// Seconds between the count lines of a failing file.
+    /// Seconds between two skip lines, and between two count lines of a failing file.
     var reportEvery = 10.0
+    /// The pause after a frame that failed (a stop cuts it short).
+    static let pauseAfterError = 0.015
     /// The layer's status: the error text while frame after frame fails, nil when a frame decodes again. Set by the
-    /// loader before `start`; called on the decode thread.
+    /// loader before `start`; called on the decode thread, on the error path only.
     public var failing: (@Sendable (String?) -> Void)?
     /// Decode thread only.
-    private var tries = 0
-    private var triedFrame = -1
     private var run = 0
     private var runStart = ContinuousClock.now
     private var isFailing = false
-    private var skipped = -1
+    private var skipsUnlogged = 0
+    private var lastSkipLine: ContinuousClock.Instant?
     private var lastReport = ContinuousClock.now
 
     private func failed(_ frame: Int, _ error: any Error) {
-        // counted per frame: between two tries of it the thread may decode the requested frame again
-        if frame != triedFrame { (triedFrame, tries) = (frame, 0) }
-        tries += 1
-        guard tries >= Self.tries else { return pause(0.01) }
-        tries = 0
-        lastProduced = frame  // skipped: the next pass goes on after it
+        lastProduced = frame  // skipped: with frames in the ring the next pass goes on after it
         run += 1
+        let now = ContinuousClock.now
+        if run == 1 { runStart = now }
         let file = source.url.lastPathComponent
-        if run == 1 {
-            runStart = .now
-            // once per bad frame: the thread comes back to it while the request stands, and on every pass of a loop
-            if frame != skipped { logger.error("decode failed, frame skipped", metadata: ["file": "\(file)", "frame": "\(frame)", "error": "\(error)"]) }
-            skipped = frame
-            return
-        }
-        if !isFailing, runStart.duration(to: .now) >= .seconds(failingAfter) {
+        if isFailing {
+            failing?(error.clientText)  // again each time: the loader writes a new layer's status after starting its decoder
+            if lastReport.duration(to: now) >= .seconds(reportEvery) {
+                logger.warning("decode still failing", metadata: ["file": "\(file)", "skipped": "\(run)", "error": "\(error)"])
+                lastReport = now
+            }
+        } else if runStart.duration(to: now) >= .seconds(failingAfter) {
             isFailing = true
-            logger.error("decode failing", metadata: ["file": "\(file)", "frame": "\(frame)", "error": "\(error)"])
-            lastReport = .now
-        } else if isFailing, lastReport.duration(to: .now) >= .seconds(reportEvery) {
-            logger.warning("decode still failing", metadata: ["file": "\(file)", "skipped": "\(run)", "error": "\(error)"])
-            lastReport = .now
+            logger.error("decode failing", metadata: ["file": "\(file)", "frame": "\(frame)", "skipped": "\(run)", "error": "\(error)"])
+            lastReport = now
+            failing?(error.clientText)
+        } else {
+            skipsUnlogged += 1
+            if lastSkipLine.map({ $0.duration(to: now) >= .seconds(reportEvery) }) ?? true {
+                logger.error("decode failed, frame skipped", metadata: ["file": "\(file)", "frame": "\(frame)", "skipped": "\(skipsUnlogged)", "error": "\(error)"])
+                skipsUnlogged = 0
+                lastSkipLine = now
+            }
         }
-        if isFailing { failing?(error.clientText) }  // every time: the loader writes a new layer's status after starting its decoder
-        pause(min(0.05 * Double(1 << min(run - 2, 10)), longestPause))
+        pause(Self.pauseAfterError)
     }
 
     private func recovered(at frame: Int) {
