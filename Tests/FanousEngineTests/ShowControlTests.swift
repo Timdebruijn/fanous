@@ -580,8 +580,8 @@ struct ShowControlTests {
         let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: logger)
         engine.readinessCheck = { _, _ in [ReadinessItem(id: "outputs", title: "", state: .hard, detail: "", fix: "")] }
         #expect(try await offPool { engine.setShowMode(true) } == ["outputs"])
-        engine.acknowledgeReadiness("outputs", true)
-        engine.acknowledgeReadiness("outputs", false)
+        try engine.acknowledgeReadiness("outputs", true)
+        try engine.acknowledgeReadiness("outputs", false)
         #expect(try await offPool { engine.setShowMode(true) } == ["outputs"])
         #expect(!lines.all.withLock { $0 }.contains { $0.hasPrefix("readiness") })
     }
@@ -597,7 +597,7 @@ struct ShowControlTests {
             calls.add(1, ordering: .relaxed)
             return [ReadinessItem(id: "outputs", title: "", state: state.withLock { $0 }, detail: "", fix: "", acknowledged: acknowledged.contains("outputs"))]
         }
-        engine.acknowledgeReadiness("outputs", true)
+        try engine.acknowledgeReadiness("outputs", true)
         #expect(try await offPool { engine.setShowMode(true) } == nil)
         defer { _ = engine.setShowMode(false) }
         try #require(calls.load(ordering: .relaxed) == 1, "the entry ran the checks once")
@@ -1223,7 +1223,7 @@ struct ShowControlTests {
         context.libraryRoot = NSHomeDirectory()
         let items = Readiness.check(context, acknowledged: ["dmx"])
         let ids = items.map(\.id)
-        #expect(ids == ["power", "thermal", "disk", "memory", "dmx", "interfaces", "artnetport", "sacnport", "outputs", "modes", "syncmaster", "syncpackets", "camera", "screen", "microphone", "decoders", "maskimages", "library", "spotlight", "updates", "timemachine", "focus", "displaysleep", "hardware"])
+        #expect(ids == ["project", "power", "thermal", "disk", "memory", "dmx", "interfaces", "artnetport", "sacnport", "outputs", "modes", "syncmaster", "syncpackets", "camera", "screen", "microphone", "decoders", "maskimages", "library", "spotlight", "updates", "timemachine", "focus", "displaysleep", "hardware"])
         let dmx = items.first { $0.id == "dmx" }!
         #expect(dmx.state == .fail && dmx.acknowledged && !dmx.blocks)
         let outputs = items.first { $0.id == "outputs" }!

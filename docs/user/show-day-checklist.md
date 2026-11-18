@@ -114,8 +114,9 @@ on the night, [Troubleshooting](troubleshooting.md).
 
 Show mode runs the checks when it turns on, every 30 seconds while it is
 on, once after a resumed show mode and after a display mode switch in show
-mode; **Run checks** runs them at any time, and nothing else does: after an
-engine start the list is empty until you run it. Each row shows the item,
+mode; **Run checks** runs them at any time. After an engine start the list
+is empty until you run it, unless `project.json` could not be read: then
+the engine runs it once by itself. Each row shows the item,
 what it found, a fix hint when it is not green, and **Acknowledge** or a
 badge. An item that turns red during the show and is not acknowledged shows
 on every screen: the status bar reads "not ready: " and the item's title, in

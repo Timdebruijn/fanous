@@ -112,7 +112,8 @@ public final class Engine: @unchecked Sendable {
     private let showResumed = Mutex<(at: Double, restart: Bool)?>(nil)
     /// The show lock as last written to disk: a change is saved at once, not with the 2 s autosave.
     private let savedShowLock = Mutex<Bool?>(nil)
-    /// Main actor: after a resume the first display sync runs readiness at once instead of after 30 s.
+    /// Main actor: after a resume, or a start that did not read `project.json` (B281), the first display sync runs
+    /// readiness at once instead of after 30 s (or, outside show mode, at Run checks).
     private var readinessOnNextSync = false
     private var lastPolicy: SourcePolicy?
     private var lastUniverseSettings: [UniverseID: UniverseSettings] = [:]
@@ -121,6 +122,10 @@ public final class Engine: @unchecked Sendable {
     private var lastUniverseIssues: [String] = []
     /// Why the sACN port could not be bound at start (readiness); nil while sACN runs.
     private let sacnError = Mutex<String?>(nil)
+    /// B281: why the project did not come from `project.json` at start (readiness item `project`); nil when it did.
+    let projectProblem = Mutex<String?>(nil)
+    /// B281: the problem the operator acknowledged as seen, for Take back.
+    private let projectSeen = Mutex<String?>(nil)
     /// The project's library root as last seen by `projectChanged` (B51).
     private let libraryRootInProject = Mutex<String?>(nil)
     /// `/syphon`, `/capture` and `/screens` as the engine last applied them (B69, B73): a catalog is written back when it differs.
@@ -143,8 +148,12 @@ public final class Engine: @unchecked Sendable {
     private var dmxTimer: DispatchSourceTimer?
     private(set) var autosave: DispatchWorkItem?
     /// The file `start` loaded the project from; nil before, so an engine that never started (a test) writes no
-    /// project file (B240). A test sets a temporary one.
+    /// project file (B240). A test sets a temporary one. Also nil when an unreadable file could not be kept aside (B281):
+    /// nothing may be written over it.
     var projectFile: URL?
+    /// B281: the notice of an unreadable project at start, removed when readiness item `project` is acknowledged; nil
+    /// before `start`.
+    var projectNotice: URL?
     /// The shell's Engine › Restart Engine marker, which `stop` takes; nil before `start`, so a stop of an engine that
     /// never started (a test) removes no marker (B242).
     var restartPendingFile: URL?
@@ -230,18 +239,13 @@ public final class Engine: @unchecked Sendable {
         // The project document comes first: without a scene file (the bundled agent) it is the source of the layer
         // count, canvas, source policy and library root (DESIGN.md §2.4); a scene file (development, bench) wins,
         // and its canvas is mirrored into the project so the UI shows what renders.
-        var loadedProject = ProjectDocument.load(from: AppPaths.projectFile)
-        projectFile = AppPaths.projectFile
-        if loadedProject == nil {
-            // keep an unreadable file (damaged, another schema) before the new project's autosave writes over it
-            do {
-                if let aside = try ProjectDocument.setAside(AppPaths.projectFile) {
-                    logger.error("project file not readable: a new project starts, the file is kept", metadata: ["kept": "\(aside.lastPathComponent)"])
-                }
-            } catch {
-                logger.error("project file not readable and could not be moved aside", metadata: ["error": "\(error)"])
-            }
-        }
+        // B281: an unreadable file is kept and the newest version that restores runs; readiness item `project` says so
+        let versions = ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger)
+        let start = versions.startProject(from: AppPaths.projectFile)
+        var loadedProject = start.project
+        projectFile = start.saves ? AppPaths.projectFile : nil
+        projectNotice = ProjectVersions.noticeFile(for: AppPaths.projectFile)
+        projectProblem.withLock { $0 = start.problem }
         for issue in ProjectDocument.wallEntries(from: loadedProject ?? .null).issues { logger.warning("projector wall skipped", metadata: ["entry": "\(issue)"]) }
         let startCanvas = Self.startCanvas(project: loadedProject, scene: options.scene)
         if options.scene != nil, var project = loadedProject {
@@ -412,10 +416,9 @@ public final class Engine: @unchecked Sendable {
         liveInProject.withLock { $0 = [.syphon: project["syphon"] ?? [:], .capture: project["capture"] ?? [:], .screens: project["screens"] ?? [:]] }
         libraryRootInProject.withLock { $0 = URL(fileURLWithPath: project["library"]?["root"]?.string ?? libraryRoot.path).path }
         // B23: a version of the project as loaded, then one every 10 minutes when it changed, and one per show-mode enter
-        let versions = ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger)
         versions.registerCommands(on: store, showModeOn: { [weak self] in self?.showMode.isOn ?? false })
         self.versions = versions
-        let startProject = loadedProject
+        let startProject = start.fromVersion ? nil : loadedProject  // a version that runs is one already (B281)
         versionsQueue.async {
             if let startProject { versions.saveAutomatic(startProject, reason: .start) } else { _ = versions.list() }
         }
@@ -436,7 +439,7 @@ public final class Engine: @unchecked Sendable {
                 go: { cues.go(); oscFeedback?.invalidate(prefix: "/fanous/cue") }, back: { cues.back(); oscFeedback?.invalidate(prefix: "/fanous/cue") },
                 goto: { cues.goto($0); oscFeedback?.invalidate(prefix: "/fanous/cue") },
                 showMode: { [weak self] on in self?.setShowMode(on) ?? nil },
-                acknowledge: { [weak self] id, on in self?.acknowledgeReadiness(id, on) },
+                acknowledge: { [weak self] id, on in try self?.acknowledgeReadiness(id, on) },
                 runReadiness: { [weak self] in self?.runReadiness() }))
         // MIDI control (B36): cue actions run as commands like OSC's; parameter values go straight to the resolvers
         let midi = MIDIInput(dmx: dmx, logger: logger)
@@ -483,6 +486,7 @@ public final class Engine: @unchecked Sendable {
             readinessOnNextSync = true
             showMode.enter(since: since)
         }
+        if start.problem != nil { readinessOnNextSync = true }  // B281: the `project` item shows without Run checks
         savedShowLock.withLock { $0 = project["showLock"]?.bool ?? false }
         applyTimecodeSettings(ShowCommands.timecodeSettings(from: project))
         store.onProjectChanged = { [weak self] document in self?.projectChanged(document) }
@@ -1196,6 +1200,7 @@ public final class Engine: @unchecked Sendable {
         }
         context.artnetError = artnet?.failure
         context.sacnError = sacnError.withLock { $0 }
+        context.projectProblem = projectProblem.withLock { $0 }
         let statuses = outputStatus.withLock { $0 }
         context.outputsLost = statuses.filter { $0.state == .lost }.map(\.id)
         context.outputsUnassigned = statuses.filter { $0.state == .unassigned }.map(\.id)
@@ -1287,11 +1292,26 @@ public final class Engine: @unchecked Sendable {
     }
 
     /// `readiness.acknowledge` and `.unacknowledge`: in show mode their own line (B185), with the blocking set after it.
-    func acknowledgeReadiness(_ id: String, _ on: Bool) {
+    func acknowledgeReadiness(_ id: String, _ on: Bool) throws {
+        // B281: acknowledging the project item means "seen": the notice goes and the item passes from now on, in this
+        // run and at later starts; Take back restores both. The file first: one that cannot change refuses the command.
+        var seenChanged = false
+        if id == "project", let projectNotice {
+            let problem = projectProblem.withLock { $0 }, seen = projectSeen.withLock { $0 }
+            if let text = on ? problem : (problem == nil ? seen : nil) {
+                do { try ProjectVersions.markNoticeSeen(on, file: projectNotice, text: text) } catch {
+                    throw CommandError("failed", "the project notice \(projectNotice.lastPathComponent) could not be \(on ? "removed" : "written"): \(error)")
+                }
+                projectProblem.withLock { $0 = on ? nil : text }
+                projectSeen.withLock { $0 = on ? text : nil }
+                seenChanged = true
+            }
+        }
         let blocking = readiness.withLock { ledger in
             ledger.acknowledge(id, on)
             return ledger.items.filter(\.blocks).map(\.id)
         }
+        if seenChanged, store != nil { runReadiness() }  // the item turns green (or red again) without Run checks
         if showMode.isOn {
             let metadata: Logger.Metadata = ["item": "\(id)", "blocking": "\(blocking.isEmpty ? "none" : blocking.joined(separator: ", "))"]
             if on { logger.info("readiness acknowledged in show mode", metadata: metadata) } else { logger.warning("readiness acknowledgement taken back in show mode", metadata: metadata) }
@@ -1364,7 +1384,7 @@ public final class Engine: @unchecked Sendable {
             modeSwitcher.restore(connected: displays)
         }
         refreshModeChecks(displays: displays)
-        if readinessOnNextSync, showMode.isOn {
+        if readinessOnNextSync {
             readinessOnNextSync = false
             runReadiness()
         }
