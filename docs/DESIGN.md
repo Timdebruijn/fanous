@@ -336,8 +336,9 @@ display link's `targetTimestamp`:
   out point shows its in point again), so frame k shows from position
   k − 11/24 to k + 13/24. Rounding down would put the clock on a frame boundary
   every tick at matched rates (a trigger starts on a whole frame), and half a
-  frame would do the same at half rates; 11/24 stays 1/24 frame clear of both,
-  and of the thirds, quarters and twelfths of 25p and 50p on 60 Hz. A trigger's
+  frame would do the same at half rates; 11/24 stays 1/24 frame clear of both
+  and of every rate ratio with a denominator dividing 8 or 12 (quarter speed,
+  25p and 50p on 60 Hz), and 0.058 frame clear of 3-2 pulldown. A trigger's
   tick shows the first frame; a once mode ends when the clock's frame passes
   the out point. The compositor picks, from the whole ring, the frame closest
   at-or-before the clock's frame; frames older than that are released to the
