@@ -54,6 +54,9 @@ public struct IngestJob: Codable, Sendable, Identifiable {
     /// B267: how often the engine stopped (crashed, was killed, lost power) while this job ran; nil = never. Absent from the
     /// JSON while nil.
     public var interruptedRuns: Int?
+    /// B267: saved right after the result took its name (the rename to the destination, or in place the replace), before
+    /// the original is moved or deleted; cleared when `done` is saved. A restart takes only such a job as done.
+    var outputWritten: Bool?
 
     public init(
         source: URL, destination: URL, kind: Kind, originalsDirectory: URL? = nil, deleteSource: Bool = false
@@ -119,13 +122,16 @@ public final class IngestQueue: @unchecked Sendable {
                     changed = true
                     continue
                 }
-                // B267: a stop after the output took its name, before `done` was saved: done, and the original goes as
-                // configured if it had not yet (`execute` refuses a destination that exists, so this job wrote it)
-                if !job.inPlace, files.fileExists(atPath: job.destination.path), !files.fileExists(atPath: temporary.path) {
+                // B267: a stop after the result took its name, before `done` was saved: done, and the original goes as
+                // configured if it is still there. Recorded, not inferred from the files: a destination can exist without
+                // this job having written it. A stop before the record was saved runs the job again (it fails on the
+                // existing destination, the source untouched).
+                if job.outputWritten == true {
                     jobs[index].state = .done
                     jobs[index].finishedAt = Date()
+                    jobs[index].outputWritten = nil
                     changed = true
-                    if files.fileExists(atPath: job.source.path) { finishOriginal(of: job) }
+                    if !job.inPlace, files.fileExists(atPath: job.source.path) { finishOriginal(of: job) }
                     continue
                 }
                 try? files.removeItem(at: temporary)  // the half-written output of the crashed run
@@ -275,6 +281,9 @@ public final class IngestQueue: @unchecked Sendable {
         do {
             try execute(job, temporary: temporary, gate: gate)
             outcome = .done
+            mutate { state in  // saved before the original is touched (B267)
+                if let index = state.jobs.firstIndex(where: { $0.id == job.id }) { state.jobs[index].outputWritten = true }
+            }
             if !job.inPlace { finishOriginal(of: job) }
         } catch TranscodeError.cancelled {
             try? FileManager.default.removeItem(at: temporary)
@@ -294,6 +303,7 @@ public final class IngestQueue: @unchecked Sendable {
                 state.jobs[index].state = outcome
                 state.jobs[index].finishedAt = Date()
             }
+            state.jobs[index].outputWritten = nil
         }
     }
 

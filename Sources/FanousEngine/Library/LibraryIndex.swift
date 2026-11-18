@@ -115,6 +115,8 @@ public final class LibraryIndex: @unchecked Sendable {
     private let probeExited = DispatchSemaphore(value: 0)
     private let running = Atomic<Bool>(false)
     private var probeThread: Thread?
+    /// How long `stop()` waits for a probe in flight; shortened by a test only.
+    var joinTimeout: DispatchTimeInterval = .seconds(10)
     private var stream: FSEventStreamRef?
     private let eventQueue = DispatchQueue(label: "org.fanous.library.fsevents", qos: .utility)
     private var rescanPending = false
@@ -191,7 +193,7 @@ public final class LibraryIndex: @unchecked Sendable {
         guard running.exchange(false, ordering: .relaxed) else { return }
         probeWake.signal()
         // B267: a probe still running after the wait is cut off by a stop of our own (exit follows), not a crash: no blame
-        if probeExited.wait(timeout: .now() + .seconds(10)) == .timedOut { try? FileManager.default.removeItem(at: markerFile) }
+        if probeExited.wait(timeout: .now() + joinTimeout) == .timedOut { try? FileManager.default.removeItem(at: markerFile) }
         probeThread = nil  // its block holds the index: a replaced index (B51) must be freed
         if let stream {
             FSEventStreamStop(stream)

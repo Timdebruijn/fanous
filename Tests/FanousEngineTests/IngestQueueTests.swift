@@ -562,10 +562,8 @@ import VideoToolbox
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["002_bad.mov"])
     }
 
-    /// B267: a stop after the output took its name, before `done` was saved, is a finished job, not an interrupted run: done,
-    /// and the original goes to the originals folder as it would have.
-    @Test func outputWrittenBeforeAStopMakesTheJobDone() throws {
-        let directory = try tempDir("fanous-ingest-tests")
+    /// B267: a job saved as running whose source, destination and queue file are as given; returns the queue file.
+    private func runningJob(_ directory: URL, outputWritten: Bool?, interruptedRuns: Int?) throws -> (queue: URL, source: URL, destination: URL, originals: URL) {
         let source = directory.appending(path: "incoming/clip.mov")
         let destination = directory.appending(path: "library/001_Clips/001_clip.mov")
         let originals = directory.appending(path: "library/001_Clips/_originals")
@@ -575,16 +573,41 @@ import VideoToolbox
         }
         var job = IngestJob(source: source, destination: destination, kind: .transcode(codec: .proRes422HQ), originalsDirectory: originals)
         job.state = .running(progress: 1)
-        job.interruptedRuns = 1
+        job.outputWritten = outputWritten
+        job.interruptedRuns = interruptedRuns
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        try encoder.encode([job]).write(to: directory.appending(path: "queue.json"))
+        let queue = directory.appending(path: "queue.json")
+        try encoder.encode([job]).write(to: queue)
+        return (queue, source, destination, originals)
+    }
 
-        #expect(IngestQueue(persistenceURL: directory.appending(path: "queue.json")).jobs.first?.state == .done, "not failed: it finished")
-        #expect(IngestQueue(persistenceURL: directory.appending(path: "queue.json")).jobs.first?.state == .done, "saved as done")
-        #expect(try String(contentsOf: destination, encoding: .utf8) == "the result")
-        #expect(!FileManager.default.fileExists(atPath: source.path))
-        #expect(try String(contentsOf: originals.appending(path: "clip.mov"), encoding: .utf8) == "the original")
+    /// A destination that exists is no proof this job wrote it (another file of that name, copied in before the job got
+    /// to its check): without the record the job is an interrupted run, and its source is not touched.
+    @Test func anExistingDestinationWithoutTheRecordIsNotDone() throws {
+        for runs in [nil, 1] as [Int?] {
+            let (queue, source, destination, originals) = try runningJob(try tempDir("fanous-ingest-tests"), outputWritten: nil, interruptedRuns: runs)
+            let job = try #require(IngestQueue(persistenceURL: queue).jobs.first)
+            #expect(job.state == (runs == nil ? .queued : .failed("the engine stopped twice during this job")))
+            #expect(job.interruptedRuns == (runs ?? 0) + 1)
+            #expect(try String(contentsOf: source, encoding: .utf8) == "the original", "the source stays")
+            #expect(try String(contentsOf: destination, encoding: .utf8) == "the result")
+            #expect(!FileManager.default.fileExists(atPath: originals.path))
+        }
+    }
+
+    /// With the record (saved after the result took its name, before the original was touched) the job is done, the original
+    /// goes as configured, and the stop is not counted.
+    @Test func aRecordedOutputMakesTheJobDone() throws {
+        for runs in [nil, 1] as [Int?] {
+            let (queue, source, destination, originals) = try runningJob(try tempDir("fanous-ingest-tests"), outputWritten: true, interruptedRuns: runs)
+            let job = try #require(IngestQueue(persistenceURL: queue).jobs.first)
+            #expect(job.state == .done && job.interruptedRuns == runs && job.outputWritten == nil)
+            #expect(IngestQueue(persistenceURL: queue).jobs.first?.state == .done, "saved as done")
+            #expect(try String(contentsOf: destination, encoding: .utf8) == "the result")
+            #expect(!FileManager.default.fileExists(atPath: source.path))
+            #expect(try String(contentsOf: originals.appending(path: "clip.mov"), encoding: .utf8) == "the original")
+        }
     }
 
     /// B169: a crash between the two renames of an in-place job leaves the original in `_originals/` and the finished result

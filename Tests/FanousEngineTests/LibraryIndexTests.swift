@@ -398,10 +398,11 @@ struct LibraryIndexTests {
         #expect(seen.stops.withLock { $0 } == [1, 0])
     }
 
-    /// A stop of our own that cuts a slow probe off (the join gives up after 10 s, then the process exits) blames no one.
+    /// A stop of our own that cuts a slow probe off (the join gives up, 10 s in production, then the process exits) blames no one.
     @Test func aStopThatCutsAProbeOffRemovesTheMarker() async throws {
         let (root, cache, first, _) = try twoStills()
         let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.joinTimeout = .milliseconds(100)
         let release = DispatchSemaphore(value: 0)
         defer { release.signal() }
         index.thumbnailer = { url, _, _ in
@@ -410,7 +411,7 @@ struct LibraryIndexTests {
         }
         index.start()
         #expect(await waitUntil(every: .milliseconds(20)) { FileManager.default.fileExists(atPath: index.markerFile.path) })
-        try await offPool { index.stop() }  // waits the full 10 s: the probe is held
+        try await offPool { index.stop() }  // gives up after 100 ms: the probe is held
         #expect(!FileManager.default.fileExists(atPath: index.markerFile.path))
     }
 
