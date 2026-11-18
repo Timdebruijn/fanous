@@ -18,6 +18,8 @@ enum Benchmark {
         var missed: Int
         var late: Int
         var textureMisses: Int
+        /// Movie pictures drawn with a frame other than their clock's over the window (B371); nil in reports made before it.
+        var staleFrames: Int?
         var cpuP50: Double, cpuP99: Double, cpuMax: Double
         var gpuP50: Double, gpuP99: Double, gpuMax: Double
         /// Allocations on the compositor thread over the window (§4.6, `MallocCounter`); nil: no `malloc_logger`, or
@@ -143,7 +145,7 @@ enum Benchmark {
                 for count in counts {
                     let step = try await measure(layers: count, seconds: window, file: file, width: width, height: height, fps: fps, display: useDisplay, ringCapacity: ringCapacity, context: context, metrics: metrics, parameters: parameters, logger: logger)
                     result.steps.append(step)
-                    print("layers \(count): \(step.passed ? "PASS" : "FAIL")  frames \(step.frames) missed \(step.missed) late \(step.late) textureMisses \(step.textureMisses)  cpu p99 \(String(format: "%.2f", step.cpuP99)) ms  gpu p99 \(String(format: "%.2f", step.gpuP99)) ms  compositor mallocs \(step.mallocsPerTick)" + (step.dmxSamples > 0 ? String(format: "  dmx→photon p50 %.1f p99 %.1f ms (n=%d)", step.dmxToPhotonP50, step.dmxToPhotonP99, step.dmxSamples) : ""))
+                    print("layers \(count): \(step.passed ? "PASS" : "FAIL")  frames \(step.frames) missed \(step.missed) late \(step.late) textureMisses \(step.textureMisses) staleFrames \(step.staleFrames ?? 0)  cpu p99 \(String(format: "%.2f", step.cpuP99)) ms  gpu p99 \(String(format: "%.2f", step.gpuP99)) ms  compositor mallocs \(step.mallocsPerTick)" + (step.dmxSamples > 0 ? String(format: "  dmx→photon p50 %.1f p99 %.1f ms (n=%d)", step.dmxToPhotonP50, step.dmxToPhotonP99, step.dmxSamples) : ""))
                     if step.audioCorrections > 0 || step.audioMaxDriftMillis > 0 { print(String(format: "  audio: underruns %d corrections %d max drift %.1f ms", step.audioUnderruns, step.audioCorrections, step.audioMaxDriftMillis)) }
                     if step.passed { result.maxLayers = count } else { break }
                 }
@@ -151,7 +153,7 @@ enum Benchmark {
                     print("soak: \(result.maxLayers) layers for \(Int(soak)) s")
                     let step = try await measure(layers: result.maxLayers, seconds: soak, file: file, width: width, height: height, fps: fps, display: useDisplay, ringCapacity: ringCapacity, context: context, metrics: metrics, parameters: parameters, logger: logger)
                     result.soakStep = step
-                    print("soak: \(step.passed ? "PASS" : "FAIL")  missed \(step.missed) late \(step.late)")
+                    print("soak: \(step.passed ? "PASS" : "FAIL")  missed \(step.missed) late \(step.late) stale \(step.staleFrames ?? 0)")
                 }
                 try write(result, to: outputDirectory)
             } catch {
@@ -228,12 +230,12 @@ enum Benchmark {
         service.stop()
         try await Task.sleep(for: .milliseconds(300))
         return Step(
-            layers: layers, frames: summary.frames, missed: summary.missed, late: summary.late, textureMisses: summary.textureMisses,
+            layers: layers, frames: summary.frames, missed: summary.missed, late: summary.late, textureMisses: summary.textureMisses, staleFrames: summary.staleFrames,
             cpuP50: summary.cpuP50, cpuP99: summary.cpuP99, cpuMax: summary.cpuMax, gpuP50: summary.gpuP50, gpuP99: summary.gpuP99,
             gpuMax: summary.gpuMax, compositorMallocs: compositorMallocs,
             dmxToPhotonP50: summary.dmxP50, dmxToPhotonP99: summary.dmxP99, dmxSamples: summary.dmxSamples,
             audioUnderruns: Int(audio.underruns), audioCorrections: Int(audio.corrections), audioMaxDriftMillis: audio.maxDriftMillis,
-            passed: summary.missed == 0 && summary.late == 0 && summary.textureMisses == 0 && summary.frames > 0)
+            passed: summary.missed == 0 && summary.late == 0 && summary.textureMisses == 0 && summary.staleFrames == 0 && summary.frames > 0)
     }
 
     static func write(_ result: Result, to directory: URL) throws {
@@ -248,19 +250,19 @@ enum Benchmark {
         var md = "# Benchmark: \(result.chip), \(result.media)\n\n"
         md += "- Date: \(result.date)\n- Machine: \(result.chip), \(result.gpu), \(result.memoryGB) GB, \(result.os)\n"
         md += "- Canvas \(result.width)×\(result.height) @ \(result.fps) fps, output: \(result.display.map { "display \($0)" } ?? "headless"), frame latency \(result.frameLatency), ring \(result.ringCapacity) frames/layer\n"
-        md += "- Window per step: \(result.windowSeconds) s (after 2 s warm-up); pass = 0 missed, 0 late, 0 texture misses\n"
+        md += "- Window per step: \(result.windowSeconds) s (after 2 s warm-up); pass = 0 missed, 0 late, 0 texture misses, 0 stale frames\n"
         if !variant.isEmpty { md += "- Variant: \(variant.dropFirst())\n" }
         md += "\n"
         md += "**Max layers without drops: \(result.maxLayers)**\n\n"
-        md += "| Layers | Frames | Missed | Late | Texture misses | CPU p50/p99/max ms | GPU p50/p99/max ms | Compositor mallocs | Result |\n|---|---|---|---|---|---|---|---|---|\n"
+        md += "| Layers | Frames | Missed | Late | Texture misses | Stale frames | CPU p50/p99/max ms | GPU p50/p99/max ms | Compositor mallocs | Result |\n|---|---|---|---|---|---|---|---|---|---|\n"
         for s in result.steps {
-            md += String(format: "| %d | %d | %d | %d | %d | %.2f / %.2f / %.2f | %.2f / %.2f / %.2f | %@ | %@ |\n", s.layers, s.frames, s.missed, s.late, s.textureMisses, s.cpuP50, s.cpuP99, s.cpuMax, s.gpuP50, s.gpuP99, s.gpuMax, s.mallocsPerTick, s.passed ? "pass" : "fail")
+            md += String(format: "| %d | %d | %d | %d | %d | %d | %.2f / %.2f / %.2f | %.2f / %.2f / %.2f | %@ | %@ |\n", s.layers, s.frames, s.missed, s.late, s.textureMisses, s.staleFrames ?? 0, s.cpuP50, s.cpuP99, s.cpuMax, s.gpuP50, s.gpuP99, s.gpuMax, s.mallocsPerTick, s.passed ? "pass" : "fail")
         }
         if let dmx = result.steps.last, dmx.dmxSamples > 0 {
             md += String(format: "\nDMX→photon estimate (Art-Net receive → target presentation time): p50 %.1f ms, p99 %.1f ms over %d DMX frames\n", dmx.dmxToPhotonP50, dmx.dmxToPhotonP99, dmx.dmxSamples)
         }
         if let soak = result.soakStep {
-            md += String(format: "\nSoak at %d layers for %.0f s: %@ (missed %d, late %d, texture misses %d)\n", soak.layers, result.soakSeconds, soak.passed ? "pass" : "fail", soak.missed, soak.late, soak.textureMisses)
+            md += String(format: "\nSoak at %d layers for %.0f s: %@ (missed %d, late %d, texture misses %d, stale frames %d)\n", soak.layers, result.soakSeconds, soak.passed ? "pass" : "fail", soak.missed, soak.late, soak.textureMisses, soak.staleFrames ?? 0)
         }
         if let last = result.steps.last, last.audioMaxDriftMillis > 0 || last.audioCorrections > 0 {
             md += String(format: "\nAudio (last step): underruns %d, drift corrections %d, max drift %.1f ms\n", last.audioUnderruns, last.audioCorrections, last.audioMaxDriftMillis)

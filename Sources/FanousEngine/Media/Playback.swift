@@ -345,6 +345,9 @@ public final class RenderLayer: @unchecked Sendable {
     /// Set by the loader; the compositor takes it with `withLockIfAvailable` (never blocks).
     let pendingScratch = Mutex(PendingScratch())
     var retireLater: [LayerPlayback] = []
+    /// Since start: ticks on which this layer's movie was drawn with a frame other than its clock's, one per playback
+    /// (a dissolve's two pictures count apart) (B371). Written by the compositor, read by `/metrics`.
+    public let staleFrames = Atomic<Int>(0)
 
     public init(index: Int) {
         self.index = index

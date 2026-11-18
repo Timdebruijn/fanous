@@ -563,7 +563,7 @@ engine; the role is open again. The certificate is reset with
 
 - Monitor without a login: `https://<mac>:8443/healthz` (status, version,
   uptime; an uptime that reset is a restart), `/metrics` (frames, missed,
-  late, show mode, clients) and `/api/live` (per universe `active` and the
+  late, stale frames per layer, show mode, clients) and `/api/live` (per universe `active` and the
   age of the last packet); use `curl -k -m 8`. Readiness, the show lock and
   timecode are on the WebSocket only. These addresses need no password, so
   reach them from a management network only.

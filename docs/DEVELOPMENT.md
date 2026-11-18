@@ -289,7 +289,8 @@ A "Handle flow" line for the engine's pid means the flow reached the
 application firewall; in the run above that happened only after the delay.
 
 `/api/metrics` reports frame timing, the DMX-to-photon estimate and audio
-drift; `fanous-bench run` ramps layers until a frame drops (`--effects
+drift; `fanous-bench run` ramps layers until a frame drops or a layer shows a stale
+frame (`--effects
 blur,edge`, `--dissolve 2`, `--ingest FILE` for the Phase 3/4 variants) and
 `scripts/bench.sh sweep|phase3|drift` runs the matrices.
 

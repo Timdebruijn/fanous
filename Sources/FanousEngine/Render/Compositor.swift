@@ -435,6 +435,7 @@ public final class Compositor: @unchecked Sendable {
             let retrigger = p.retrigger && !layer.retriggerLatched
             layer.retriggerLatched = p.retrigger
             syncStatus = LayerSyncStatus(role: p.sync)
+            let staleBefore = frame.stale
             if let outgoing = layer.outgoing {
                 // normal: the old picture stays underneath while the new fades in; other modes (and a fade to
                 // no media at all) crossfade the weights
@@ -445,6 +446,7 @@ public final class Compositor: @unchecked Sendable {
                 prepare(current, p, weight: progress, retrigger: retrigger, slot: layer.index * 2, canvas: canvas, in: &frame)
                 if case .master(let group) = p.sync { publishMaster(current, p, group: group, layer: layer.index, in: frame) }
             }
+            if frame.stale != staleBefore { layer.staleFrames.wrappingAdd(Int(frame.stale - staleBefore), ordering: .relaxed) }
             if syncStatus != layer.syncStatusWritten {  // a layer with Sync off costs no lock
                 let status = syncStatus
                 if layer.syncStatus.withLockIfAvailable({ $0 = status }) != nil { layer.syncStatusWritten = status }
@@ -478,6 +480,7 @@ public final class Compositor: @unchecked Sendable {
             idleTicks.wrappingAdd(1, ordering: .relaxed)
             record.idle = true
             record.textureMisses = frame.misses
+            record.staleFrames = frame.stale
             record.cpuMicros = Self.micros(CACurrentMediaTime() - cpuStart)
             _ = metrics.write(record)
             return
@@ -569,6 +572,7 @@ public final class Compositor: @unchecked Sendable {
         }
 
         record.textureMisses = frame.misses
+        record.staleFrames = frame.stale
         record.cpuMicros = Self.micros(CACurrentMediaTime() - cpuStart)
         let slot = metrics.write(record)
         commandBuffer.commit()
@@ -610,6 +614,8 @@ public final class Compositor: @unchecked Sendable {
         /// Host time at the start of the tick: the age of sync entries is taken against it.
         let now: Double
         var misses: UInt16 = 0
+        /// Movie pictures queued with a frame other than the clock's (B371); see `prepare`.
+        var stale: UInt16 = 0
         /// Something on the canvas changes without its frame or the parameters changing (live texture, strobe).
         var dynamic = false
     }
@@ -792,6 +798,9 @@ public final class Compositor: @unchecked Sendable {
             ctx.misses += 1
             return
         }
+        // stale (B371): a movie drawn with a frame other than the clock's (a ring still refilling after a start, seek or
+        // turn, a decoder behind the clock, a held frame). Stills and live inputs have no clock frame; a miss is counted above
+        if playback.ring != nil, frame.frameIndex != frameIndex { ctx.stale += 1 }
         // a live source changes every tick, except a static generator (drawn once) and the clock between its seconds: those
         // let the canvas be reused like a still (B56); `encodeGenerators` makes the same call when it draws
         let changing = if let g = playback.live as? GeneratorSource { !g.isStatic && (g.kind != 112 || g.drawnSecond != Int(time(nil))) } else { playback.live != nil }
