@@ -18,7 +18,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   old "Cannot Open" no longer stays; playable files keep their cache hit and thumbnail (PR #385).
 - Tests (B260): `scripts/test.sh` runs the suite in a fresh temporary `FANOUS_HOME`, so no test engine can write the real install's files (PR #386).
 - Fix (B262): `timecode.set` refuses a `layerOffsets` key that is not a layer number as written (`01`, `+1`), and a project that already
-  holds two keys for one layer no longer crashes the engine at every start: the canonical key wins (PR #N).
+  holds two keys for one layer no longer crashes the engine at every start: the canonical key wins (PR #389).
 
 ## 1.0.0-rc.14 — 2026-11-17
 
