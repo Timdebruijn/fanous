@@ -98,14 +98,19 @@ the engine runs without that listener; for Art-Net the readiness item
 The engine limits what one device holds and closes connections that went
 silent ([the limits](reference/files-and-ports.md)). What the log says:
 
-- "HTTPS connection refused: too many open from one address" with the
-  device's address (`peer`): that device already holds 32 connections to the
-  engine, and the next one is closed at once; the device shows the UI as
-  unreachable or a page that does not load. At most one such line a minute;
-  `refused` counts the connections closed since the last line. Usually a
-  browser with very many tabs of the UI, or a script; close tabs, or reload
-  the page. Devices behind one address (a router doing NAT, a VPN) count
-  together. The app window on the Mac is never refused.
+- "HTTPS connection refused: too many open from one address": an address
+  already holds 64 connections to the engine, and the next one is closed at
+  once. At most one such line a minute: `peer` is the address refused as the
+  line was written, `refused` counts the connections closed since the last
+  line from every address; `/metrics` has the total under
+  `refusedConnections`. On the refused device a page that is not open yet
+  shows the browser's own error page ("can't connect" or similar); an open UI
+  reads "Engine unreachable: …; retrying" and comes back by itself, usually
+  within about 30 s, as idle connections close. All devices behind one
+  address count together: a travel router doing NAT, a VPN, or a reverse
+  proxy on another computer that every user reaches the engine through.
+  Otherwise it is a browser with very many tabs of the UI, or a script: close
+  tabs. The app window on the Mac is never refused.
 - "WebSocket closed: client silent": a device sent nothing, not even the
   answer to the engine's ping, for 45 s: it went to sleep, out of Wi-Fi
   range, or its battery died. Its UI shows "Connection lost" when it wakes
@@ -113,9 +118,12 @@ silent ([the limits](reference/files-and-ports.md)). What the log says:
   connected and did not log in within 10 s.
 - "CITP connection refused: too many open from one address": a console
   holds 8 CITP connections already. "CITP client closed: stalled": a console
-  stopped reading what the engine sends, or left half a message, for 30 s
-  (a console that died without closing is closed this way within about two
-  minutes); it connects again by itself when it is back.
+  stopped reading what the engine sends, or left half a message, for 30 s;
+  it connects again by itself when it is back. A console that died without
+  closing is found this way only once the engine's sends to it stop being
+  taken, after the network's buffers have filled with the 4 Hz layer status:
+  98 s in a test on this Mac (loopback, 32 layers), many minutes with one or
+  two layers; not measured on a real network.
 
 ## The iPad warns about the certificate
 

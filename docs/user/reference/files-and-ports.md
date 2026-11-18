@@ -97,13 +97,13 @@ Connection limits on TCP 8443 and the CITP port (B269):
 
 | Limit | 8443 (web UI) | CITP |
 |---|---|---|
-| Open connections per device (per IP address) | 32; this Mac (127.0.0.1) is not counted, so the app window and `/healthz` are never refused | 8 |
-| A request that stops arriving, a connection idle between requests, or a response the device stops taking | closed after 30 s | a console that holds half a message, or stops taking what is sent to it, is closed after 30 s |
+| Open connections per IP address | 64; this Mac (127.0.0.1) is not counted, so the app window and `/healthz` are never refused | 8 |
+| A request that stops arriving, a connection idle between requests, or a response the device stops taking (counted while the engine waits on the device, not while it works) | closed after 30 s | a console that holds half a message, or stops taking what is sent to it, is closed after 30 s |
 | A WebSocket | `hello` within 10 s of connecting; then the engine pings every 15 s and closes a socket that sent nothing, not even the answer, for 45 s | — |
 
 A browser answers the pings by itself, so a UI left open on a screen nobody
-touches stays connected. A connection past the limit is closed at once and
-the log says so (see [troubleshooting](../troubleshooting.md#an-ipad-or-browser-is-refused-or-dropped)).
+touches stays connected. A connection past the limit is closed at once, the
+log says so and `/metrics` counts it under `refusedConnections` (see [troubleshooting](../troubleshooting.md#an-ipad-or-browser-is-refused-or-dropped)).
 
 ## The engine on the command line
 

@@ -45,6 +45,8 @@ public final class CITPServer: @unchecked Sendable {
         public var streams: Int
         /// PLoc datagrams dropped because the socket could not take them at once (B123).
         public var beaconsDropped = 0
+        /// Connections refused at the cap per address since start (B269).
+        public var refused = 0
     }
 
     public static let productName = "Fanous"
@@ -74,6 +76,7 @@ public final class CITPServer: @unchecked Sendable {
     var stallLimit = 30.0
     private var refused = 0
     private var lastRefusalLog = -Double.infinity
+    private var lastStallCheck = 0.0
     public let status = Mutex(Status(port: 0, clients: [], streams: 0))
     /// Set while any client streams the canvas, so the preview encoder produces JPEGs.
     public let wantsFrames = Atomic<Bool>(false)
@@ -216,9 +219,13 @@ public final class CITPServer: @unchecked Sendable {
     private func refuse(_ connection: NWConnection, from host: String) {
         connection.cancel()
         refused += 1
+        status.withLock { $0.refused += 1 }
         let now = ProcessInfo.processInfo.systemUptime
         guard now - lastRefusalLog >= 60 else { return }
-        logger.warning("CITP connection refused: too many open from one address", metadata: ["peer": "\(host)", "limit": "\(perAddress)", "refused": "\(refused)"])
+        // `peer` is the address refused as the line is written; `refused` counts every address since the last line
+        logger.warning(
+            "CITP connection refused: too many open from one address (one line a minute, refused counts every address)",
+            metadata: ["peer": "\(host)", "limit": "\(perAddress)", "refused": "\(refused)"])
         lastRefusalLog = now
         refused = 0
     }
@@ -228,6 +235,10 @@ public final class CITPServer: @unchecked Sendable {
     /// A console that is merely quiet takes the layer status and stays.
     private func closeStalledSessions() {
         let now = ProcessInfo.processInfo.systemUptime
+        // a tick that comes late found this queue busy (a slow provider): the receives and send completions that queued
+        // behind it have not run yet, so judge nothing this round
+        defer { lastStallCheck = now }
+        guard now - lastStallCheck < 1 else { return }
         for session in connections.values where session.stalled(now: now, limit: stallLimit) {
             logger.info("CITP client closed: stalled", metadata: ["peer": "\(session.label)"])
             session.connection.cancel()
@@ -391,9 +402,9 @@ public final class CITPServer: @unchecked Sendable {
         /// How long a console has to send CInf before it is taken for MSEX 1.0 (B78).
         static let fallbackDelay = 2.0
         private var fallback: DispatchWorkItem?
-        /// Uptime of the last bytes received; sends the transport has not taken yet, and the uptime of the last one it
+        /// Uptime of the last time a receive was armed; sends the transport has not taken yet, and the uptime of the last one it
         /// took (or of the first send while none was pending).
-        private var lastReceived = ProcessInfo.processInfo.systemUptime
+        private var lastReceived = 0.0
         private var pendingSends = 0
         private var sendProgress = 0.0
 
@@ -425,11 +436,9 @@ public final class CITPServer: @unchecked Sendable {
         }
 
         private func receive() {
+            lastReceived = ProcessInfo.processInfo.systemUptime  // armed: the stall counts only time the server waits to read
             connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [self] data, _, isComplete, error in
-                if let data, !data.isEmpty {
-                    buffer.append(contentsOf: data)
-                    lastReceived = ProcessInfo.processInfo.systemUptime
-                }
+                if let data { buffer.append(contentsOf: data) }
                 process()
                 if isComplete || error != nil { return connection.cancel() }
                 receive()

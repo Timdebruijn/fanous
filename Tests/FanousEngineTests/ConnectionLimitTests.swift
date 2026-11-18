@@ -11,8 +11,9 @@ import Testing
 
 @testable import FanousEngine
 
-/// Connection caps and deadlines of the HTTPS and CITP servers (B269), over loopback with the limits shortened to
-/// fractions of a second.
+/// Connection caps and deadlines of the HTTPS and CITP servers (B269), over loopback with the limits shortened. A check
+/// that a connection is closed uses a deadline of a fraction of a second and waits for the close; a check that one
+/// stays uses a deadline with about 2 s of margin (a hosted CI runner starves a test for hundreds of milliseconds).
 @Suite(.cleansTempFiles) struct ConnectionLimitTests {
     static let short = HTTPSServer.Limits(request: 0.3, hello: 0.3, ping: 0.05, silent: 0.3, tick: 0.02)
 
@@ -45,6 +46,18 @@ import Testing
         }
     }
 
+    /// One receive, blocking (for a test body run through `offPool`); nil once the connection ended.
+    static func receiveBlocking(_ connection: NWConnection, maximum: Int) -> Data? {
+        let result = Mutex<Data?>(nil)
+        let done = DispatchSemaphore(value: 0)
+        connection.receive(minimumIncompleteLength: 1, maximumLength: maximum) { data, _, isComplete, error in
+            result.withLock { $0 = isComplete || error != nil ? nil : data }
+            done.signal()
+        }
+        done.wait()
+        return result.withLock { $0 }
+    }
+
     static func server(limits: HTTPSServer.Limits = short, logger: Logger = testLogger, route: @escaping HTTPSServer.Route = { _ in .text(200, "ok") }) throws -> HTTPSServer {
         let server = try HTTPSServer(port: 0, identity: try StateServerTests.makeIdentity(), webRoot: URL(fileURLWithPath: "/nonexistent"), logger: logger, route: route)
         server.limits = limits
@@ -60,6 +73,23 @@ import Testing
         connection.start(queue: .global())
         return connection
     }
+
+    static func uploadServer(limits: HTTPSServer.Limits, logger: Logger = testLogger, sinkDelay: Double = 0) throws -> (HTTPSServer, URL) {
+        let dir = try tempDir("upload")
+        let server = try Self.server(limits: limits, logger: logger) { _ in nil }
+        let files = Mutex(0)
+        server.uploadSink = { _ in
+            if sinkDelay > 0 { Thread.sleep(forTimeInterval: sinkDelay) }  // on the connection's queue, as a slow disk would be
+            let file = dir.appending(path: "upload-\(files.withLock { $0 += 1; return $0 }).bin")
+            return FileManager.default.createFile(atPath: file.path, contents: nil) ? file : nil
+        }
+        server.uploadRoute = { _, file in .text(202, "stored \((try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int ?? -1)") }
+        return (server, dir)
+    }
+
+    static let uploadSize = HTTPSServer.maxInlineBody + 1 << 20  // 2 MiB
+    static let uploadHead = Data("PUT /api/upload/1/clip.mov HTTP/1.1\r\nHost: x\r\nContent-Length: \(uploadSize)\r\n\r\n".utf8)
+    static let stored = Data(HTTPResponse.text(202, "stored \(uploadSize)").serialized())
 
     // MARK: HTTPS deadlines
 
@@ -80,68 +110,93 @@ import Testing
         #expect(watches.allSatisfy { $0.received.withLock { $0.isEmpty } }, "closed without an answer")
     }
 
-    /// An upload that stops halfway is closed, and its partial file removed; one that keeps sending, slower than the whole
-    /// deadline allows for the body, is not cut: the deadline is per chunk.
-    @Test(.timeLimit(.minutes(1))) func anUploadIsCutOnlyWhenItStops() async throws {
-        let dir = try tempDir("upload")
-        let server = try Self.server { _ in nil }
-        let files = Mutex(0)
-        server.uploadSink = { _ in
-            let file = dir.appending(path: "upload-\(files.withLock { $0 += 1; return $0 }).bin")
-            return FileManager.default.createFile(atPath: file.path, contents: nil) ? file : nil
-        }
-        server.uploadRoute = { _, file in .text(202, "stored \((try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int ?? -1)") }
+    /// An upload that stops halfway is closed, its partial file removed, and the log says the deadline cut it (a
+    /// warning), not that the client abandoned it.
+    @Test func aStalledUploadIsCutAndSaysSo() async throws {
+        let lines = HTTPSServerLogTests.Lines()
+        let (server, dir) = try Self.uploadServer(limits: Self.short, logger: Logger(label: "test") { _ in HTTPSServerLogTests.Capture(lines: lines) })
         defer { server.stop() }
-        let size = HTTPSServer.maxInlineBody + 1 << 20  // 2 MiB
-        let head = Data("PUT /api/upload/1/clip.mov HTTP/1.1\r\nHost: x\r\nContent-Length: \(size)\r\n\r\n".utf8)
-
         let stalled = try await HTTPSPipeliningTests.start(server)
         defer { stalled.cancel() }
-        stalled.send(content: head + Data(count: size / 2), completion: .idempotent)
-        let stalledWatch = Self.watch(stalled)
-        #expect(await waitUntil(.seconds(5)) { stalledWatch.hasEnded })
+        stalled.send(content: Self.uploadHead + Data(count: Self.uploadSize / 2), completion: .idempotent)
+        let watch = Self.watch(stalled)
+        #expect(await waitUntil(.seconds(5)) { watch.hasEnded })
         #expect(await waitUntil { (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?.isEmpty == true }, "partial upload removed")
-
-        // 32 chunks of 64 KiB, one every 50 ms: about 1.6 s for the body, five times the 0.3 s deadline
-        let steady = try Self.connect(server)
-        defer { steady.cancel() }
-        let steadyWatch = Self.watch(steady)
-        steady.send(content: head, completion: .idempotent)
-        for _ in 0..<(size / 65_536) {
-            try await Task.sleep(for: .milliseconds(50))
-            steady.send(content: Data(count: 65_536), completion: .idempotent)
-        }
-        #expect(await waitUntil(.seconds(5)) { steadyWatch.received.withLock { $0 } == Data(HTTPResponse.text(202, "stored \(size)").serialized()) })
+        #expect(await waitUntil { lines.all.withLock { $0 }.contains { $0.hasPrefix("upload cut: no data from the client; partial file removed") } })
+        #expect(!lines.all.withLock { $0 }.contains { $0.contains("abandoned") })
     }
 
-    /// A client that asks for a large response and does not read is closed once the transport stops taking slices (before
-    /// B269 the rest of the response stayed queued for ever, PR #397); one that reads slowly gets all of it.
-    @Test(.timeLimit(.minutes(1))) func aResponseIsCutOnlyWhenTheClientStopsTakingIt() async throws {
+    /// An upload that keeps sending, for longer than the deadline in all, is not cut: the deadline is per chunk.
+    /// Deadline 2 s; the body is paced from a thread of its own at 64 KiB every 80 ms (about 2.6 s): a 2 s stall of
+    /// the sender or the server would be needed to cut it.
+    @Test(.timeLimit(.minutes(1))) func anUploadThatKeepsSendingIsNotCut() async throws {
+        var limits = Self.short
+        limits.request = 2
+        let (server, _) = try Self.uploadServer(limits: limits)
+        defer { server.stop() }
+        let steady = try await HTTPSPipeliningTests.start(server)
+        defer { steady.cancel() }
+        let watch = Self.watch(steady)
+        steady.send(content: Self.uploadHead, completion: .idempotent)
+        try await offPool {
+            for _ in 0..<(Self.uploadSize / 65_536) {
+                Thread.sleep(forTimeInterval: 0.08)
+                steady.send(content: Data(count: 65_536), completion: .idempotent)
+            }
+        }
+        #expect(await waitUntil(.seconds(10)) { watch.received.withLock { $0 } == Self.stored })
+    }
+
+    /// Time the server spends on its own work (here the upload sink, as a slow disk would) is not the client's silence:
+    /// the deadline counts from the moment the server is ready to read again. Before the fix the receive's arrival time
+    /// was the mark, and a 2 s stall in the server cut a healthy upload at a 1 s deadline. Margin: the rest of the
+    /// body is already in the kernel when the server reads again, 1 s before the deadline.
+    @Test(.timeLimit(.minutes(1))) func timeTheServerIsBusyIsNotTheClientsSilence() async throws {
+        var limits = Self.short
+        limits.request = 1
+        let (server, _) = try Self.uploadServer(limits: limits, sinkDelay: 2)
+        defer { server.stop() }
+        let client = try await HTTPSPipeliningTests.start(server)
+        defer { client.cancel() }
+        let watch = Self.watch(client)
+        client.send(content: Self.uploadHead + Data(count: Self.uploadSize), completion: .idempotent)
+        #expect(await waitUntil(.seconds(10)) { watch.received.withLock { $0 } == Self.stored || watch.hasEnded })
+        #expect(watch.received.withLock { $0 } == Self.stored, "cut while the server was busy")
+    }
+
+    /// A client that reads a large response slowly, for longer than the deadline in all, gets all of it. Deadline 2 s;
+    /// the reader takes 1 MiB every 100 ms on a thread of its own (about 3.2 s), so a slice must wait 2 s to cut it.
+    @Test(.timeLimit(.minutes(1))) func aSlowReaderGetsTheWholeResponse() async throws {
         let size = 32 << 20
         var limits = Self.short
-        limits.request = 1  // the slices a reader takes in bursts come up to 0.2 s apart here (measured)
+        limits.request = 2
         let server = try Self.server(limits: limits) { _ in HTTPResponse(status: 200, body: [UInt8](repeating: 7, count: size)) }
         defer { server.stop() }
-
         let reader = try await HTTPSPipeliningTests.start(server)
         defer { reader.cancel() }
         reader.send(content: Data("GET /big HTTP/1.1\r\nHost: x\r\n\r\n".utf8), completion: .idempotent)
-        // at most 1 MiB every 50 ms: at least 1.6 s for the response, longer than the deadline
-        var received = 0
-        while received < size {
-            let data: Data? = await withCheckedContinuation { c in
-                reader.receive(minimumIncompleteLength: 1, maximumLength: 1 << 20) { data, _, done, error in c.resume(returning: done || error != nil ? nil : data) }
+        let received = try await offPool {
+            var received = 0
+            while received < size, let data = Self.receiveBlocking(reader, maximum: 1 << 20) {
+                received += data.count
+                Thread.sleep(forTimeInterval: 0.1)
             }
-            guard let data else { break }
-            received += data.count
-            try await Task.sleep(for: .milliseconds(50))
+            return received
         }
         #expect(received >= size, "a slow reader got \(received) of \(size) bytes")
+    }
 
-        let stuck = try Self.connect(server)
+    /// A client that asks for a large response and does not read is closed once the transport stops taking slices
+    /// (before B269 the rest stayed queued for ever, PR #397): the test waits for the server's own close, then reads.
+    @Test(.timeLimit(.minutes(1))) func aClientThatStopsTakingAResponseIsClosed() async throws {
+        let size = 32 << 20
+        let server = try Self.server { _ in HTTPResponse(status: 200, body: [UInt8](repeating: 7, count: size)) }
+        defer { server.stop() }
+        let stuck = try await HTTPSPipeliningTests.start(server)
         defer { stuck.cancel() }
         stuck.send(content: Data("GET /big HTTP/1.1\r\nHost: x\r\n\r\n".utf8), completion: .idempotent)
-        try await Task.sleep(for: .seconds(2))  // not reading: the transport fills, then the deadline passes
+        #expect(await waitUntil { server.openConnections == 1 })
+        #expect(await waitUntil(.seconds(10)) { server.openConnections == 0 }, "the server closed the connection")
         let watch = Self.watch(stuck, maximum: 8 << 20)
         #expect(await waitUntil(.seconds(10)) { watch.hasEnded })
         let got = watch.received.withLock { $0.count }
@@ -164,11 +219,12 @@ import Testing
         #expect(stateServer.store.clientCount == 0)
     }
 
-    /// A client that says nothing after its hello but answers pings (every browser does, by itself) stays, for many
-    /// times the silence limit; one that stops answering is closed and its session, with its subscriptions, is gone.
+    /// A client that says nothing after its hello but answers pings (a browser does, by itself) stays for longer than
+    /// the silence limit; one that answers none is closed and its session, with its subscriptions, is gone. Silence
+    /// limit 2 s, a ping every 100 ms: the quiet client survives a 1.9 s delay of its pongs.
     @Test func aQuietClientStaysAndADeadOneIsClosed() async throws {
         let (server, stateServer) = try HTTPSPipeliningTests.stateServer()
-        server.limits = Self.short
+        server.limits = HTTPSServer.Limits(hello: 2, ping: 0.1, silent: 2, tick: 0.05)
         defer { server.stop() }
         let quiet = try await HTTPSPipeliningTests.start(server)
         let dead = try Self.connect(server)
@@ -180,19 +236,18 @@ import Testing
         dead.send(content: hello, completion: .idempotent)
         #expect(await waitUntil { stateServer.store.clientCount == 2 })
 
-        #expect(await waitUntil(.seconds(5)) { deadWatch.hasEnded }, "a client that answers no ping is closed")
+        #expect(await waitUntil(.seconds(10)) { deadWatch.hasEnded }, "a client that answers no ping is closed")
         #expect(await waitUntil { stateServer.store.clientCount == 1 })
-        // a negative check needs a fixed window: five times the silence limit
-        try await Task.sleep(for: .seconds(1.5))
+        // 30 pings at one per 100 ms: the quiet client has been silent but for its pongs for 3 s, past the limit
+        #expect(await waitUntil(.seconds(10)) { quietWatch.pings.withLock { $0 } >= 30 })
         #expect(!quietWatch.hasEnded)
         #expect(stateServer.store.clientCount == 1)
-        #expect(quietWatch.pings.withLock { $0 } >= 10, "pinged \(quietWatch.pings.withLock { $0 }) times in 1.5 s")
     }
 
     // MARK: HTTPS cap
 
-    /// Past the cap an address's next connections are closed at accept, with one log line for all of them; the ones it
-    /// holds keep working, and a closed one frees its place.
+    /// Past the cap an address's next connections are closed at accept, with one log line for all of them and a
+    /// count in `refusedConnections`; the ones it holds keep working, and a closed one frees its place.
     @Test func theCapRefusesTheNextConnectionAndLogsOnce() async throws {
         let lines = HTTPSServerLogTests.Lines()
         var limits = HTTPSServer.Limits(perAddress: 2, countsLoopback: true)
@@ -210,7 +265,10 @@ import Testing
         let refusedWatches = refused.map { Self.watch($0) }
         #expect(await waitUntil(.seconds(5)) { refusedWatches.allSatisfy(\.hasEnded) })
         let logged = lines.all.withLock { $0 }.filter { $0.contains("refused") }
-        #expect(logged == ["HTTPS connection refused: too many open from one address limit=2 peer=127.0.0.1 refused=1"], "\(logged)")
+        #expect(
+            logged == ["HTTPS connection refused: too many open from one address (one line a minute, refused counts every address) limit=2 peer=127.0.0.1 refused=1"],
+            "\(logged)")
+        #expect(server.refusedConnections == 3)
 
         first.send(content: Data("GET /a HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n".utf8), completion: .idempotent)
         #expect(await waitUntil { firstWatch.hasEnded })
@@ -222,7 +280,8 @@ import Testing
         #expect(await waitUntil { nextWatch.received.withLock { $0.starts(with: Data("HTTP/1.1 200".utf8)) } }, "the freed place is taken")
     }
 
-    /// Loopback is not counted: with an address's table full, the shell's `/healthz` from this Mac is answered.
+    /// The default path: loopback is not counted, so with an address's table full the shell's `/healthz` from this Mac
+    /// is answered.
     @Test func healthzFromThisMacIsAnsweredPastTheCap() async throws {
         let server = try Self.server(limits: HTTPSServer.Limits(perAddress: 1)) { $0.path == "/healthz" ? .text(200, "ok") : nil }
         defer { server.stop() }
@@ -232,6 +291,7 @@ import Testing
         let session = URLSession(configuration: .ephemeral, delegate: StateServerTests.TrustAll(), delegateQueue: nil)
         let (_, response) = try await session.data(from: URL(string: "https://127.0.0.1:\(try #require(server.boundPort))/healthz")!)
         #expect((response as? HTTPURLResponse)?.statusCode == 200)
+        #expect(server.refusedConnections == 0)
     }
 
     // MARK: CITP
@@ -261,31 +321,38 @@ import Testing
         #expect(await waitUntil { server.status.withLock { $0.clients.count } == 2 })
         let refused = (0..<3).map { _ in CITPServerTests.Client(port: port) }
         defer { refused.forEach { $0.connection.cancel() } }
-        #expect(await waitUntil { lines.all.withLock { $0 }.contains { $0.contains("refused") } })
-        try await Task.sleep(for: .milliseconds(300))  // a negative check: no more lines for the other two
+        #expect(await waitUntil { server.status.withLock { $0.refused } == 3 })
         let logged = lines.all.withLock { $0 }.filter { $0.contains("refused") }
-        #expect(logged == ["CITP connection refused: too many open from one address limit=2 peer=127.0.0.1 refused=1"], "\(logged)")
+        #expect(
+            logged == ["CITP connection refused: too many open from one address (one line a minute, refused counts every address) limit=2 peer=127.0.0.1 refused=1"],
+            "\(logged)")
         #expect(server.status.withLock { $0.clients.count } == 2)
         consoles[0].send(Self.clientInformation)
         #expect(await waitUntil { consoles[0].received.withLock { !$0.isEmpty } }, "a console within the cap is served")
     }
 
-    /// A console that sends half a message and stops is closed; one that only listens stays.
+    /// A console that sends half a message and stops is closed.
     @Test func aCITPSessionHoldingHalfAMessageIsClosed() async throws {
         let (server, port) = try await Self.citp()
         defer { server.stop() }
-        let quiet = CITPServerTests.Client(port: port)
         let stalled = CITPServerTests.Client(port: port)
-        defer { [quiet, stalled].forEach { $0.connection.cancel() } }
-        quiet.send(Self.clientInformation)
+        defer { stalled.connection.cancel() }
         let half = Self.clientInformation + CITPServerTests.msex("GELI", [1, 0, 0, 0, 0, 0, 0])
         stalled.send(Array(half.dropLast(4)))
-        #expect(await waitUntil { server.status.withLock { $0.clients.count } == 2 })
-        #expect(await waitUntil(.seconds(5)) { server.status.withLock { $0.clients.count } == 1 }, "the stalled session is closed")
-        // a negative check needs a fixed window: five times the limit, the quiet console taking the 4 Hz layer status
-        try await Task.sleep(for: .seconds(1.5))
+        #expect(await waitUntil { stalled.received.withLock { !$0.isEmpty } }, "negotiated: the stall check runs")
+        #expect(await waitUntil(.seconds(5)) { server.status.withLock { $0.clients.isEmpty } }, "the stalled session is closed")
+    }
+
+    /// A console that only listens stays. Limit 2 s; the 14 layer status messages it waits for span 3.5 s at 4 Hz, and
+    /// it takes each as it comes, so a 2 s stall in taking them would be needed to close it.
+    @Test func aQuietCITPConsoleStays() async throws {
+        let (server, port) = try await Self.citp(stallLimit: 2)
+        defer { server.stop() }
+        let quiet = CITPServerTests.Client(port: port)
+        defer { quiet.connection.cancel() }
+        quiet.send(Self.clientInformation)
+        #expect(await waitUntil(.seconds(15)) { quiet.received.withLock { $0.count } >= 15 })  // SInf + 14 layer status
         #expect(server.status.withLock { $0.clients.count } == 1)
-        #expect(quiet.received.withLock { $0.count } >= 4)
     }
 
     /// A console that streams and stops reading (or died: its kernel stops taking data) is closed once the server's sends
@@ -296,11 +363,15 @@ import Testing
         // a BSD socket that never reads, with a small receive buffer
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         defer { close(fd) }
-        var small: Int32 = 8192
-        setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &small, socklen_t(MemoryLayout<Int32>.size))
-        #expect(withSockaddr(port: port, host: "127.0.0.1") { Darwin.connect(fd, $0, $1) } == 0, "connect: errno \(errno)")
         let request = Self.clientInformation + CITPServerTests.requestStream(0, width: 320, height: 180, fps: 10)
-        #expect(request.withUnsafeBytes { Darwin.send(fd, $0.baseAddress, $0.count, 0) } == request.count)
+        let (connected, sent) = try await offPool {
+            var small: Int32 = 8192
+            setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &small, socklen_t(MemoryLayout<Int32>.size))
+            let connected = withSockaddr(port: port, host: "127.0.0.1") { Darwin.connect(fd, $0, $1) }
+            return (connected, request.withUnsafeBytes { Darwin.send(fd, $0.baseAddress, $0.count, 0) })
+        }
+        #expect(connected == 0, "connect: errno \(errno)")
+        #expect(sent == request.count)
         #expect(await waitUntil { server.status.withLock { $0.streams } == 1 })
         #expect(await waitUntil(.seconds(20)) { server.status.withLock { $0.clients.isEmpty } }, "the session that stopped reading is closed")
     }

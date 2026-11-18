@@ -35,10 +35,12 @@ public final class HTTPSServer: @unchecked Sendable {
     struct Limits {
         /// Connections one network address holds at once; the next one is closed at accept and logged. Loopback is not
         /// counted, so the shell's `/healthz` and a UI on this Mac are never refused.
-        var perAddress = 32
+        /// One browser holds up to 6 HTTP connections plus a WebSocket per tab, and every device behind a NAT, a VPN or
+        /// a reverse proxy shares one address; the global bound is the descriptor limit (B268).
+        var perAddress = 64
         var countsLoopback = false
-        /// The longest a connection waits for the next bytes of a request (its head, each chunk of its body), for the
-        /// client to take the next slice of a response, or idle between requests.
+        /// The longest a connection waits, while the server is ready to read, for the next bytes of a request (its
+        /// head, each chunk of its body), for the client to take the next slice of a response, or idle between requests.
         var request = 30.0
         /// From the upgrade to an accepted `hello`.
         var hello = 10.0
@@ -49,10 +51,14 @@ public final class HTTPSServer: @unchecked Sendable {
         var tick = 1.0
     }
     nonisolated(unsafe) var limits = Limits()
-    /// Open connections per counted address.
+    /// Open connections per address (loopback included, though not capped).
     private let open = Mutex<[String: Int]>([:])
-    /// Refusals since the last log line, and when that line was written: at most one line a minute.
-    private let refusals = Mutex((count: 0, logged: -Double.infinity))
+    /// Refusals since start, those since the last log line, and when that line was written: at most one line a minute.
+    private let refusals = Mutex((total: 0, count: 0, logged: -Double.infinity))
+    /// Connections refused at the cap since start (`/metrics`).
+    public var refusedConnections: Int { refusals.withLock { $0.total } }
+    /// Connections open now (tests).
+    var openConnections: Int { open.withLock { $0.values.reduce(0, +) } }
 
     private let listener: NWListener
     /// `_https._tcp` for the same port: an NWListener carries one service, and a second NWListener on the port
@@ -183,14 +189,16 @@ public final class HTTPSServer: @unchecked Sendable {
         if admitted { return true }
         let now = ProcessInfo.processInfo.systemUptime
         let refused = refusals.withLock { r -> Int? in
+            r.total += 1
             r.count += 1
             guard now - r.logged >= 60 else { return nil }
-            defer { r = (0, now) }
+            defer { (r.count, r.logged) = (0, now) }
             return r.count
         }
         if let refused {
+            // `peer` is the address refused as the line is written; `refused` counts every address since the last line
             logger.warning(
-                "HTTPS connection refused: too many open from one address",
+                "HTTPS connection refused: too many open from one address (one line a minute, refused counts every address)",
                 metadata: ["peer": "\(peer.host)", "limit": "\(limits.perAddress)", "refused": "\(refused)"])
         }
         return false
@@ -260,8 +268,9 @@ private final class ClientConnection: @unchecked Sendable {
     private var handler: StateServer.Connection?
     /// Checks the deadlines (B269).
     private var timer: DispatchSourceTimer?
-    /// Uptimes of the last bytes received, of the last slice of a response the transport took (or the start of a
-    /// response), of the upgrade and of the last ping.
+    /// Uptimes of the last time a receive was armed (so a deadline counts only time the server was ready to read and
+    /// the client sent nothing, not a slow upload write or command before it), of the last slice of a response the
+    /// transport took (or the start of a response), of the upgrade and of the last ping.
     private var lastReceived = 0.0
     private var lastSent = 0.0
     private var upgraded = 0.0
@@ -289,9 +298,14 @@ private final class ClientConnection: @unchecked Sendable {
                 server.release(remoteAddress)
             }
         }
-        lastReceived = Self.now
-        lastSent = lastReceived
-        timer = DispatchSource.repeating(every: server.limits.tick, on: queue) { [self] in checkDeadlines() }
+        lastSent = Self.now
+        // a leeway, so the kernel can coalesce the timers of thousands of connections
+        let tick = server.limits.tick
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + tick, repeating: tick, leeway: .milliseconds(Int(min(tick, 0.25) * 1000)))
+        timer.setEventHandler { [self] in checkDeadlines() }
+        timer.resume()
+        self.timer = timer
         connection.start(queue: queue)
         receive()
     }
@@ -325,18 +339,20 @@ private final class ClientConnection: @unchecked Sendable {
             server.logger.info("WebSocket closed: \(reason)", metadata: ["peer": "\(remoteAddress)", "seconds": "\(Int(now - max(lastReceived, upgraded)))"])
         } else {
             guard now - max(lastReceived, lastSent) > limits.request else { return }
-            server.logger.debug("HTTPS connection closed: no progress", metadata: ["peer": "\(remoteAddress)", "upload": "\(upload != nil)"])
+            if upload != nil {
+                abandonUpload(silentFor: Int(now - lastReceived))
+            } else {
+                server.logger.debug("HTTPS connection closed: no progress", metadata: ["peer": "\(remoteAddress)"])
+            }
         }
         stopTimer()
         connection.cancel()
     }
 
     private func receive() {
+        lastReceived = Self.now
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [self] data, _, isComplete, error in
-            if let data, !data.isEmpty {
-                buffer.append(contentsOf: data)
-                lastReceived = Self.now
-            }
+            if let data, !data.isEmpty { buffer.append(contentsOf: data) }
             receiveEnded = isComplete || error != nil
             serve()
         }
@@ -438,14 +454,21 @@ private final class ClientConnection: @unchecked Sendable {
 
     /// A client that went away mid-upload leaves no partial file in `_incoming` (B156). A finished upload cleared
     /// `upload` before its response was sent, so the end of the connection that follows never gets here with it.
-    private func abandonUpload() {
+    /// `silentFor`: the request deadline cut it (B269), logged as such; the end that follows finds `upload` cleared.
+    private func abandonUpload(silentFor seconds: Int? = nil) {
         guard let current = upload else { return }
         upload = nil
         try? current.handle.close()
         try? FileManager.default.removeItem(at: current.file)
-        server.logger.info(
-            "upload abandoned by the client",
-            metadata: ["peer": "\(remoteAddress)", "file": "\(current.file.lastPathComponent)", "received": "\(current.request.contentLength - current.remaining)"])
+        var metadata: Logger.Metadata = [
+            "peer": "\(remoteAddress)", "file": "\(current.file.lastPathComponent)", "received": "\(current.request.contentLength - current.remaining)",
+        ]
+        if let seconds {
+            metadata["seconds"] = "\(seconds)"
+            server.logger.warning("upload cut: no data from the client; partial file removed", metadata: metadata)
+        } else {
+            server.logger.info("upload abandoned by the client", metadata: metadata)
+        }
     }
 
     private func send(_ response: HTTPResponse, includeBody: Bool, close: Bool) {

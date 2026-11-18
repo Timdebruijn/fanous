@@ -51,7 +51,7 @@ and the TLS fingerprint from programmer.
 | Route | Method | Role | Does |
 |---|---|---|---|
 | `/healthz` | any | none | `{"status":"ok","version":"…","uptimeSeconds":N,"chip":"…"}` |
-| `/metrics` | any | none | The last second as JSON: `frames`, `missed`, `late`, `textureMisses`, `cpuMsP50`, `cpuMsP99`, `cpuMsMax`, `gpuMsP50`, `gpuMsP99`, `gpuMsMax`, `dmxToPhotonMsP50`, `dmxToPhotonMsP99`, `dmxSamples`, `windowSeconds`, `clients`, `lagging`, `showMode`, `uptimeSeconds`, `totalFrames`, `totalMissed`, `totalLate`, `pid`, `openFiles` (descriptors the engine has open; it should not grow over a show; left out when they cannot be listed, as happens at the engine's limit of 10240), and when present `completionWaits`, `gpuErrors`, `audio`, `sync`, `preview` |
+| `/metrics` | any | none | The last second as JSON: `frames`, `missed`, `late`, `textureMisses`, `cpuMsP50`, `cpuMsP99`, `cpuMsMax`, `gpuMsP50`, `gpuMsP99`, `gpuMsMax`, `dmxToPhotonMsP50`, `dmxToPhotonMsP99`, `dmxSamples`, `windowSeconds`, `clients`, `lagging`, `showMode`, `uptimeSeconds`, `totalFrames`, `totalMissed`, `totalLate`, `pid`, `openFiles` (descriptors the engine has open; it should not grow over a show; left out when they cannot be listed, as happens at the engine's limit of 10240), `refusedConnections` (`https`, `citp`: connections closed at the cap per address since start), and when present `completionWaits`, `gpuErrors`, `audio`, `sync`, `preview` |
 | `/api/metrics` | any | none | The 10-second summary as text |
 | `/api/live` | any | none | Every universe, fixture value with its source, policy and UI expiry; exposes the DMX senders' addresses |
 | `/api/patch` | any | none | The patch as JSON |
@@ -169,8 +169,9 @@ when the engine starts: after a reconnect, take the new `welcome` and
 throw the old state away. Nothing resumes: a new connection means a new
 `hello`, a full `welcome`, and every `sub` again. The engine answers
 pings, and sends an empty ping every 15 s: a client that sends nothing, not
-even the pong (which WebSocket libraries send by themselves), for 45 s is
-closed without a close frame, and one that sends no `hello` within 10 s of
+even the pong, for 45 s is closed without a close frame. Libraries send the
+pong by themselves, but only while the program reads: keep reading the
+socket, also in a script that only sends, and one that sends no `hello` within 10 s of
 the upgrade likewise (B269).
 
 Other close codes: 1002 protocol error or wrong schema, 1007 invalid text,

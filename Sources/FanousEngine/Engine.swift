@@ -681,6 +681,10 @@ public final class Engine: @unchecked Sendable {
                 // descriptors in use, to see growth in a soak (B268); the limit is in the log at start. Left out when
                 // /dev/fd cannot be listed, which is what happens at the limit: never a 0 that reads as "none open"
                 if let entries = try? FileManager.default.contentsOfDirectory(atPath: "/dev/fd") { m["openFiles"] = .number(Double(entries.count - 1)) }
+                // connections closed at the cap per address since start (B269)
+                m["refusedConnections"] = [
+                    "https": .number(Double(self.server?.refusedConnections ?? 0)), "citp": .number(Double(self.citp?.status.withLock { $0.refused } ?? 0)),
+                ]
                 // ticks that blocked on the GPU with the ring of 8 committed buffers full, since start (B105)
                 if let render = self.render {
                     m["completionWaits"] = .number(Double(render.compositor.completionWaits.load(ordering: .relaxed)))
