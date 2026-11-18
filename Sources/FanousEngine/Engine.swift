@@ -17,8 +17,9 @@ public struct EngineOptions: Sendable {
     public var webRoot: URL
     /// `--scene` (development, bench): its canvas, layer count, source policy and library win over the project's.
     public var scene: SceneConfig?
-    /// false (`--no-network`): no Art-Net, sACN, OSC, CITP or Bonjour, and HTTPS on 127.0.0.1 only, so a test engine
-    /// runs next to a real one and the network cannot reach it (B47).
+    /// false (`--no-network`): no Art-Net, sACN, OSC, CITP or Bonjour, HTTPS on 127.0.0.1 only and a canvas Syphon server
+    /// left out of the Mac-wide directory, so a test engine runs next to a real one, the network cannot reach it (B47) and
+    /// the real one gives its canvas no Syphon number (B340).
     public var network: Bool
 
     public init(port: UInt16 = 8443, webRoot: URL, scene: SceneConfig? = nil, network: Bool = true) {
@@ -294,7 +295,7 @@ public final class Engine: @unchecked Sendable {
             self.sacn = sacn
             self.osc = osc
         } else {
-            logger.warning("network off (--no-network): no Art-Net, sACN, OSC, CITP or Bonjour; HTTPS on 127.0.0.1 only")
+            logger.warning("network off (--no-network): no Art-Net, sACN, OSC, CITP or Bonjour; HTTPS on 127.0.0.1 only; Syphon canvas not announced")
         }
         let oscFeedback = self.oscFeedback
 
@@ -343,7 +344,7 @@ public final class Engine: @unchecked Sendable {
             let service = try MainActor.assumeIsolated {
                 try RenderService(
                     scene: scene, context: context, parameters: dmx.snapshots, metrics: metrics, logger: logger, syphonNumbers: syphonNumbers,
-                    captureNumbers: captureNumbers, screenNumbers: screenNumbers)
+                    captureNumbers: captureNumbers, screenNumbers: screenNumbers, announceSyphon: options.network)
             }
             service.loader.resolver = { [weak self] key in self?.library?.resolve(key) }
             service.audioKeepRunning = { [weak self] in self?.showMode.isOn ?? false }

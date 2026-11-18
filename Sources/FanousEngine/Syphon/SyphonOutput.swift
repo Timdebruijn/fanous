@@ -27,8 +27,12 @@ public enum SyphonError: Error, CustomStringConvertible {
 public final class SyphonOutput: @unchecked Sendable {
     private let server: SyphonMetalServer
 
-    public init(name: String, device: MTLDevice) throws {
-        guard let server = SyphonMetalServer(name: name, device: device, options: nil) else { throw SyphonError.serverFailed(name) }
+    /// `announced`: listed in the Mac-wide Syphon directory, where every Syphon app sees it and every other engine's
+    /// catalog gives it a number for good (B61, B69). Not announced (`SyphonServerOptionIsPrivate`), it answers no
+    /// directory request and a client reaches it only with `serverDescription` (B340: tests and test instances).
+    public init(name: String, device: MTLDevice, announced: Bool = false) throws {
+        let options: [String: Any]? = announced ? nil : [SyphonServerOptionIsPrivate: true]
+        guard let server = SyphonMetalServer(name: name, device: device, options: options) else { throw SyphonError.serverFailed(name) }
         self.server = server
     }
 

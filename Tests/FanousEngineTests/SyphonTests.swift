@@ -77,11 +77,6 @@ import Testing
         #expect(bytes != pattern)
         #expect(input.latestFrame?.bottomUp == true && input.latestFrame?.kind == .rgba)
 
-        // The directory learns about servers through distributed notifications, which need the main run loop. In a full
-        // parallel run other suites hold the main thread for seconds: AVFoundation parks it until the process's first
-        // capture-device lookup is done (2.6–6.7 s measured there, under 0.3 s alone), so this polls like any other wait.
-        #expect(await waitUntil { SyphonInput.directoryServers.contains { $0.serverName == name } })
-
         input.disconnect()
         #expect(input.latestFrame == nil)
     }
@@ -162,21 +157,37 @@ import Testing
     }
 
     /// The directory's servers reach the catalog as entries: app → source, server name → name, directory id → runtimeID.
-    @Test func catalogReadsTheDirectoryAsEntries() async throws {
+    /// B340: the only server the suite announces, so every engine on the Mac numbers it for good: under one fixed name it
+    /// takes one number ever (one more per run that overlaps another), where a new name per run took a new number. The
+    /// servers the tests and a render service make without asking are not in the directory once this one is.
+    @Test @MainActor func catalogReadsTheDirectoryAsEntries() async throws {
         guard let device = MTLCreateSystemDefaultDevice() else { return }  // no GPU: skip
-        let name = "FanousTest-\(UUID().uuidString)"
-        let output = try SyphonOutput(name: name, device: device)
+        let unannounced = try SyphonOutput(name: "FanousTest-\(UUID().uuidString)", device: device)
+        var scene = SceneConfig()
+        (scene.canvasWidth, scene.canvasHeight, scene.audio, scene.syphonOutput) = (16, 9, false, true)
+        let service = try RenderService(scene: scene, context: try MetalContext(), parameters: TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }, metrics: MetricsRing(capacity: 64), logger: testLogger)
+        let name = "FanousTest"
+        let output = try SyphonOutput(name: name, device: device, announced: true)
         let input = SyphonInput(device: device)  // keeps the directory listening
         defer {
             input.disconnect()
             output.stop()
+            unannounced.stop()
+            service.stop()
         }
-        // The main run loop again, held for seconds in a parallel run (see publishedTextureArrivesBottomUp…).
-        #expect(await waitUntil { LiveCatalog.syphonDirectory.contains { $0.name == name } })
-        let info = try #require(SyphonInput.directoryServers.first { $0.serverName == name })
-        let entry = try #require(LiveCatalog.syphonDirectory.first { $0.name == name })
+        // The directory learns about servers through distributed notifications, which need the main run loop. In a full
+        // parallel run other suites hold the main thread for seconds: AVFoundation parks it until the process's first
+        // capture-device lookup is done (2.6–6.7 s measured there, under 0.3 s alone), so this polls like any other wait.
+        #expect(await waitUntil { LiveCatalog.syphonDirectory.contains { $0.runtimeID == output.uuid } })
+        let info = try #require(SyphonInput.directoryServers.first { $0.uuid == output.uuid })
+        let entry = try #require(LiveCatalog.syphonDirectory.first { $0.runtimeID == output.uuid })
         #expect(entry.kind == .syphon && entry.source == info.appName && !entry.source.isEmpty)
-        #expect(entry.runtimeID == output.uuid && entry.runtimeID == info.uuid)
+        #expect(entry.name == name && info.serverName == name)
+
+        let canvas = try #require(service.syphon?.uuid)
+        let listed = Set(SyphonInput.directoryServers.map(\.uuid))
+        #expect(!listed.contains(canvas), "a render service not asked to announce its canvas is in the Syphon directory")
+        #expect(!listed.contains(try #require(unannounced.uuid)), "a SyphonOutput not asked to announce is in the Syphon directory")
     }
 
     @Test func catalogNumbersServersInAnnounceOrderAndKeepsNumbersWhenTheyGo() {
