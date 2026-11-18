@@ -10,7 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Engine (B265): a corrupt HAP frame is refused as a bad frame instead of reading outside the sample (a crash in
+- Engine (B265): decoding a corrupt HAP frame returns an error instead of reading outside the sample (a crash in
   the thumbnailer or on a layer); the vendored `hap.c` checks chunk offsets, sizes and section lengths (PR #392).
 - Release: 1.0.0-rc.14 is on GitHub as a pre-release with the signed, notarized dmg, built from main bcdb5f3
   (PR #383).

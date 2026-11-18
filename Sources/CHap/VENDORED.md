@@ -10,3 +10,6 @@ open pull request); each change is marked `local, B265` in a comment in `hap.c`.
   refuses an empty chunk table; `hap_decode_single_texture` refuses a chunk whose offset or size reaches outside the
   frame data. Each returns `HapResult_Bad_Frame`. Valid frames decode byte for byte as before
   (`HAPFrameBoundsTests`).
+
+To carry the patch over a re-vendor: `git diff fdc30e40^ fdc30e40 -- Sources/CHap/hap.c` is the whole local change;
+apply it to the new upstream `hap.c` with `git apply`, then run `swift test --filter HAPFrameBoundsTests`.
