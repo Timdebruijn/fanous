@@ -13,7 +13,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Engine (B278, B342): a movie frame that does not decode is skipped after three tries instead of tried for ever; a file
   whose frames keep failing is retried with a growing pause, shows the decoder error on its layer (Layers screen,
   readiness) until a frame decodes again, and logs one line, a count every 10 s and one line on recovery instead of
-  about 20 lines a second; a VideoToolbox session that went invalid is made again (PR #NNN).
+  about 20 lines a second; a VideoToolbox session that went invalid is made again (PR #411).
 - Engine (B270): an HTTPS connection reads and parses the next request only once the previous response has left, so
   a client that pipelines requests and never reads no longer makes the engine queue responses without bound
   (PR #397).
