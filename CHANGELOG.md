@@ -18,9 +18,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   old "Cannot Open" no longer stays; playable files keep their cache hit and thumbnail (PR #385).
 - Tests (B260): `scripts/test.sh` runs the suite in a fresh temporary `FANOUS_HOME`, so no test engine can write the real install's files (PR #386).
 - Docs: the stability review of 2026-11-18 is recorded as backlog rows B261 to B334 (74 rows; read in the code, nothing reproduced yet) (PR #387).
-- Fix (B266): numbers only a hand-edited or foreign project file can hold no longer crash the engine: a cue trigger hour past
-  2147483647, a patch address outside 1–512, a layer count below 1 or past 64, a canvas or mapping mesh past any real size; such a
-  value stays in the file and has no effect or is refused, and a version with such a patch address is not restored (PR #393).
+- Fix (B266): numbers only a hand-edited or foreign project file can hold no longer crash or hang the engine: a cue trigger hour
+  past 2147483647, a patch address where the fixture does not fit in the universe, a layer count below 1 or past 64, a negative or
+  oversized canvas, a mapping mesh or wall grid past any real size; the file keeps the value, which is ignored or makes the command
+  that meets it refuse (PR #393).
 
 ## 1.0.0-rc.14 — 2026-11-17
 

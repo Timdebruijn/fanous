@@ -209,8 +209,11 @@ public enum ProjectDocument {
         }
     }
 
-    /// The canvases' pixels together, in `Double`: a hand-edited canvas size is any Int, and `Int` products overflow (B266).
-    static func pixels(_ canvases: [CanvasConfig]) -> Double { canvases.reduce(0) { $0 + Double($1.width) * Double($1.height) } }
+    /// The canvases' pixels together, in `Double`: a hand-edited canvas size is any Int, and `Int` products overflow; a
+    /// negative side counts as 0, so it never offsets the budget (B266).
+    static func pixels(_ canvases: [CanvasConfig]) -> Double {
+        canvases.reduce(0) { $0 + Double(max(0, $1.width)) * Double(max(0, $1.height)) }
+    }
 
     static func sharedRate(_ fps: Double) -> String {
         "all canvases share one frame rate (\(String(format: "%g", fps)) fps); change it on canvas 1"
@@ -611,7 +614,8 @@ public enum ProjectDocument {
             ) { project, args in
                 guard let count = args["count"]?.int, (1...64).contains(count) else { throw CommandError.invalidArgs("count must be 1–64") }
                 guard var patch = ProjectDocument.patch(from: project) else { throw CommandError.invalidArgs("project has no patch") }
-                let previous = project["layerCount"]?.int ?? 0
+                // the range this command gives: a hand-edited count far below 1 would loop from it (B266)
+                let previous = min(max(0, project["layerCount"]?.int ?? 0), 64)
                 patch.entries.removeAll {
                     if case .layer(let n) = $0.fixture { return n > count }
                     return false

@@ -217,7 +217,8 @@ public enum WallLayout {
         for i in outputs.indices {
             var neighbours: [Int] = []
             if i % cols + 1 < cols { neighbours.append(i + 1) }
-            if i / cols + 1 < rows { neighbours.append(i + cols) }
+            // compared before adding: a hand-edited `cols` is any Int (B266)
+            if i / cols + 1 < rows, cols < outputs.count - i { neighbours.append(i + cols) }
             for j in neighbours where j < outputs.count {
                 let a = outputs[i], b = outputs[j]
                 var seam = old.first { ($0.a, $0.b) == (a, b) || ($0.a, $0.b) == (b, a) } ?? SeamConfig(a: a, b: b)

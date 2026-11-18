@@ -2,9 +2,9 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
-import Darwin
 import FanousCore
 import Foundation
+import Synchronization
 import Testing
 
 @testable import FanousEngine
@@ -129,94 +129,97 @@ struct ProjectValueRangeTests {
         #expect(layers.count == 64)
     }
 
-    /// The check a version passes before it is restored now holds what its message says: the patch fits. Failed (the
-    /// version was restorable), did not trap, on the old code.
-    @Test func aVersionWithAnAddressOutsideTheUniverseIsNotRestored() throws {
+    /// A version whose patch holds an address outside the universe is restored like any other (the engine ignores that
+    /// entry), and the restored address maps nothing. Passed on main; refused (no trap) on the first commit of B266.
+    @Test func aVersionWithAnAddressOutsideTheUniverseIsRestoredAndMapsNothing() throws {
+        let base = tempFile("fanous-versions")
+        let (store, _) = testStore(outputs: 0)
+        let versions = ProjectVersions(directory: base.appending(path: "versions"), logger: testLogger)
+        versions.registerCommands(on: store)
+        let bad: JSONValue = .array([["fixture": "Layer 1", "universe": "artnet:0.0.0", "address": .number(Double(Self.lowest))]])
+        store.correct(bad, at: "/patch")
+        let saved = try #require(try store.execute("project.snapshot", args: ["name": "Odd patch"], role: .programmer).get().value)
+        store.correct([], at: "/patch")
+        _ = try store.execute("project.revert", args: ["id": saved["id"]!], role: .programmer).get()
+        #expect(store.project["patch"] == bad)
+        let dmx = DMXStore(patch: try #require(ProjectDocument.effectivePatch(from: store.project)), logger: testLogger)
+        dmx.queue.sync { dmx.receive(artnet: ArtDmx(portAddress: 0, data: [UInt8](repeating: 255, count: 512)), from: "desk", at: 1000) }
+        #expect(dmx.resolvedRaw(.layer(1), .layer(.intensity)) == 0, "Layer 1 maps nothing")
+    }
+
+    /// A wall without `seams` gets its grid's seams at decode, at every start: `i + cols` overflowed for a `cols` near
+    /// Int.max before the `j < outputs.count` check. Trapped on the first commit of B266.
+    @Test func aWallWithAColumnCountNearIntMaxDecodes() throws {
+        let outputs = Array(repeating: "1", count: 1100).joined(separator: ",")
+        let text = #"{"walls":[{"id":1,"cols":9223372036854775000,"rows":2,"outputs":[\#(outputs)],"overlap":{"x":0,"y":0}}]}"#
+        let project = try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
+        let (walls, issues) = ProjectDocument.wallEntries(from: project)
+        #expect(issues.isEmpty && walls.count == 1)
+        #expect(walls.first?.seams.count == 1099, "right neighbours only: no output sits below another")
+    }
+
+    /// A negative canvas side made the others' pixels negative, and `Int(budget − others)` in makeCanvas trapped; it also
+    /// offset the budget. Trapped on the first commit of B266.
+    @Test func aNegativeCanvasSideCountsNothing() throws {
         var project = testProject(layers: 2, outputs: 0)
-        try project.set(.array([["fixture": "Layer 1", "universe": "artnet:0.0.0", "address": .number(Double(Self.lowest))]]), at: "/patch")
-        #expect(throws: CommandError.invalidArgs("this version cannot be restored: the patch has an unknown fixture, universe or address")) {
-            try ProjectVersions.checkRestorable(project)
-        }
-    }
-}
-
-/// B266 end to end: the built `fanousd` started on a temporary home with a project that holds every value above at once.
-@Suite(.cleansTempFiles)
-struct ProjectValueRangeEngineTests {
-    private final class InThisBundle {}
-    /// `fanousd` next to the test bundle (`swift build` makes it); nil when it is not there.
-    static let fanousd: URL? = Optional(Bundle(for: InThisBundle.self).bundleURL.deletingLastPathComponent().appending(path: "fanousd"))
-        .flatMap { FileManager.default.isExecutableFile(atPath: $0.path) ? $0 : nil }
-
-    /// A TCP port on 127.0.0.1 that was free a moment ago.
-    static func freePort() throws -> UInt16 {
-        let fd = socket(AF_INET, SOCK_STREAM, 0)
-        defer { close(fd) }
-        var address = sockaddr_in()
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_addr.s_addr = inet_addr("127.0.0.1")
-        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let bound = withUnsafeMutablePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, length) == 0 && getsockname(fd, $0, &length) == 0 }
-        }
-        try #require(bound)
-        return UInt16(bigEndian: address.sin_port)
+        let canvases = ProjectDocument.canvases(from: project) + [CanvasConfig(id: 2, name: "C2", width: -(1 << 32), height: 1 << 32)]
+        try project.set(try JSONValue(encoding: canvases), at: "/canvases")
+        #expect(ProjectDocument.pixels(canvases) == 1920 * 1080)
+        let walls = WallCommandsTests.store(project, machine: WallCommandsTests.Machine())
+        try addOutputs(walls, 2)
+        _ = try WallCommandsTests.add(walls, [1, 2], cols: 2, rows: 1, fit: "makeCanvas").get()
+        let first = try #require(ProjectDocument.canvases(from: walls.project).first)
+        #expect((first.width, first.height) == (3456, 1080))
     }
 
-    @Test(.enabled(if: fanousd != nil, "fanousd is not built"))
-    func theEngineRunsOnEveryBadValueAndKeepsTheFile() async throws {
-        let home = try tempDir("b266-home")
-        try #require(home.path.hasPrefix("/"), "FANOUS_HOME must be absolute, or the engine opens the real home")
-        let support = home.appending(path: "Library/Application Support/Fanous")
-        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
-        // never the installed engine's sync port (8002)
-        try Data(#"{"sync":{"port":\#(try Self.freePort())}}"#.utf8).write(to: support.appending(path: "settings.json"))
+    /// `layers.setCount` looped from a hand-edited previous count: −10^15 is 10^15 rounds on the store queue (a hang, no
+    /// trap). Run on a thread of its own with a deadline, so the old code fails after 10 s instead of hanging the run.
+    /// Failed (timed out) on the first commit of B266.
+    @Test func layersSetCountFromAFarNegativeCountEnds() async throws {
+        var project = testProject(layers: 2, outputs: 0)
+        try project.set(.number(-1e15), at: "/layerCount")
+        let (store, _) = testStore(project: project)
+        let done = Atomic<Bool>(false)
+        Thread.detachNewThread {
+            _ = store.execute("layers.setCount", args: ["count": 1], role: .programmer)
+            done.store(true, ordering: .relaxed)
+        }
+        let ended = await waitUntil(.seconds(10)) { done.load(ordering: .relaxed) }
+        #expect(ended)
+        guard ended else { return }  // the store's queue is still busy: reading the project would wait on it
+        #expect(store.project["layerCount"]?.int == 1)
+    }
 
-        var project = testProject(layers: 2, outputs: 0, libraryRoot: home.appending(path: "library").path)
-        try project.set([ProjectValueRangeTests.cue(trigger: "99999999999999:00:00:00@30")], at: "/cues")
+    /// Every value above in one project file: it loads, and the loaded document is the file's as a JSON tree (what the
+    /// engine writes at start, the live catalogs, is an edit of that tree, so the values stay); what the engine derives
+    /// from it is computed without a trap.
+    @Test func aProjectWithEveryValueLoadsUnchanged() throws {
+        var project = testProject(layers: 2, outputs: 0)
+        try project.set([Self.cue(trigger: "99999999999999:00:00:00@30")], at: "/cues")
         try project.set(
             .array([
-                ["fixture": "Layer 1", "universe": "artnet:0.0.0", "address": .number(Double(ProjectValueRangeTests.lowest))],
-                ["fixture": "Layer 2", "universe": "artnet:0.0.0", "address": .number(Double(ProjectValueRangeTests.highest))],
+                ["fixture": "Layer 1", "universe": "artnet:0.0.0", "address": .number(Double(Self.lowest))],
+                ["fixture": "Layer 2", "universe": "artnet:0.0.0", "address": .number(Double(Self.highest))],
             ]), at: "/patch")
         try project.set(.number(0), at: "/layerCount")
-        try ProjectValueRangeTests.hugeCanvas(&project)
+        try Self.hugeCanvas(&project)
         var output = OutputConfig(id: 1)
-        output.warp.mesh = ProjectValueRangeTests.hugeMesh
+        output.warp.mesh = Self.hugeMesh
         try project.set(try JSONValue(encoding: [output]), at: "/outputs")
-        let file = support.appending(path: "project.json")
+        let wall: JSONValue = [
+            "id": 1, "cols": .number(Double(Self.highest)), "rows": 2, "outputs": .array(Array(repeating: 1, count: 1100)), "overlap": ["x": 0, "y": 0],
+        ]
+        try project.set([wall], at: "/walls")
+        let file = tempFile("fanous-project", ext: "json")
         try ProjectDocument.save(project, to: file)
-        let before = try Data(contentsOf: file)
-
-        let process = Process()
-        process.executableURL = Self.fanousd
-        process.arguments = ["--foreground", "--no-network", "--port", String(try Self.freePort()), "--web-root", home.path]
-        process.environment = ["FANOUS_HOME": home.path, "PATH": "/usr/bin:/bin"]
-        let log = home.appending(path: "engine.log")
-        FileManager.default.createFile(atPath: log.path, contents: nil)
-        let handle = try FileHandle(forWritingTo: log)
-        (process.standardOutput, process.standardError) = (handle, handle)
-        try process.run()
-        defer { if process.isRunning { process.terminate() } }
-        func logText() -> String { (try? String(contentsOf: log, encoding: .utf8)) ?? "" }
-        #expect(await waitUntil(.seconds(60)) { logText().contains("HTTPS listening") || !process.isRunning }, "the engine starts")
-        try await Task.sleep(for: .seconds(2))  // a negative check: nothing may kill it after the start
-        #expect(process.isRunning, "the engine still runs: \(logText().suffix(2000))")
-        process.terminate()
-        #expect(await waitUntil(.seconds(20)) { !process.isRunning })
-
-        let names = try FileManager.default.contentsOfDirectory(atPath: support.path)
-        #expect(!names.contains { $0.contains("unreadable") }, "nothing set aside: \(names)")
-        let after = try Data(contentsOf: file)
-        if after != before {
-            // the engine writes the live sources it numbers (Syphon servers, cameras, displays of this Mac) into the
-            // project, which rewrites the file; everything else in it must be what the file held
-            func withoutLive(_ data: Data) throws -> JSONValue {
-                guard case .object(var fields) = try JSONDecoder().decode(JSONValue.self, from: data) else { return .null }
-                for kind in LiveCatalog.Kind.allCases { fields[kind.rawValue] = nil }
-                return .object(fields)
-            }
-            #expect(try withoutLive(after) == withoutLive(before))
-        }
+        let loaded = try #require(ProjectDocument.load(from: file))
+        let onDisk = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: file))
+        #expect(try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(loaded)) == onDisk)
+        #expect(ShowCommands.cueList(from: loaded).cues.first?.timecodeTrigger == nil)
+        #expect(ProjectDocument.effectivePatch(from: loaded)?.entries.contains { $0.fitsInUniverse } == false)
+        #expect(ProjectDocument.layout(from: loaded).canvases.count == 1)
+        #expect(ProjectDocument.wallEntries(from: loaded).walls.count == 1)
+        let warp = try #require(ProjectDocument.outputs(from: loaded).first?.warp)
+        #expect(WarpMath.field(warp, cols: 4, rows: 4) == WarpMath.field(WarpSettings(), cols: 4, rows: 4))
     }
 }

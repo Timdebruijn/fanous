@@ -210,7 +210,7 @@ extension ProjectDocument {
             if fit == "makeCanvas" {
                 let output = try WallLayout.outputSize(of: wall, outputs: outputs, displayModes: displayModes)
                 let others = pixels(canvases.indices.filter { $0 != c }.map { canvases[$0] })
-                let size = WallLayout.canvasSize(wall, output: output, sides: canvasSides, maxPixels: Int(max(0, Double(maxCanvasPixels) - others)))
+                let size = WallLayout.canvasSize(wall, output: output, sides: canvasSides, maxPixels: Int(min(Double(maxCanvasPixels), max(0, Double(maxCanvasPixels) - others))))
                 try resize(&canvases, at: c, to: (size.width, size.height, canvases[0].fps), showModeOn: showModeOn)
                 try project.set(try JSONValue(encoding: canvases), at: "/canvases")
             }
