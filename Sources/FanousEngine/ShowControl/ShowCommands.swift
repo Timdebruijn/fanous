@@ -25,9 +25,10 @@ public enum ShowCommands {
         public var enabled: Bool? = nil
         public init() {}
 
-        /// `layerOffsets` by layer number. `timecode.set` refuses a key that is not the canonical spelling of a number
+        /// `layerOffsets` by layer number. `timecode.set` refuses a new key that is not the canonical spelling of a number
         /// (B262), so "01" or "+1" come only from an older build or a hand edit. Where two keys name one layer the
-        /// canonical one wins, else the lowest key, so a loaded project never traps and its winner does not hang on hash order.
+        /// canonical one wins, else the lowest key as a string ("001" beats "01", "+1" beats "01"); a key `Int` cannot
+        /// parse is dropped. A loaded project never traps and its winner does not hang on hash order.
         public var layerOffsetsByNumber: [Int: Double] {
             var byNumber: [Int: Double] = [:]
             for (key, value) in layerOffsets.sorted(by: { $0.key < $1.key }) {
@@ -184,7 +185,10 @@ public enum ShowCommands {
                 guard let decoded = try? settings.decoded(as: TimecodeSettings.self) else {
                     throw CommandError.invalidArgs("\(path) does not fit the timecode settings")
                 }
-                if let key = decoded.layerOffsets.keys.first(where: { Int($0).map(String.init) != $0 }) {
+                // only a key this command adds: one an older build stored stays (layerOffsetsByNumber resolves it), so
+                // the other settings remain editable
+                let stored = timecodeSettings(from: project).layerOffsets
+                if let key = decoded.layerOffsets.keys.first(where: { stored[$0] == nil && Int($0).map(String.init) != $0 }) {
                     throw CommandError.invalidArgs("layerOffsets key \"\(key)\" is not a layer number")
                 }
                 try project.set(try JSONValue(encoding: decoded), at: "/timecode")

@@ -318,6 +318,24 @@ struct ShowControlTests {
         #expect(ShowCommands.timecodeSettings(from: store.project).layerOffsets == ["1": 0, "12": 5])
     }
 
+    /// B262 review: a key an older build stored ("01") is kept, and the other settings stay editable, also from the
+    /// Inputs screen, which sends the stored object back at path ""; only a key the command adds is refused.
+    @Test func timecodeSetKeepsAStoredNonCanonicalKey() throws {
+        var project = testProject(layers: 2, outputs: 0)
+        let stored: JSONValue = ["source": "off", "channel": 0, "offset": 0, "freewheel": 2, "layerOffsets": ["01": 5]]
+        try project.set(stored, at: "/timecode")
+        let (store, _) = testStore(project: project)
+        ShowCommands.register(
+            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {}))
+        _ = try store.execute("timecode.set", args: ["path": "/source", "value": "mtc"], role: .programmer).get()
+        #expect(ShowCommands.timecodeSettings(from: store.project).source == .mtc)
+        #expect(ShowCommands.timecodeSettings(from: store.project).layerOffsets == ["01": 5])
+        _ = try store.execute("timecode.set", args: ["path": "", "value": stored], role: .programmer).get()
+        #expect(store.execute("timecode.set", args: ["path": "/layerOffsets/02", "value": 4], role: .programmer).failureCode == "invalidArgs")
+        _ = try store.execute("timecode.set", args: ["path": "/layerOffsets/1", "value": 3], role: .programmer).get()
+        #expect(ShowCommands.timecodeSettings(from: store.project).layerOffsetsByNumber == [1: 3])
+    }
+
     /// B262: a project that already holds two keys for one layer (older build, hand edit) trapped at every start
     /// (`Dictionary(uniqueKeysWithValues:)` in applyTimecodeSettings). Loading it never traps: the canonical key wins,
     /// else the lowest key, whatever the dictionary's hash order.
