@@ -18,7 +18,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   old "Cannot Open" no longer stays; playable files keep their cache hit and thumbnail (PR #385).
 - Tests (B260): `scripts/test.sh` runs the suite in a fresh temporary `FANOUS_HOME`, so no test engine can write the real install's files (PR #386).
 - Fix (B263): a command buffer that never started on the GPU no longer traps the render thread when the Mac has been up
-  more than 71.6 minutes; frame times in the metrics are clamped and such a buffer books no GPU time (PR #N).
+  more than 71.6 minutes; frame times in the metrics are clamped and such a buffer books no GPU time (PR #391).
 
 ## 1.0.0-rc.14 — 2026-11-17
 
