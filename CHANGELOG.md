@@ -19,6 +19,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Tests (B260): `scripts/test.sh` runs the suite in a fresh temporary `FANOUS_HOME`, so no test engine can write the real install's files (PR #386).
 - Docs: the stability review of 2026-11-18 is recorded as backlog rows B261 to B334 (74 rows; read in the code, nothing reproduced yet) (PR #387).
 - Fix (B261): a WebSocket `unsub` with an id that is negative or above 2^32 − 1 is ignored like an unknown id instead of stopping the engine; any client could send it after `hello` (PR #388).
+- Fix (B262): `timecode.set` refuses a new `layerOffsets` key that is not a layer number as written (`01`, `+1`; a stored one is kept), and a project that already
+  holds two keys for one layer no longer crashes the engine at every start: the canonical key wins (PR #389).
 
 ## 1.0.0-rc.14 — 2026-11-17
 

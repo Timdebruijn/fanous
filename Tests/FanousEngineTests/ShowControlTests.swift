@@ -303,6 +303,48 @@ struct ShowControlTests {
         #expect(fired.withLock { $0 } == ["go", "goto 1.5", "ack power", "unack power"])
     }
 
+    /// B262: `timecode.set` stored two keys for one layer ("1", "01"), which trapped the engine on the control queue.
+    /// The command refuses a key that is not the canonical spelling of a layer number, in the form of other refused values.
+    @Test func timecodeSetRefusesNonCanonicalLayerKeys() throws {
+        let (store, _) = testStore(outputs: 0)
+        ShowCommands.register(
+            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {}))
+        let refused: [(String, JSONValue)] = [("/layerOffsets", ["1": 0, "01": 5]), ("/layerOffsets/01", 5), ("/layerOffsets/+3", 5), ("/layerOffsets/x", 5)]
+        for (path, value) in refused {
+            #expect(store.execute("timecode.set", args: ["path": .string(path), "value": value], role: .programmer).failureCode == "invalidArgs", "\(path)")
+        }
+        #expect(ShowCommands.timecodeSettings(from: store.project).layerOffsets.isEmpty)
+        _ = try store.execute("timecode.set", args: ["path": "/layerOffsets", "value": ["1": 0, "12": 5]], role: .programmer).get()
+        #expect(ShowCommands.timecodeSettings(from: store.project).layerOffsets == ["1": 0, "12": 5])
+    }
+
+    /// B262 review: a key an older build stored ("01") is kept, and the other settings stay editable, also from the
+    /// Inputs screen, which sends the stored object back at path ""; only a key the command adds is refused.
+    @Test func timecodeSetKeepsAStoredNonCanonicalKey() throws {
+        var project = testProject(layers: 2, outputs: 0)
+        let stored: JSONValue = ["source": "off", "channel": 0, "offset": 0, "freewheel": 2, "layerOffsets": ["01": 5]]
+        try project.set(stored, at: "/timecode")
+        let (store, _) = testStore(project: project)
+        ShowCommands.register(
+            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {}))
+        _ = try store.execute("timecode.set", args: ["path": "/source", "value": "mtc"], role: .programmer).get()
+        #expect(ShowCommands.timecodeSettings(from: store.project).source == .mtc)
+        #expect(ShowCommands.timecodeSettings(from: store.project).layerOffsets == ["01": 5])
+        _ = try store.execute("timecode.set", args: ["path": "", "value": stored], role: .programmer).get()
+        #expect(store.execute("timecode.set", args: ["path": "/layerOffsets/02", "value": 4], role: .programmer).failureCode == "invalidArgs")
+        _ = try store.execute("timecode.set", args: ["path": "/layerOffsets/1", "value": 3], role: .programmer).get()
+        #expect(ShowCommands.timecodeSettings(from: store.project).layerOffsetsByNumber == [1: 3])
+    }
+
+    /// B262: a project that already holds two keys for one layer (older build, hand edit) trapped at every start
+    /// (`Dictionary(uniqueKeysWithValues:)` in applyTimecodeSettings). Loading it never traps: the canonical key wins,
+    /// else the lowest key, whatever the dictionary's hash order.
+    @Test func layerOffsetsByNumberSurvivesDuplicateKeys() throws {
+        var settings = ShowCommands.TimecodeSettings()
+        settings.layerOffsets = ["01": 5, "1": 0, "+1": 7, "002": 3, "02": 4, "x": 9, "-1": 2]
+        #expect(settings.layerOffsetsByNumber == [1: 0, 2: 3, -1: 2])
+    }
+
     /// B159: every rate spelling the guide and the cue editor use parses, and cue.add refuses a trigger that does not.
     @Test func cueTriggerRateSpellings() throws {
         for (text, rate) in [

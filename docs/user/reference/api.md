@@ -240,7 +240,7 @@ while the show is locked. A fixture is written `Layer n`, `Master`,
 | `sync.set` | `interface?, port?, target?` | The sync settings; refused in show mode | programmer | refused | no |
 | `syphon.forget` | `file?` | Frees a Syphon number (150–169) | programmer | refused | yes |
 | `syphon.renumber` | `file, to` | Moves a Syphon server to another number; refused in show mode | programmer | refused | yes |
-| `timecode.set` | `path, value` | `/source` (`off`, `ltc`, `mtc`), `/device`, `/channel` (0-based), `/offset` (frames), `/freewheel` (s), `/layerOffsets/<n>` (frames) | programmer | refused | yes |
+| `timecode.set` | `path, value` | `/source` (`off`, `ltc`, `mtc`), `/device`, `/channel` (0-based), `/offset` (frames), `/freewheel` (s), `/layerOffsets/<n>` (frames; `<n>` is the layer number as written, `3`, and a new `03` is refused; one a project already holds is kept) | programmer | refused | yes |
 | `timecode.enable` | `on` | The timecode switch | operator | allowed | no |
 | `universe.set` | `id, path, value` | `/protocol` (`artnet`, `sacn`, `both`), `/interface`, `/holdOnLoss` (`hold`, `zero`, `internal`), `/lossTimeout` (1–60 s), `/sacnPriorityMode` (`highest`, `htp`), `/pair` | programmer | refused | yes |
 | `wall.add` | `cols, rows, outputs, overlap: {x, y}, canvas?, fit: canvas or makeCanvas, name?` | Makes a projector wall (1–4 by 1–4, at least 2 outputs, overlap 0–0.5 of a projector); returns the id | programmer | refused | yes |
