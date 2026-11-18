@@ -40,8 +40,9 @@ public enum ChannelMap {
 
     /// Raw values of a fixture at `address` (1-based) in a universe of 512 slots, in spec order.
     public static func rawValues(mode: FixtureMode, slots: [UInt8], address: Int) -> [UInt16]? {
+        // compared before any arithmetic: a hand-edited project can hold any Int (B266)
+        guard address >= 1, address <= slots.count - mode.footprint + 1 else { return nil }
         let base = address - 1
-        guard base >= 0, base + mode.footprint <= slots.count else { return nil }
         return specs(for: mode).map { spec in
             let i = base + spec.channel - 1
             return spec.bits == 16 ? UInt16(slots[i]) << 8 | UInt16(slots[i + 1]) : UInt16(slots[i])

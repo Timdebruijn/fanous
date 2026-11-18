@@ -255,7 +255,9 @@ public final class ProjectVersions: Sendable {
     static func checkRestorable(_ project: JSONValue) throws {
         func refuse(_ reason: String) -> CommandError { CommandError.invalidArgs("this version cannot be restored: \(reason)") }
         guard let layers = project["layerCount"]?.int, (1...64).contains(layers) else { throw refuse("the layer count must be 1–64") }
-        guard ProjectDocument.effectivePatch(from: project) != nil else { throw refuse("the patch has an unknown fixture, universe or address") }
+        guard let patch = ProjectDocument.effectivePatch(from: project), patch.entries.allSatisfy(\.fitsInUniverse) else {
+            throw refuse("the patch has an unknown fixture, universe or address")
+        }
         let canvases = ProjectDocument.canvases(from: project)
         guard (1...ProjectDocument.maxCanvases).contains(canvases.count) else { throw refuse("it needs 1–\(ProjectDocument.maxCanvases) readable canvases") }
         do {

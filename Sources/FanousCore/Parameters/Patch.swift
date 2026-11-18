@@ -95,7 +95,7 @@ public struct PatchEntry: Hashable, Codable, Sendable {
     }
 
     public var channels: ClosedRange<Int> { address...(address + fixture.mode.footprint - 1) }
-    public var fitsInUniverse: Bool { address >= 1 && channels.upperBound <= 512 }
+    public var fitsInUniverse: Bool { address >= 1 && address <= 513 - fixture.mode.footprint }
 }
 
 public struct Patch: Codable, Sendable, Equatable {
@@ -119,14 +119,16 @@ public struct Patch: Codable, Sendable, Equatable {
     }
 
     /// 8 layers per Art-Net universe starting at 0.0.0, master and outputs on the universe after the layers. A project
-    /// starts with `outputs: 0`: `output.add` patches each Output fixture next to the Master.
+    /// starts with `outputs: 0`: `output.add` patches each Output fixture next to the Master. At most 64 layers, the most
+    /// `layers.setCount` gives (a hand-edited layer count is any Int, B266).
     public static func standard(layers: Int = 16, outputs: Int = 4, transport: UniverseID.Transport = .artnet) -> Patch {
         func universe(_ index: Int) -> UniverseID { UniverseID(transport, transport == .artnet ? index : index + 1) }
+        let layers = min(max(1, layers), 64)
         var entries: [PatchEntry] = []
-        for layer in 1...max(1, layers) {
+        for layer in 1...layers {
             entries.append(PatchEntry(fixture: .layer(layer), universe: universe((layer - 1) / 8), address: ((layer - 1) % 8) * 64 + 1))
         }
-        let control = universe((max(1, layers) + 7) / 8)
+        let control = universe((layers + 7) / 8)
         entries.append(PatchEntry(fixture: .master, universe: control, address: 1))
         for output in 1...max(1, outputs) where output <= outputs {
             entries.append(PatchEntry(fixture: .output(output), universe: control, address: 9 + (output - 1) * 8))
@@ -161,7 +163,8 @@ public struct Patch: Codable, Sendable, Equatable {
     /// start: its address − (k − 1) × footprint in its universe, never rolled back across a universe. Block when every
     /// placed fixture sits on its slot from there; a number that is not placed does not break it.
     public static func blockStart(of placed: [Int: Slot], footprint: Int) -> Slot? {
-        guard let anchor = placed.min(by: { $0.key < $1.key }) else { return nil }
+        // a slot outside 1…512 (a hand-edited project, B266) starts no block: the arithmetic below would overflow
+        guard let anchor = placed.min(by: { $0.key < $1.key }), (1...512).contains(anchor.value.address) else { return nil }
         let start = Slot(anchor.value.universe, anchor.value.address - (anchor.key - 1) * footprint)
         return placed.allSatisfy { slot(of: $0.key, from: start, footprint: footprint) == $0.value } ? start : nil
     }

@@ -121,7 +121,7 @@ public final class EditOverlay: @unchecked Sendable {
             }
         }
         func line(_ p: MapPoint, _ q: MapPoint) { curve({ MapPoint(p.x + (q.x - p.x) * $0, p.y + (q.y - p.y) * $0) }, pieces: pieces) }
-        if let mesh = config.warp.mesh, mesh.cols >= 2, mesh.rows >= 2, mesh.points.count == mesh.cols * mesh.rows {
+        if let mesh = config.warp.mesh, mesh.isWellFormed {
             for r in 0..<mesh.rows { line(MapPoint(0, Double(r) / Double(mesh.rows - 1)), MapPoint(1, Double(r) / Double(mesh.rows - 1))) }
             for c in 0..<mesh.cols { line(MapPoint(Double(c) / Double(mesh.cols - 1), 0), MapPoint(Double(c) / Double(mesh.cols - 1), 1)) }
         } else {
@@ -154,7 +154,7 @@ public final class EditOverlay: @unchecked Sendable {
             guard (0..<4).contains(s.point) else { return nil }
             (at, label) = (WarpSettings().cornerPin[s.point], digits(s.point + 1))
         case .mesh:
-            guard let mesh = config.warp.mesh, mesh.cols >= 2, mesh.rows >= 2, mesh.points.count == mesh.cols * mesh.rows, mesh.points.indices.contains(s.point)
+            guard let mesh = config.warp.mesh, mesh.isWellFormed, mesh.points.indices.contains(s.point)
             else { return nil }
             let (r, c) = s.point.quotientAndRemainder(dividingBy: mesh.cols)
             (at, label) = (MapPoint(Double(c) / Double(mesh.cols - 1), Double(r) / Double(mesh.rows - 1)), digits(r + 1) + [10] + digits(c + 1))

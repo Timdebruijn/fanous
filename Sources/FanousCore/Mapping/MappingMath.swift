@@ -160,7 +160,7 @@ public enum WarpMath {
         let cols = max(2, cols), rows = max(2, rows)
         let h = homography(to: warp.cornerPin)
         var out = [Float](repeating: 0, count: cols * rows * 2)
-        if let mesh = warp.mesh, mesh.cols >= 2, mesh.rows >= 2, mesh.points.count == mesh.cols * mesh.rows {
+        if let mesh = warp.mesh, mesh.isWellFormed {
             // pass 1: each control row sampled at every u
             var rowX = [Double](repeating: 0, count: mesh.rows * cols)
             var rowY = [Double](repeating: 0, count: mesh.rows * cols)
