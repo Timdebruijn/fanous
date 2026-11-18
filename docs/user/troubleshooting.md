@@ -104,9 +104,12 @@ silent ([the limits](reference/files-and-ports.md)). What the log says:
   line was written, `refused` counts the connections closed since the last
   line from every address; `/metrics` has the total under
   `refusedConnections`. On the refused device a page that is not open yet
-  shows the browser's own error page ("can't connect" or similar); an open UI
-  reads "Engine unreachable: …; retrying" and comes back by itself, usually
-  within about 30 s, as idle connections close. All devices behind one
+  shows the browser's own error page ("can't connect" or similar). A UI that
+  had loaded its data and loses its connection shows the red "Connection
+  lost · … · values shown are stale" (the middle part is the browser's
+  reason, such as "code 1006") while it retries; one that never got its first
+  data shows the yellow "Engine unreachable: …; retrying". Either comes back
+  by itself, usually within about 30 s, as idle connections close. All devices behind one
   address count together: a travel router doing NAT, a VPN, or a reverse
   proxy on another computer that every user reaches the engine through.
   Otherwise it is a browser with very many tabs of the UI, or a script: close
@@ -122,8 +125,14 @@ silent ([the limits](reference/files-and-ports.md)). What the log says:
   it connects again by itself when it is back. A console that died without
   closing is found this way only once the engine's sends to it stop being
   taken, after the network's buffers have filled with the 4 Hz layer status:
-  98 s in a test on this Mac (loopback, 32 layers), many minutes with one or
-  two layers; not measured on a real network.
+  98 s in a loopback test (32 layers), many minutes with one or two layers;
+  not measured on a real network.
+- "upload cut: no data from the client; partial file removed" (a warning,
+  with `seconds` and how much was `received`): an upload sent nothing for
+  30 s while the engine was ready to read, so the engine closed it and
+  removed the partial copy from `_incoming/`. In the Media screen's upload
+  list the file reads "failed", with the browser's error ("Failed to fetch"
+  in Chrome, "Load failed" in Safari). Upload it again over a better link.
 
 ## The iPad warns about the certificate
 

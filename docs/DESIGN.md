@@ -3579,7 +3579,11 @@ groundwork and small engine pieces first):
   is pinged every 15 s and is closed after 45 s without receiving anything:
   liveness by the client's pongs, not by its messages, so a quiet UI stays.
   A CITP session is closed when it holds half a message, or has sends its
-  console does not take, for 30 s. No TCP keepalive: the pings and the send
+  console does not take, for 30 s; its clock too starts when a receive is
+  armed, and the check (on the 4 Hz status timer) judges nothing in a round
+  that comes four intervals late, when the queue was busy and the console's
+  bytes and send completions still wait behind it. The TLS handshake has its
+  own 30 s from accept; the request deadline starts when it is done. No TCP keepalive: the pings and the send
   progress find a dead peer without it.
 - Rate limiting on login (5/min per IP), CSRF not needed (cookie SameSite
   Strict + same-origin WebSocket check), all REST mutations go through

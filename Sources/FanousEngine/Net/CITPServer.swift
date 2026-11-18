@@ -77,6 +77,8 @@ public final class CITPServer: @unchecked Sendable {
     private var refused = 0
     private var lastRefusalLog = -Double.infinity
     private var lastStallCheck = 0.0
+    /// Layer status at 4 Hz; the stall check runs with it.
+    static let statusInterval = 0.25
     public let status = Mutex(Status(port: 0, clients: [], streams: 0))
     /// Set while any client streams the canvas, so the preview encoder produces JPEGs.
     public let wantsFrames = Atomic<Bool>(false)
@@ -139,7 +141,7 @@ public final class CITPServer: @unchecked Sendable {
             }
         }
         // the stall check rides on the layer status: every session has a version (and is sent status) 2 s after it connects
-        sync(&statusTimer, wanted: negotiated, interval: 0.25) {
+        sync(&statusTimer, wanted: negotiated, interval: Self.statusInterval) {
             $0.sendLayerStatus()
             $0.closeStalledSessions()
         }
@@ -235,10 +237,11 @@ public final class CITPServer: @unchecked Sendable {
     /// A console that is merely quiet takes the layer status and stays.
     private func closeStalledSessions() {
         let now = ProcessInfo.processInfo.systemUptime
-        // a tick that comes late found this queue busy (a slow provider): the receives and send completions that queued
-        // behind it have not run yet, so judge nothing this round
+        // a tick that comes four status intervals late found this queue busy (a slow provider): the receives and send
+        // completions that queued behind it have not run yet, so judge nothing this round. The check runs on the status
+        // timer: were that ever to run at a period of 4 intervals or more, this rule would never judge at all
         defer { lastStallCheck = now }
-        guard now - lastStallCheck < 1 else { return }
+        guard now - lastStallCheck < 4 * Self.statusInterval else { return }
         for session in connections.values where session.stalled(now: now, limit: stallLimit) {
             logger.info("CITP client closed: stalled", metadata: ["peer": "\(session.label)"])
             session.connection.cancel()

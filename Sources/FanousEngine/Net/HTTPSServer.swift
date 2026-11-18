@@ -42,6 +42,9 @@ public final class HTTPSServer: @unchecked Sendable {
         /// The longest a connection waits, while the server is ready to read, for the next bytes of a request (its
         /// head, each chunk of its body), for the client to take the next slice of a response, or idle between requests.
         var request = 30.0
+        /// From accept to the end of the TLS handshake, after which `request` counts. Tests keep it long while they
+        /// shorten the others: a starved test runner can take seconds over a handshake.
+        var handshake = 30.0
         /// From the upgrade to an accepted `hello`.
         var hello = 10.0
         /// A WebSocket is pinged this often (a browser answers by itself) and closed once nothing came from it for `silent`.
@@ -275,6 +278,8 @@ private final class ClientConnection: @unchecked Sendable {
     private var lastSent = 0.0
     private var upgraded = 0.0
     private var lastPing = 0.0
+    /// The connection is ready (TLS done); before, `limits.handshake` applies instead of `limits.request`.
+    private var handshakeDone = false
     /// A response goes out in slices of this size, so each slice the client takes counts as progress.
     static let slice = 256 * 1024
 
@@ -284,11 +289,19 @@ private final class ClientConnection: @unchecked Sendable {
         remoteAddress = peer
     }
 
-    func start() {
+    /// Called on the listener's queue; the rest runs on the connection's own queue, where the timer reads the clocks.
+    func start() { queue.async { [self] in begin() } }
+
+    private func begin() {
         // strong: this handler and the timer keep the object until `.cancelled`, which every end of the connection
         // reaches (a deadline cancels a connection nothing else ends), so the address's count is always released
         connection.stateUpdateHandler = { [self] state in
             if case .failed = state { connection.cancel() }
+            if case .ready = state {
+                // TLS is done: from here `request` counts, from now (the handshake had its own deadline)
+                handshakeDone = true
+                lastReceived = Self.now
+            }
             if case .cancelled = state {
                 connection.stateUpdateHandler = nil
                 websocket?.connectionDidEnd()
@@ -338,7 +351,7 @@ private final class ClientConnection: @unchecked Sendable {
             }
             server.logger.info("WebSocket closed: \(reason)", metadata: ["peer": "\(remoteAddress)", "seconds": "\(Int(now - max(lastReceived, upgraded)))"])
         } else {
-            guard now - max(lastReceived, lastSent) > limits.request else { return }
+            guard now - max(lastReceived, lastSent) > (handshakeDone ? limits.request : limits.handshake) else { return }
             if upload != nil {
                 abandonUpload(silentFor: Int(now - lastReceived))
             } else {
