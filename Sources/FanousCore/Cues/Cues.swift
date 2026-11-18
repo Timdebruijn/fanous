@@ -80,6 +80,8 @@ public struct CueEngine: Sendable {
     private var owner: [Key: UUID] = [:]  // the cue that last set each key
     private var follow: (from: UUID, fireAt: TimeInterval)?  // fires the cue after `from`
     private var lastTimecodeSeconds: Double?
+    /// Counts what changes `targets` or the current cue (a fire, a list edit, a resume), so a reader builds them only then.
+    public private(set) var revision = 0
 
     public var currentIndex: Int? { currentID.flatMap { id in list.cues.firstIndex { $0.id == id } } }
 
@@ -94,6 +96,7 @@ public struct CueEngine: Sendable {
             currentID = old[..<at].last { alive.contains($0.id) }?.id
         }
         if let f = follow, !alive.contains(f.from) { follow = nil }
+        revision &+= 1
         // release what removed cues were asserting
         for (key, id) in owner where !alive.contains(id) {
             held[key] = nil
@@ -124,22 +127,37 @@ public struct CueEngine: Sendable {
         fire(index: index, at: time)
     }
 
-    /// Show mode resumed after a crash or a restart (B284): back on that cue with the look running the list in order up
-    /// to it leaves (a tracking list: earlier cues' values stay), every value at its end, no fade, no follow. Timecode
-    /// stays unarmed until its next frame, so no trigger already passed fires again. False when the cue is gone.
-    public mutating func resume(id: UUID) -> Bool {
-        guard let index = list.cues.firstIndex(where: { $0.id == id }) else { return false }
-        for cue in list.cues[...index] {
-            for value in cue.values {
+    /// What the list asserts, by owning cue, a running fade at its target: what a resume after a crash or a restart
+    /// puts back (B284). Built when `revision` changes, not per tick.
+    public var targets: [UUID: [CueValue]] {
+        var out: [UUID: [CueValue]] = [:]
+        for (key, id) in owner {
+            guard let raw = fades[key].map({ UInt16($0.to.rounded()) }) ?? held[key] else { continue }
+            out[id, default: []].append(CueValue(fixture: key.fixture, parameter: key.parameter, raw: raw))
+        }
+        return out
+    }
+
+    /// Show mode resumed (B284): `targets` back as the held values with their owners, at once (no fade); an entry whose
+    /// cue left the list is dropped, as `replace(list:)` releases it. `current` stays current if it is still in the
+    /// list. Nothing of before survives: no fade, no follow, and timecode is unarmed until its next frame, so a trigger
+    /// already passed does not fire again.
+    public mutating func resume(current: UUID?, targets: [UUID: [CueValue]]) {
+        held = [:]
+        fades = [:]
+        owner = [:]
+        follow = nil
+        lastTimecodeSeconds = nil
+        let alive = Set(list.cues.map(\.id))
+        for (id, values) in targets where alive.contains(id) {
+            for value in values {
                 let key = Key(fixture: value.fixture, parameter: value.parameter)
-                owner[key] = cue.id
-                fades[key] = nil
                 held[key] = ChannelMap.spec(value.parameter).clamped(value.raw)
+                owner[key] = id
             }
         }
-        currentID = id
-        follow = nil
-        return true
+        currentID = current.flatMap { alive.contains($0) ? $0 : nil }
+        revision &+= 1
     }
 
     /// Fires every cue whose trigger lies in (previous, current]. A jump backwards re-arms.
@@ -173,6 +191,7 @@ public struct CueEngine: Sendable {
             }
         }
         follow = cue.followTime.map { (cue.id, time + $0) }
+        revision &+= 1
     }
 
     private func currentRaw(_ key: Key, at time: TimeInterval) -> UInt16? {

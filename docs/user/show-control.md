@@ -49,10 +49,14 @@ are the programmer's and are refused while the show is locked
   rebuild what the cues before it set. Give the first cue of each section
   every value it needs: folder, file, intensity and dissolve.
 - When show mode comes back after a crash or Engine › Restart Engine, the
-  cue that was current is current again, with what the cues up to it set,
-  in list order, at their end values: no fade runs again and no follow
-  fires; Go fires the next cue. Clips start again from their first frame.
-  Any other start has no cue current ("No cue fired yet").
+  cue that was current is current again and every value the cues held is
+  back as it was, a fade that was running at its end: no fade runs again
+  and no follow fires; Go and Back go where they would have gone. Values a
+  console or the UI set are not cue values and do not come back from the
+  cue list, and clips start again from their first frame, except on layers
+  that chase timecode. A timecode trigger that fell while the engine was
+  down does not fire, nor one on the first frame it receives: press Go. Any
+  other start has no cue current ("No cue fired yet").
 
 ## Build a cue
 
@@ -278,7 +282,8 @@ supports have no field on the screen ([REST and WebSocket API](reference/api.md#
   incoming time, with a frame to spare after the start.
 - Lock the show (L), so a stray click cannot change a cue; GO, Back, Go to
   and the timecode switch keep working.
-- After a crash or an engine restart in show mode the current cue comes
-  back, but its clips start again from their first frame: check the
-  picture.
+- After a crash or an engine restart in show mode the current cue and its
+  values come back, but clips start again from their first frame (except
+  on layers that chase timecode) and a trigger that fell meanwhile does not
+  fire: check the picture, press Go for a missed trigger.
 - Something wrong on the night: [Troubleshooting](troubleshooting.md).

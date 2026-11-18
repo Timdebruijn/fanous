@@ -20,16 +20,54 @@ public struct ShowModeState: Codable, Equatable, Sendable {
     public var written: Double
     /// Written by the stop for Engine › Restart Engine: show mode kept on purpose.
     public var restart: Bool?
-    /// The current cue's id when written (B284), so a resume lands on it; absent in files of older builds, and ignored
-    /// by them.
+    /// The cue list when written (B284): the current cue's id and the values the cues hold, by owning cue id,
+    /// `"Layer 1/intensity"` → raw (a running fade at its target). Absent in files of older builds, and ignored by them.
     public var cue: UUID?
+    public var held: [String: [String: UInt16]]?
 
-    public init(on: Bool = true, since: Double, written: Double, restart: Bool? = nil, cue: UUID? = nil) {
+    public init(on: Bool = true, since: Double, written: Double, restart: Bool? = nil, cue: UUID? = nil, held: [String: [String: UInt16]]? = nil) {
         self.on = on
         self.since = since
         self.written = written
         self.restart = restart
         self.cue = cue
+        self.held = held
+    }
+
+    /// A `cue` or `held` that does not decode (a hand edit) means no cue list state, not no resume (B284).
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        on = try c.decode(Bool.self, forKey: .on)
+        since = try c.decode(Double.self, forKey: .since)
+        written = try c.decode(Double.self, forKey: .written)
+        restart = try c.decodeIfPresent(Bool.self, forKey: .restart)
+        do {
+            cue = try c.decodeIfPresent(UUID.self, forKey: .cue)
+            held = try c.decodeIfPresent([String: [String: UInt16]].self, forKey: .held)
+        } catch {
+            cue = nil
+            held = nil
+        }
+    }
+
+    /// `CueEngine.targets` as written.
+    static func encode(_ targets: [UUID: [CueValue]]) -> [String: [String: UInt16]] {
+        Dictionary(uniqueKeysWithValues: targets.map { id, values in
+            (id.uuidString, Dictionary(values.map { ("\($0.fixture)/\($0.parameter.key)", $0.raw) }, uniquingKeysWith: { a, _ in a }))
+        })
+    }
+
+    /// `held` for `CueEngine.resume`; an entry that does not parse is left out.
+    public var targets: [UUID: [CueValue]] {
+        var out: [UUID: [CueValue]] = [:]
+        for (cue, values) in held ?? [:] {
+            guard let id = UUID(uuidString: cue) else { continue }
+            out[id] = values.compactMap { path, raw in
+                guard case .parameter(let fixture, let parameter) = MIDITarget("fixture:" + path, cue: nil) else { return nil }
+                return CueValue(fixture: fixture, parameter: parameter, raw: raw)
+            }
+        }
+        return out
     }
 
     /// A file this young still resumes the show (engine crash, restart, or the Mac went down mid-show); an older one is
@@ -75,8 +113,9 @@ public final class ShowModeController: @unchecked Sendable {
         var stopping = false
         /// Where the on/off state survives an unclean end; nil: not persisted.
         var file: URL?
-        /// The cue list's current cue (B284), also while off, so entering writes it.
+        /// The cue list's current cue and held values (B284), also while off, so entering writes them.
         var cue: UUID?
+        var held: [String: [String: UInt16]] = [:]
     }
 
     private let logger: Logger
@@ -129,12 +168,14 @@ public final class ShowModeController: @unchecked Sendable {
         onChange?(false)
     }
 
-    /// The cue list's current cue changed (B284): written at once while on. The engine calls it on the feed queue (and
-    /// once at a resume, before entering), never on the cue queue (a timing path).
-    public func setCue(_ id: UUID?) {
+    /// The cue list's current cue or held values changed (B284): written at once while on. The engine calls it on the
+    /// feed queue (and once at a resume, before entering), never on the cue queue (a timing path).
+    public func setCue(_ id: UUID?, targets: [UUID: [CueValue]]) {
+        let held = ShowModeState.encode(targets)
         state.withLock { s in
-            guard s.cue != id else { return }
+            guard s.cue != id || s.held != held else { return }
             s.cue = id
+            s.held = held
             if s.on { persist(s) }
         }
     }
@@ -183,7 +224,7 @@ public final class ShowModeController: @unchecked Sendable {
         guard let stateURL = s.file else { return }
         do {
             if s.on || restart {
-                let value = ShowModeState(since: s.since, written: Date().timeIntervalSince1970, restart: restart ? true : nil, cue: s.cue)
+                let value = ShowModeState(since: s.since, written: Date().timeIntervalSince1970, restart: restart ? true : nil, cue: s.cue, held: s.held.isEmpty ? nil : s.held)
                 try JSONEncoder().encode(value).write(to: stateURL, options: .atomic)
             } else if FileManager.default.fileExists(atPath: stateURL.path) {
                 try FileManager.default.removeItem(at: stateURL)

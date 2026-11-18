@@ -178,7 +178,8 @@ projectors may blank for a moment.
 ### What comes back after the engine stops
 
 The engine writes its show-mode state to disk every 30 seconds, with the
-current cue, which it also writes at every Go.
+current cue and the values the cues hold, which it also writes whenever
+the current cue changes (Go, Back, Go to, a follow, a timecode trigger).
 
 ```mermaid
 flowchart TD
@@ -211,9 +212,10 @@ kept show mode on; check the outputs." instead.
    picture.
 2. Every iPad logs in again: the logins did not survive the restart. The
    app window on the Mac needs no login.
-3. Operator: the cue that was current is current again, with what the
-   cues up to it set; its clips started again from their first frame.
-   Check the picture; Go fires the next cue.
+3. Operator: the cue that was current is current again with the values
+   the cues held; clips started again from their first frame, except on
+   layers that chase timecode, and a timecode trigger that fell meanwhile
+   did not fire. Check the picture; Go fires the next cue.
 4. Programmer, on the System screen: the red banner "Show mode is on with
    blocking items" when an acknowledged item failed again; acknowledgements
    did not survive either. Acknowledge them again.
