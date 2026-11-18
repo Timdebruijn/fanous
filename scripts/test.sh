@@ -16,7 +16,7 @@ cd "$(dirname "$0")/.."
 # display (the GPU tests of a mixed file live in its …GPUTests suite). Add a suite here once it passes on macos-26.
 if [[ "${1:-}" == "--hosted" ]]; then
   shift
-  hosted='AudioLifecycleTests|BonjourTests|CITPServerTests|ClientErrorTextTests|DXTCompressorTests|DisplayModeSwitcherTests'
+  hosted='AudioLifecycleTests|BonjourTests|CITPServerTests|ClientErrorTextTests|ConnectionLimitTests|DXTCompressorTests|DisplayModeSwitcherTests'
   hosted+='|EditOverlayTests|HTTPSServerLogTests|IngestAPITests|LayerGeometryTests|LibraryIndexTests|LibraryRedactionTests|LiveCatalogTests'
   hosted+='|DMXStateBoundsTests|HAPFrameBoundsTests|HTTPSPipeliningTests|MetricsMicrosTests|ProjectValueRangeTests'
   hosted+='|MIDIControlTests|OSCFeedbackServerTests|OSCReceiverTests|OSLogHandlerTests|PresetCommandsTests|ProjectVersionsTests'

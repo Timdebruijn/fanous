@@ -53,6 +53,10 @@ public final class WebSocketSession: @unchecked Sendable {
             })
     }
 
+    /// An empty ping, which a client's WebSocket answers with a pong by itself: how the server tells a quiet client from a
+    /// dead one (B269).
+    func ping() { _ = send(WebSocketFrame(opcode: .ping), droppable: false) }
+
     private func send(_ frame: WebSocketFrame, droppable: Bool) -> Bool {
         guard !isClosed else { return false }
         let bytes = frame.serialized()
