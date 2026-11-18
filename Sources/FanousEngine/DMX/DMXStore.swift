@@ -71,19 +71,19 @@ public final class DMXStore: @unchecked Sendable {
     /// again, but only out of `lines`.
     private var announced: Set<Announced> = []
     private var lastAnnounced: Announced?
-    /// One budget for every "DMX receiving" line: a bucket of `linesBurst` that refills one line per `linesRefill`
-    /// seconds, so a flood of any shape logs at most the bucket once and then 240 lines an hour. Large enough that a
-    /// main and a backup console on all 256 universes the table holds unpatched are announced at once.
-    private var lines = Double(DMXStore.linesBurst)
+    /// One budget for every "DMX receiving" line: a bucket of `logBudget.burst` (512) that refills one line per
+    /// `logBudget.refill` (15) seconds, so a flood of any shape logs at most the bucket once and then 240 lines an hour.
+    /// Large enough that a main and a backup console on all 256 universes the table holds unpatched are announced at
+    /// once. `logBudget.warnEvery` (60 s) paces the limits warning. A test shrinks all three to simulate a ten-minute
+    /// flood in one minute (B353); set it before the first packet.
+    var logBudget = (burst: 512, refill: 15.0, warnEvery: 60.0) { didSet { lines = Double(logBudget.burst) } }
+    private var lines = 512.0
     private var linesRefilledAt: TimeInterval?
     private var heldBack = false
-    static let linesBurst = 512
-    static let linesRefill: TimeInterval = 15
     /// What the caps refused, replaced or evicted since the last warning, and when it was written: one warning a minute
     /// while anything is, with the counts of that minute, and one line when a minute passed with nothing.
     private var limits = UniverseTable.Refusals()
     private var lastWarned: TimeInterval?
-    static let limitsEvery: TimeInterval = 60
     private var timer: DispatchSourceTimer?
     /// Render-side parameters, one write per resolved DMX packet (ADR-0002 hand-off): the compositor reads them,
     /// every other thread takes the copy (`withLatest`, B71).
@@ -321,7 +321,7 @@ public final class DMXStore: @unchecked Sendable {
         if pair == lastAnnounced { return }
         if !announced.contains(pair) {
             guard lines >= 1 else {
-                if !heldBack { logger.info("Further DMX receiving lines held back (log budget spent; refills one line per \(Int(Self.linesRefill)) s)") }
+                if !heldBack { logger.info("Further DMX receiving lines held back (log budget spent; refills one line per \(Int(logBudget.refill)) s)") }
                 heldBack = true
                 return
             }
@@ -336,15 +336,15 @@ public final class DMXStore: @unchecked Sendable {
     /// On the tick: refills the line budget, forgets the announced pairs whose source is gone, and warns about the caps
     /// (B271) once a minute while they refuse, replace or evict anything.
     private func noteLimits(at now: TimeInterval) {
-        lines = min(Double(Self.linesBurst), lines + (now - (linesRefilledAt ?? now)) / Self.linesRefill)
+        lines = min(Double(logBudget.burst), lines + (now - (linesRefilledAt ?? now)) / logBudget.refill)
         linesRefilledAt = now
-        if lines >= Double(Self.linesBurst) { heldBack = false }  // the held-back line again only after a full refill
+        if lines >= Double(logBudget.burst) { heldBack = false }  // the held-back line again only after a full refill
         if announced.contains(where: { !table.has($0.universe, source: $0.source, sacn: $0.sacn) }) {
             announced = announced.filter { table.has($0.universe, source: $0.source, sacn: $0.sacn) }
             lastAnnounced = nil
         }
         limits.add(table.takeRefused())
-        guard lastWarned.map({ now - $0 >= Self.limitsEvery }) ?? !limits.isEmpty else { return }
+        guard lastWarned.map({ now - $0 >= logBudget.warnEvery }) ?? !limits.isEmpty else { return }
         if limits.isEmpty {
             logger.info("DMX limits: nothing refused for a minute")
             lastWarned = nil
