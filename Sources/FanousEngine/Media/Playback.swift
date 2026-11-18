@@ -380,7 +380,9 @@ public struct MediaEntry: Codable, Sendable, Equatable {
 
 /// Control-side thread that opens media the compositor asks for and releases
 /// what it has dropped (DESIGN.md §4.2: file changes never touch the
-/// compositor thread). One per render service.
+/// compositor thread). One per render service. Movie and still files are
+/// opened on threads of their own, a few at a time, so a slow volume holds up
+/// only its own layer (B277).
 public final class MediaLoader: @unchecked Sendable {
     public let wake = DispatchSemaphore(value: 0)
     private let layers: [RenderLayer]
@@ -413,6 +415,33 @@ public final class MediaLoader: @unchecked Sendable {
     public var resolver: (@Sendable (MediaKey) -> URL?)?
     private var parity: [Int]
 
+    /// A movie's or a still's file as an open thread hands it to the loader thread (B277): no decoder made yet.
+    enum OpenedFile: @unchecked Sendable {
+        case still(DecodedFrame)
+        case movie(MovieSource, audio: AudioTrackReader?)
+    }
+    /// Opens a library or scene file on an open thread of its own (B277), the audio track too when `audio`; tests stand
+    /// in one that blocks.
+    var openFile: @Sendable (_ url: URL, _ audio: Bool) throws -> OpenedFile
+    /// B277: a layer stops waiting for an open that has not answered within this. It says "not answering" and takes the
+    /// next selection; the open's thread runs on (one blocked in `open(2)` on a gone volume cannot be stopped) and its
+    /// media still plays when it answers and nothing newer was selected on the layer.
+    var openDeadline: Duration = .seconds(2)
+    /// B277: file opens that run at once within their deadline (measured: 4 at a time opens 8 ProRes files about twice as
+    /// fast as one at a time, 8 at a time no faster), and open threads alive at most, given-up ones included: with that
+    /// many on volumes that do not answer, further opens wait until one does.
+    var maxOpens = 4
+    var maxOpenThreads = 8
+    /// Loader thread: the open each layer waits for; nil when none, or given up.
+    private var opening: [(id: Int, key: MediaKey, url: URL, deadline: ContinuousClock.Instant)?]
+    /// Loader thread: the id of each layer's newest open (file or not); an answer with an older one is dropped, so the
+    /// last selection wins whatever order the opens answer in.
+    private var newest: [Int]
+    private var lastID = 0
+    /// Loader thread: open threads started whose answer has not been taken.
+    private var openThreads = 0
+    private let answers = Mutex<[(layer: Int, id: Int, key: MediaKey, url: URL, result: Result<OpenedFile, Error>)]>([])
+
     public init(layers: [RenderLayer], media: [MediaEntry], device: MTLDevice, ringCapacity: Int, logger: Logger) {
         self.layers = layers
         // an entry without a source (an old scene file's `syphon` entry, whose key is no longer decoded) would hide a
@@ -430,6 +459,13 @@ public final class MediaLoader: @unchecked Sendable {
         parity = Array(repeating: 0, count: layers.count)
         syphonOpen = Array(repeating: nil, count: layers.count)
         captureOpen = Array(repeating: nil, count: layers.count)
+        opening = Array(repeating: nil, count: layers.count)
+        newest = Array(repeating: 0, count: layers.count)
+        openFile = { url, audio in
+            if StillSource.extensions.contains(url.pathExtension.lowercased()) { return .still(try StillSource.load(url: url, device: device)) }
+            let source = try blockingAwait(priority: .userInitiated) { try await MovieSource.open(url: url, device: device, poolSize: ringCapacity) }
+            return .movie(source, audio: audio ? try blockingAwait(priority: .userInitiated) { try await AudioTrackReader.open(url: url) } : nil)
+        }
     }
 
     public func start() {
@@ -577,6 +613,8 @@ public final class MediaLoader: @unchecked Sendable {
                     status.capture = counters
                 }
             }
+            takeAnswers()
+            giveUpLateOpens()
             for (i, layer) in layers.enumerated() {
                 let retired = layer.retired.withLock { list -> [LayerPlayback] in
                     let copy = list
@@ -594,13 +632,20 @@ public final class MediaLoader: @unchecked Sendable {
                     }
                 }
                 let want = layer.wanted.load(ordering: .relaxed)
-                guard want != loaded[i] else { continue }
-                loaded[i] = want
-                let playback = autoreleasepool { open(MediaKey(packed: want), layer: i) }
-                layer.pending.withLock { box in
-                    box.playback?.stop()  // replaced before the compositor took it
-                    box.set = true
-                    box.playback = playback
+                // B277: a layer with an open in flight takes its newest selection when that open answers or is given up
+                guard want != loaded[i], opening[i] == nil else { continue }
+                var file: URL?
+                let playback = autoreleasepool { open(MediaKey(packed: want), layer: i, file: &file) }
+                if let file {
+                    // all open slots taken: the layer keeps its picture and asks again on the next pass
+                    guard opening.count(where: { $0 != nil }) < maxOpens, openThreads < maxOpenThreads else { continue }
+                    loaded[i] = want
+                    startOpen(MediaKey(packed: want), url: file, layer: i)
+                } else {
+                    loaded[i] = want
+                    lastID += 1
+                    newest[i] = lastID
+                    hand(playback, to: i)
                 }
             }
         }
@@ -613,11 +658,81 @@ public final class MediaLoader: @unchecked Sendable {
         }
     }
 
-    private func open(_ key: MediaKey, layer: Int) -> LayerPlayback? {
+    /// Loader thread: hands `playback` (nil: no media) to the compositor through the layer's lock.
+    private func hand(_ playback: LayerPlayback?, to layer: Int) {
+        layers[layer].pending.withLock { box in
+            box.playback?.stop()  // replaced before the compositor took it
+            box.set = true
+            box.playback = playback
+        }
+    }
+
+    /// Loader thread (B277): opens `url` for `layer` on a thread of its own; `takeAnswers` finishes it.
+    private func startOpen(_ key: MediaKey, url: URL, layer: Int) {
+        lastID += 1
+        let id = lastID
+        newest[layer] = id
+        opening[layer] = (id, key, url, .now + openDeadline)
+        openThreads += 1
+        let audio = mixer.map { layer * 2 + 1 < $0.channels.count } ?? false
+        let openFile = openFile
+        let thread = Thread { [self] in
+            let signpost = Signposts.id(Thread.current)
+            Signposts.begin("open", id: signpost)
+            let result = Result { try autoreleasepool { try openFile(url, audio) } }
+            Signposts.end("open", id: signpost)
+            answers.withLock { $0.append((layer, id, key, url, result)) }
+            wake.signal()
+        }
+        thread.name = "org.fanous.media.open"
+        thread.qualityOfService = .userInitiated
+        thread.start()
+    }
+
+    /// Loader thread (B277): the opens that answered. The newest of its layer is finished and handed over, even one that
+    /// was given up; an older one (the layer moved on) is dropped, before any decoder was made for it.
+    private func takeAnswers() {
+        let taken = answers.withLock { list in
+            defer { list.removeAll(keepingCapacity: true) }
+            return list
+        }
+        for answer in taken {
+            openThreads -= 1
+            if opening[answer.layer]?.id == answer.id { opening[answer.layer] = nil }
+            guard answer.id == newest[answer.layer] else {
+                logger.info("media open answered after a newer selection, dropped", metadata: ["layer": "\(answer.layer + 1)", "media": "\(answer.key)"])
+                continue
+            }
+            hand(autoreleasepool { finish(answer.key, layer: answer.layer, url: answer.url, answer.result) }, to: answer.layer)
+        }
+    }
+
+    /// Loader thread (B277): a layer whose open has not answered within `openDeadline` stops waiting for it. It keeps
+    /// its picture (a failed open cuts to black; this is not worse), says so, and takes the next selection.
+    private func giveUpLateOpens() {
+        let now = ContinuousClock.now
+        for i in opening.indices {
+            guard let open = opening[i], now >= open.deadline else { continue }
+            opening[i] = nil
+            logger.warning("media open not answering: the layer keeps its picture; the file plays if it answers before another is selected", metadata: [
+                "layer": "\(i + 1)", "media": "\(open.key)", "file": "\(open.url.lastPathComponent)", "after": "\(openDeadline)",
+            ])
+            var status = LayerMediaStatus()
+            status.folder = open.key.folder
+            status.file = open.key.file
+            status.name = open.url.lastPathComponent
+            status.error = "not answering: the volume is slow or gone"
+            layers[i].mediaStatus.withLock { $0 = status }
+        }
+    }
+
+    /// Loader thread: the playback of `key` on `layer`, or nil (status says why). A movie or a still file is not opened
+    /// here: `file` is set to it and the caller opens it on a thread of its own (B277), which a slow volume can hold up.
+    private func open(_ key: MediaKey, layer: Int, file: inout URL?) -> LayerPlayback? {
         var status = LayerMediaStatus()
         status.folder = key.folder
         status.file = key.file
-        defer { layers[layer].mediaStatus.withLock { $0 = status } }
+        defer { if file == nil { layers[layer].mediaStatus.withLock { $0 = status } } }
         syphonOpen[layer] = nil
         captureOpen[layer] = nil
         guard !key.isNone else { return nil }
@@ -704,26 +819,40 @@ public final class MediaLoader: @unchecked Sendable {
                 return LayerPlayback(key: key, live: input)
             }
             guard let path = entry.path else { throw RenderError.pipeline("media \(key) has no path") }
-            let url = URL(fileURLWithPath: path)
-            status.name = url.lastPathComponent
-            if StillSource.extensions.contains(url.pathExtension.lowercased()) {
-                let playback = LayerPlayback(key: key, still: try StillSource.load(url: url, device: device))
+            file = URL(fileURLWithPath: path)
+            return nil
+        } catch {
+            logger.error("media open failed", metadata: ["layer": "\(layer + 1)", "media": "\(key)", "error": "\(error)"])
+            status.error = error.clientText  // no file path for the monitor role (B25)
+            return nil
+        }
+    }
+
+    /// Loader thread: the playback of a file an open thread opened (or failed to) for `layer`; writes the layer's status.
+    private func finish(_ key: MediaKey, layer: Int, url: URL, _ opened: Result<OpenedFile, Error>) -> LayerPlayback? {
+        var status = LayerMediaStatus()
+        status.folder = key.folder
+        status.file = key.file
+        status.name = url.lastPathComponent
+        defer { layers[layer].mediaStatus.withLock { $0 = status } }
+        do {
+            let (source, reader): (MovieSource, AudioTrackReader?)
+            switch try opened.get() {
+            case .still(let still):
+                let playback = LayerPlayback(key: key, still: still)
                 status.kind = "still"
                 status.codec = url.pathExtension.lowercased()
                 status.width = playback.width
                 status.height = playback.height
                 return playback
+            case .movie(let movie, let audio): (source, reader) = (movie, audio)
             }
-            let source = try blockingAwait(priority: .userInitiated) { try await MovieSource.open(url: url, device: self.device, poolSize: self.ringCapacity) }
             let ring = FrameRing(capacity: ringCapacity)
             let decoder = LayerDecoder(source: source, ring: ring, logger: logger)
-            if let mixer, layer * 2 + 1 < mixer.channels.count {
-                let reader = try blockingAwait(priority: .userInitiated) { try await AudioTrackReader.open(url: url) }
-                if reader.hasAudio {
-                    parity[layer] ^= 1
-                    decoder.audio = (reader, mixer.channels[layer * 2 + parity[layer]])
-                    mixer.ensureRunning()
-                }
+            if let mixer, let reader, reader.hasAudio, layer * 2 + 1 < mixer.channels.count {
+                parity[layer] ^= 1
+                decoder.audio = (reader, mixer.channels[layer * 2 + parity[layer]])
+                mixer.ensureRunning()
             }
             decoder.start(name: "org.fanous.decode.\(layer + 1)")
             decoder.request(frame: 0, direction: 1)

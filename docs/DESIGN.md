@@ -332,6 +332,17 @@ display link's `targetTimestamp`:
   and restarts; the compositor shows the previous frame (or black, per layer
   setting) until the first new frame is ready, then starts the dissolve if
   dissolve > 0.
+- File opens (B277): the media loader thread resolves every selection; a
+  movie or still file is opened on a thread of its own
+  (`org.fanous.media.open`), at most 4 at a time, so a file on a slow or gone
+  volume holds up only its layer. A layer stops waiting after 2 s (status
+  "not answering", the picture stays) and takes its next selection; the
+  stuck thread cannot be stopped and still counts, and with 8 threads in
+  opens no further open starts until one answers. A layer's last selection
+  wins: an answer for an older one is dropped. Capture, screen, Syphon and
+  generator opens, and stopping retired playbacks, stay on the loader thread.
+  The layers of one cue each switch when their own first frame is ready;
+  there is no barrier across layers.
 - Frame selection: the compositor picks the ring frame whose pts is the
   closest at-or-before `position`; frames older than that are released to the
   pool. There is **no frame blending** in v1 (nearest frame), which keeps

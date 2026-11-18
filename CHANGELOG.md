@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine (B277): a movie or still file opens on a thread of its own, at most 4 at a time, so a file on a slow or
+  gone volume no longer holds up every layer's media change; after 2 s its layer says "not answering", keeps its
+  picture and takes the next selection, and playbacks a layer let go of are stopped meanwhile (PR #NNN).
 - Engine (B270): an HTTPS connection reads and parses the next request only once the previous response has left, so
   a client that pipelines requests and never reads no longer makes the engine queue responses without bound
   (PR #397).
