@@ -13,7 +13,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Engine (B273): the output set of a secondary display and of an output preview, the timecode offsets, the timecode
   freewheel and the timecode input the live feed reads are no longer swapped under a reading render or feed thread;
   the render side takes them without waiting, so a mapping drag or a timecode change mid-show can no longer free a
-  reference a thread is reading (PR #N).
+  reference a thread is reading (PR #410).
 - Engine (B270): an HTTPS connection reads and parses the next request only once the previous response has left, so
   a client that pipelines requests and never reads no longer makes the engine queue responses without bound
   (PR #397).
