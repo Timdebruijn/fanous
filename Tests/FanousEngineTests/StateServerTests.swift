@@ -172,6 +172,29 @@ import Testing
         a.cancel(with: .normalClosure, reason: nil)
     }
 
+    /// An `unsub` id that is not a stream id (negative, past UInt32, fractional, huge) is ignored like an unknown id
+    /// (no reply) instead of trapping the engine (B261); a valid `unsub` still ends its stream.
+    @Test func unsubWithAnIdOutsideUInt32IsIgnored() async throws {
+        let f = try await Self.start()
+        defer { f.server.stop() }
+        let a = f.socket()
+        try await a.send(.string(#"{"t":"hello","clientId":"a","schema":1}"#))
+        _ = try await Self.receive(a, until: "welcome")
+        try await a.send(.string(#"{"t":"sub","stream":"dmx","universe":"artnet:0.0.0"}"#))
+        let id = try #require(try await Self.receive(a, until: "sub")["id"]?.int)
+        // 2^32 + id would end the live stream under a truncating conversion
+        for bad in ["-1", "4294967296", "\(4_294_967_296 + id)", "1.5", "1e99", "99999"] {
+            try await a.send(.string(#"{"t":"unsub","id":\#(bad)}"#))
+        }
+        try await a.send(.string(#"{"t":"snapshot"}"#))
+        #expect(try await Self.receive(a)["t"]?.string == "snapshot", "no reply to any of them, and the connection lives")
+        #expect(f.stateServer.dmxSubscriptions().count == 1)
+        try await a.send(.string(#"{"t":"unsub","id":\#(id)}"#))
+        await waitUntil { f.stateServer.dmxSubscriptions().isEmpty }
+        #expect(f.stateServer.dmxSubscriptions().isEmpty)
+        a.cancel(with: .normalClosure, reason: nil)
+    }
+
     @Test func loginCookieUnlocksProtectedRole() async throws {
         let f = try await Self.start()
         defer { f.server.stop() }
