@@ -18,7 +18,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   old "Cannot Open" no longer stays; playable files keep their cache hit and thumbnail (PR #385).
 - Tests (B260): `scripts/test.sh` runs the suite in a fresh temporary `FANOUS_HOME`, so no test engine can write the real install's files (PR #386).
 - Docs: the stability review of 2026-11-18 is recorded as backlog rows B261 to B334 (74 rows; read in the code, nothing reproduced yet;
-  six crash fixes under way) (PR #N).
+  six crash fixes under way) (PR #387).
 
 ## 1.0.0-rc.14 — 2026-11-17
 
