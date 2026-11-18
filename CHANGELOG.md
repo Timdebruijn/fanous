@@ -10,6 +10,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine (B364): a playing movie layer no longer sits on 2 frames of every 11 (with the 8-frame ring): the decode
+  thread went back to the requested frame whenever it was ahead of it, so the ring held two frames in turn; it now
+  fills the ring with the frames ahead in play direction. The layer advances at most one frame per tick, so after a
+  skipped or unseen tick it stays that many frames late until it is retriggered or the ring drains, and at two or
+  more frames per tick it stalls and jumps (B372) (PR #413).
 - Engine (B270): an HTTPS connection reads and parses the next request only once the previous response has left, so
   a client that pipelines requests and never reads no longer makes the engine queue responses without bound
   (PR #397).
