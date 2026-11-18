@@ -115,6 +115,20 @@ struct SyncSenderTests {
         #expect(sender.packetsOut.load(ordering: .relaxed) == 0, "a broadcast target is ignored with the network off")
     }
 
+    /// B337: with `--no-network` the default port is neither bound nor sent to (the installed engine owns it), a port
+    /// named in settings.json is, and with the network on nothing changes. Nothing is bound here: the old code's only
+    /// reproduction binds 127.0.0.1:8002.
+    @Test func noNetworkLeavesTheDefaultPortAlone() throws {
+        func port(_ json: String) throws -> UInt16 {
+            try #require(try JSONDecoder().decode(MachineSettings.self, from: Data(json.utf8)).sync?.port)
+        }
+        #expect(SyncSettings().port == SyncSettings.defaultPort && SyncSettings.defaultPort == 8002)
+        #expect(!SyncSettings.usable(SyncSettings.defaultPort, network: false), "a test instance without settings")
+        #expect(!SyncSettings.usable(try port(#"{"sync": {"target": "127.0.0.1"}}"#), network: false))
+        #expect(SyncSettings.usable(try port(#"{"sync": {"port": 48802, "target": "127.0.0.1:48812"}}"#), network: false))
+        #expect(SyncSettings.usable(SyncSettings.defaultPort, network: true), "the installed engine binds and sends as before")
+    }
+
     @Test func settingsReadFieldByField() throws {
         let settings = try JSONDecoder().decode(
             MachineSettings.self, from: Data(#"{"sync": {"port": 48802, "target": "127.0.0.1:48812"}}"#.utf8))

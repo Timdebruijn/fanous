@@ -39,8 +39,9 @@ instead of the home directory (`DIR/Library/Application Support/Fanous`,
 `DIR/Movies/Fanous Library`); a keychain-stored TLS key gets a tag of its own
 (`org.fanous.tls@DIR`), so `FANOUS_HOME=DIR fanousd reset-tls` never touches the
 real install's key. `--no-network` leaves out Art-Net (6454), sACN (5568),
-OSC (8000), CITP and Bonjour and binds HTTPS to 127.0.0.1 only (a fresh home has
-every role open):
+OSC (8000), CITP and Bonjour, binds HTTPS to 127.0.0.1 only and keeps off the
+default sync port 8002, which the installed engine owns: no socket on it and no
+packet to it (B337). A fresh home has every role open:
 
 ```bash
 FANOUS_HOME=$(mktemp -d) .build/debug/fanousd --foreground --no-network --port 18443
@@ -54,7 +55,8 @@ not removed.
 Multi-server sync on one Mac (DESIGN.md §23): two such engines, each with its
 own sync port in `settings.json` and the other's port as a unicast target (a
 unicast datagram reaches only one of two sockets sharing a port, and
-`--no-network` sends to 127.0.0.1 only), the same file as folder 1 file 1:
+`--no-network` sends to 127.0.0.1 only and never uses port 8002), the same
+file as folder 1 file 1:
 
 ```bash
 for e in A:48802:48812 B:48812:48802; do
