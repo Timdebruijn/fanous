@@ -164,14 +164,14 @@ public final class StateServer: @unchecked Sendable {
                         sendError("badStream", "stream dmx needs a universe", on: session)
                         return
                     }
-                    let id = server.nextStream.add(1, ordering: .relaxed).oldValue
+                    let id = server.nextStream.wrappingAdd(1, ordering: .relaxed).oldValue
                     subscriptions.withLock { $0[id] = .dmx(universe) }
                     server.dmxSubscriptionsChanged()
                     reply(["t": "sub", "id": .number(Double(id)), "stream": "dmx", "universe": .string(universe)], on: session)
                 case "preview":
                     // a refused preview carries the stream id it would have had and `stream`, like the `sub` reply, so the
                     // client settles its waiting request (an error with an id and no `stream` ends a stream that went away)
-                    let id = server.nextStream.add(1, ordering: .relaxed).oldValue
+                    let id = server.nextStream.wrappingAdd(1, ordering: .relaxed).oldValue
                     func refused(_ code: String, _ text: String) {
                         reply(["t": "error", "id": .number(Double(id)), "stream": "preview", "code": .string(code), "message": .string(text)], on: session)
                     }
@@ -197,7 +197,7 @@ public final class StateServer: @unchecked Sendable {
                     }
                 case "thumbs":
                     // live layer thumbnails (B29): one stream of per-layer JPEG frames, `ThumbnailAtlas.frame`
-                    let id = server.nextStream.add(1, ordering: .relaxed).oldValue
+                    let id = server.nextStream.wrappingAdd(1, ordering: .relaxed).oldValue
                     guard let thumbnails = server.preview?.thumbnails else {
                         return reply(["t": "error", "id": .number(Double(id)), "stream": "thumbs", "code": "noPreview", "message": "the engine is not rendering"], on: session)
                     }
@@ -210,9 +210,10 @@ public final class StateServer: @unchecked Sendable {
                     sendError("badStream", "streams: dmx, preview, thumbs", on: session)
                 }
             case "unsub":
-                if let id = message["id"]?.int {
-                    let removed = subscriptions.withLock { $0.removeValue(forKey: UInt32(id)) }
-                    if removed == .preview { server.preview?.remove(connection: self, stream: UInt32(id)) }
+                // an id that is no stream id (negative, past UInt32) is ignored like an unknown one (B261)
+                if let id = message["id"]?.int.flatMap(UInt32.init(exactly:)) {
+                    let removed = subscriptions.withLock { $0.removeValue(forKey: id) }
+                    if removed == .preview { server.preview?.remove(connection: self, stream: id) }
                     if case .dmx? = removed { server.dmxSubscriptionsChanged() }
                 }
             default:
