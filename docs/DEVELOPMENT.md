@@ -41,7 +41,9 @@ instead of the home directory (`DIR/Library/Application Support/Fanous`,
 real install's key. `--no-network` leaves out Art-Net (6454), sACN (5568),
 OSC (8000), CITP and Bonjour, binds HTTPS to 127.0.0.1 only and keeps off the
 default sync port 8002, which the installed engine owns: no socket on it and no
-packet to it (B337). A fresh home has every role open:
+packet to it (B337). The rule knows 8002, not the port the installed engine was
+set to: a sync port you name in `settings.json` is yours to keep clear of it. A
+fresh home has every role open:
 
 ```bash
 FANOUS_HOME=$(mktemp -d) .build/debug/fanousd --foreground --no-network --port 18443

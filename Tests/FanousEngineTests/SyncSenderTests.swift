@@ -129,6 +129,22 @@ struct SyncSenderTests {
         #expect(SyncSettings.usable(SyncSettings.defaultPort, network: true), "the installed engine binds and sends as before")
     }
 
+    /// B337, the sender's call site: with `--no-network` a target that lands on port 8002 resolves to nowhere, by the
+    /// default port or by the target's own `:8002`; another port resolves. Resolved only: no socket, nothing sent.
+    @Test func noNetworkResolvesNothingOnTheDefaultPort() {
+        func resolved(target: String, port: UInt16 = SyncSettings.defaultPort) -> UInt16? {
+            var settings = SyncSettings()
+            settings.target = target
+            settings.port = port
+            let sender = SyncSender(machine: Self.machine, settings: settings, network: false, logger: testLogger)
+            return sender.resolve().map { UInt16(bigEndian: $0.sin_port) }
+        }
+        #expect(resolved(target: "127.0.0.1") == nil, "the default port")
+        #expect(resolved(target: "127.0.0.1:8002", port: 48802) == nil, "the target's own :8002")
+        #expect(resolved(target: "127.0.0.1:48812") == 48812)
+        #expect(resolved(target: "127.0.0.1", port: 48802) == 48802)
+    }
+
     @Test func settingsReadFieldByField() throws {
         let settings = try JSONDecoder().decode(
             MachineSettings.self, from: Data(#"{"sync": {"port": 48802, "target": "127.0.0.1:48812"}}"#.utf8))

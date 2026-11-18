@@ -32,7 +32,10 @@ the rules for humans and `docs/DEVELOPMENT.md` the build details.
 - Engine: `swift build` warning-free in the touched files, `scripts/test.sh` (full suite), and a check on a
   running engine for anything the tests cannot show (a test instance: `FANOUS_HOME=<dir> fanousd --foreground
   --no-network --port <free port>`; never 8443, 6454, 5568, 8000, 4809 or 8002, which the installed engine owns;
-  `--no-network` keeps off 8002 by itself, and two instances that sync name their own `sync.port` in `settings.json`).
+  `--no-network` keeps off the constant 8002 by itself, not off another port the installed engine was set to, so a
+  port you name is yours to check; two instances that sync each name their own `sync.port` and the other's port as
+  `sync.target` (`127.0.0.1:<port>`) in `settings.json`, since with the default target `broadcast` `--no-network`
+  sends nothing).
 - Web: `cd web && npm run check && npm test && npm run build`; the Playwright e2e suite runs on CI.
 - A bug fix comes with a test that fails on the old code, and the PR says how the bug was reproduced.
 - Claims about performance or behaviour are measured, not assumed; the PR body says what was measured and how.

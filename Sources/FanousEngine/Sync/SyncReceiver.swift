@@ -96,6 +96,17 @@ final class SyncReceiver: @unchecked Sendable {
         return port
     }
 
+    /// What the engine binds (`startSync`, `sync.set`): `port` on 127.0.0.1 only without the network, and with
+    /// `--no-network` never the default port (B337). false = not bound for that reason.
+    func start(port: UInt16, network: Bool) throws -> Bool {
+        guard SyncSettings.usable(port, network: network) else { return false }
+        try start(port: port, loopbackOnly: !network)
+        return true
+    }
+
+    /// A socket is bound and read.
+    var listening: Bool { queue.sync { reader != nil } }
+
     func stop() {
         queue.sync {
             reader?.cancel()

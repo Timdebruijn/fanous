@@ -805,14 +805,13 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
-    /// Binds the settings' port, except the default one with `--no-network` (B337): that is logged, not an error.
+    /// Binds the settings' port, except the default one with `--no-network` (B337): that is a warning, not an error.
     private func startReceiving(_ receiver: SyncReceiver, _ settings: SyncSettings) throws {
-        guard SyncSettings.usable(settings.port, network: options.network) else {
-            return logger.info(
-                "sync not receiving: --no-network leaves the default sync port to the installed engine; name sync.port in settings.json to sync",
+        guard try receiver.start(port: settings.port, network: options.network) else {
+            return logger.warning(
+                "sync not receiving: --no-network leaves the default sync port to the installed engine; name another sync.port in settings.json to sync",
                 metadata: ["port": "\(settings.port)"])
         }
-        try receiver.start(port: settings.port, loopbackOnly: !options.network)
     }
 
     /// `live.layers[n].sync`: the layer's role and, for a slave playing a file, its state and master.

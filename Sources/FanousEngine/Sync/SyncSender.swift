@@ -171,8 +171,8 @@ final class SyncSender: @unchecked Sendable {
     }
 
     /// The target's address: the sync interface's subnet broadcast, or the unicast address (127.0.0.1 only without
-    /// the network). nil = nowhere, logged when it changes to that.
-    private func resolve() -> sockaddr_in? {
+    /// the network). nil = nowhere, logged when it changes to that. Sender thread, or a test on a sender not started.
+    func resolve() -> sockaddr_in? {
         let settings = self.settings
         var address = sockaddr_in()
         address.sin_family = sa_family_t(AF_INET)
