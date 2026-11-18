@@ -24,7 +24,7 @@ cd "$(dirname "$0")/.."
 # every test queued at the start, and a 10 s deadline held after 9.96 s (B353); serial, the queue wait is zero.
 if [[ "${1:-}" == "--hosted" ]]; then
   shift
-  hosted='AudioLifecycleTests|BonjourTests|CITPServerTests|ClientErrorTextTests|DXTCompressorTests|DisplayModeSwitcherTests'
+  hosted='AudioLifecycleTests|BonjourTests|CITPServerTests|ClientErrorTextTests|ConnectionLimitTests|DXTCompressorTests|DisplayModeSwitcherTests'
   hosted+='|EditOverlayTests|HTTPSServerLogTests|IngestAPITests|LayerGeometryTests|LibraryIndexTests|LibraryRedactionTests|ListenerRecoveryTests|LiveCatalogTests'
   hosted+='|DMXStateBoundsTests|HAPFrameBoundsTests|HTTPSPipeliningTests|MetricsMicrosTests|ProjectValueRangeTests'
   hosted+='|MIDIControlTests|OSCFeedbackServerTests|OSCReceiverTests|OSLogHandlerTests|PresetCommandsTests|ProjectVersionsTests'

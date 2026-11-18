@@ -8,6 +8,7 @@ import Foundation
 import FanousCore
 import Logging
 import Network
+import Synchronization
 
 /// HTTPS/1.1 server on Network.framework. One listener; each connection parses request heads with
 /// FanousCore's parser. Small bodies are buffered, large ones (uploads) streamed to a file, and an
@@ -28,6 +29,39 @@ public final class HTTPSServer: @unchecked Sendable {
     nonisolated(unsafe) public var upgradeRoute: UpgradeRoute?
     /// The port actually bound (differs from `port` when 0 was requested); set once the listener is ready.
     nonisolated(unsafe) public private(set) var boundPort: UInt16?
+
+    /// How many connections an address may hold and how long a connection may wait on its client (B269). Tests shorten
+    /// them; set before `start()`.
+    struct Limits {
+        /// Connections one network address holds at once; the next one is closed at accept and logged. Loopback is not
+        /// counted, so the shell's `/healthz` and a UI on this Mac are never refused.
+        /// One browser holds up to 6 HTTP connections plus a WebSocket per tab, and every device behind a NAT, a VPN or
+        /// a reverse proxy shares one address; the global bound is the descriptor limit (B268).
+        var perAddress = 64
+        var countsLoopback = false
+        /// The longest a connection waits, while the server is ready to read, for the next bytes of a request (its
+        /// head, each chunk of its body), for the client to take the next slice of a response, or idle between requests.
+        var request = 30.0
+        /// From accept to the end of the TLS handshake, after which `request` counts. Tests keep it long while they
+        /// shorten the others: a starved test runner can take seconds over a handshake.
+        var handshake = 30.0
+        /// From the upgrade to an accepted `hello`.
+        var hello = 10.0
+        /// A WebSocket is pinged this often (a browser answers by itself) and closed once nothing came from it for `silent`.
+        var ping = 15.0
+        var silent = 45.0
+        /// How often a connection checks its deadlines.
+        var tick = 1.0
+    }
+    nonisolated(unsafe) var limits = Limits()
+    /// Open connections per address (loopback included, though not capped).
+    private let open = Mutex<[String: Int]>([:])
+    /// Refusals since start, those since the last log line, and when that line was written: at most one line a minute.
+    private let refusals = Mutex((total: 0, count: 0, logged: -Double.infinity))
+    /// Connections refused at the cap since start (`/metrics`).
+    public var refusedConnections: Int { refusals.withLock { $0.total } }
+    /// Connections open now (tests).
+    var openConnections: Int { open.withLock { $0.values.reduce(0, +) } }
 
     /// Made again when it fails (B272).
     private var listener: RecoveringListener!
@@ -68,8 +102,10 @@ public final class HTTPSServer: @unchecked Sendable {
             let listener = try loopbackOnly ? NWListener(using: parameters) : NWListener(using: parameters, on: nwPort)
             listener.service = self?.fanousService
             listener.newConnectionHandler = { [weak self] connection in
-                guard let self else { return connection.cancel() }
-                ClientConnection(connection, server: self).start()
+                // every listener made again counts against the same per-address table (B269)
+                let peer = Self.peer(connection.endpoint)
+                guard let self, admit(peer) else { return connection.cancel() }
+                ClientConnection(connection, server: self, peer: peer.host).start()
             }
             return listener
         }
@@ -136,6 +172,51 @@ public final class HTTPSServer: @unchecked Sendable {
         httpsRegistration = nil
     }
 
+    /// The address of a connection's client, and whether it is this Mac.
+    static func peer(_ endpoint: NWEndpoint) -> (host: String, loopback: Bool) {
+        guard case .hostPort(let host, _) = endpoint else { return ("\(endpoint)", false) }
+        switch host {
+        case .ipv4(let address): return ("\(host)", address.isLoopback)
+        case .ipv6(let address): return ("\(host)", address.isLoopback || address.asIPv4?.isLoopback == true)
+        default: return ("\(host)", false)
+        }
+    }
+
+    /// Counts a new connection against its address; false when the address already holds `limits.perAddress`.
+    private func admit(_ peer: (host: String, loopback: Bool)) -> Bool {
+        let limits = limits
+        let counted = !peer.loopback || limits.countsLoopback
+        let admitted = open.withLock { open in
+            if counted, open[peer.host, default: 0] >= limits.perAddress { return false }
+            open[peer.host, default: 0] += 1
+            return true
+        }
+        if admitted { return true }
+        let now = ProcessInfo.processInfo.systemUptime
+        let refused = refusals.withLock { r -> Int? in
+            r.total += 1
+            r.count += 1
+            guard now - r.logged >= 60 else { return nil }
+            defer { (r.count, r.logged) = (0, now) }
+            return r.count
+        }
+        if let refused {
+            // `peer` is the address refused as the line is written; `refused` counts every address since the last line
+            logger.warning(
+                "HTTPS connection refused: too many open from one address (one line a minute, refused counts every address)",
+                metadata: ["peer": "\(peer.host)", "limit": "\(limits.perAddress)", "refused": "\(refused)"])
+        }
+        return false
+    }
+
+    /// The end of a connection `admit` let in.
+    fileprivate func release(_ host: String) {
+        open.withLock { open in
+            open[host, default: 1] -= 1
+            if open[host] == 0 { open[host] = nil }
+        }
+    }
+
     fileprivate func respond(to request: HTTPRequest) -> HTTPResponse {
         var response = route(request) ?? staticFile(for: request)
         response.headers.append(HTTPHeader("Server", "fanousd/\(FanousVersion.string)"))
@@ -186,30 +267,105 @@ private final class ClientConnection: @unchecked Sendable {
     private var sending = false
     /// The peer finished sending, or the receive failed: the connection ends once the buffer is served.
     private var receiveEnded = false
-    private var remoteAddress: String {
-        if case .hostPort(let host, _) = connection.endpoint { return "\(host)" }
-        return "\(connection.endpoint)"
-    }
+    /// The client's address, as `HTTPSServer.admit` counted it.
+    private let remoteAddress: String
+    /// After an upgrade: the state connection, which knows whether `hello` was accepted.
+    private var handler: StateServer.Connection?
+    /// Checks the deadlines (B269).
+    private var timer: DispatchSourceTimer?
+    /// Uptimes of the last time a receive was armed (so a deadline counts only time the server was ready to read and
+    /// the client sent nothing, not a slow upload write or command before it), of the last slice of a response the
+    /// transport took (or the start of a response), of the upgrade and of the last ping.
+    private var lastReceived = 0.0
+    private var lastSent = 0.0
+    private var upgraded = 0.0
+    private var lastPing = 0.0
+    /// The connection is ready (TLS done); before, `limits.handshake` applies instead of `limits.request`.
+    private var handshakeDone = false
+    /// A response goes out in slices of this size, so each slice the client takes counts as progress.
+    static let slice = 256 * 1024
 
-    init(_ connection: NWConnection, server: HTTPSServer) {
+    init(_ connection: NWConnection, server: HTTPSServer, peer: String) {
         self.connection = connection
         self.server = server
+        remoteAddress = peer
     }
 
-    func start() {
-        connection.stateUpdateHandler = { [weak self, connection] state in
+    /// Called on the listener's queue; the rest runs on the connection's own queue, where the timer reads the clocks.
+    func start() { queue.async { [self] in begin() } }
+
+    private func begin() {
+        // strong: this handler and the timer keep the object until `.cancelled`, which every end of the connection
+        // reaches (a deadline cancels a connection nothing else ends), so the address's count is always released
+        connection.stateUpdateHandler = { [self] state in
             if case .failed = state { connection.cancel() }
+            if case .ready = state {
+                // TLS is done: from here `request` counts, from now (the handshake had its own deadline)
+                handshakeDone = true
+                lastReceived = Self.now
+            }
             if case .cancelled = state {
                 connection.stateUpdateHandler = nil
-                self?.websocket?.connectionDidEnd()
-                self?.websocket = nil
+                websocket?.connectionDidEnd()
+                websocket = nil
+                abandonUpload()
+                stopTimer()
+                server.release(remoteAddress)
             }
         }
+        lastSent = Self.now
+        // a leeway, so the kernel can coalesce the timers of thousands of connections
+        let tick = server.limits.tick
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + tick, repeating: tick, leeway: .milliseconds(Int(min(tick, 0.25) * 1000)))
+        timer.setEventHandler { [self] in checkDeadlines() }
+        timer.resume()
+        self.timer = timer
         connection.start(queue: queue)
         receive()
     }
 
+    private static var now: Double { ProcessInfo.processInfo.systemUptime }
+
+    private func stopTimer() {
+        timer?.cancel()
+        timer = nil
+    }
+
+    /// Ends a connection whose client stopped making progress: before an upgrade no part of a request arrived and no
+    /// slice of a response left within `request`; after it no `hello` within `hello`, or nothing at all (not even a pong)
+    /// within `silent`. The cancel ends the pending receive or send, whose completion cleans up as for any other end.
+    private func checkDeadlines() {
+        let limits = server.limits
+        let now = Self.now
+        if let websocket {
+            let reason: String
+            if handler?.isAuthenticated == false, now - upgraded > limits.hello {
+                reason = "no hello"
+            } else if now - lastReceived > limits.silent {
+                reason = "client silent"
+            } else {
+                if now - lastPing >= limits.ping {
+                    lastPing = now
+                    websocket.ping()
+                }
+                return
+            }
+            server.logger.info("WebSocket closed: \(reason)", metadata: ["peer": "\(remoteAddress)", "seconds": "\(Int(now - max(lastReceived, upgraded)))"])
+        } else {
+            guard now - max(lastReceived, lastSent) > (handshakeDone ? limits.request : limits.handshake) else { return }
+            if upload != nil {
+                abandonUpload(silentFor: Int(now - lastReceived))
+            } else {
+                server.logger.debug("HTTPS connection closed: no progress", metadata: ["peer": "\(remoteAddress)"])
+            }
+        }
+        stopTimer()
+        connection.cancel()
+    }
+
     private func receive() {
+        lastReceived = Self.now
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [self] data, _, isComplete, error in
             if let data, !data.isEmpty { buffer.append(contentsOf: data) }
             receiveEnded = isComplete || error != nil
@@ -221,8 +377,6 @@ private final class ClientConnection: @unchecked Sendable {
     private func serve() {
         guard process(), !sending else { return }
         if receiveEnded {
-            // here, not in `.cancelled`: only the pending receive or send keeps the connection object alive, so the
-            // state handler's weak self is gone by then (an upload cleanup there never ran)
             websocket?.connectionDidEnd()
             abandonUpload()
             connection.cancel()
@@ -256,6 +410,9 @@ private final class ClientConnection: @unchecked Sendable {
             }
             server.log(request, response)
             send(response, includeBody: false, close: false)
+            self.handler = handler
+            upgraded = Self.now
+            lastPing = upgraded
             let session = WebSocketSession(connection: connection, remoteAddress: request.remoteAddress, handler: handler)
             websocket = session
             session.opened()
@@ -312,22 +469,38 @@ private final class ClientConnection: @unchecked Sendable {
 
     /// A client that went away mid-upload leaves no partial file in `_incoming` (B156). A finished upload cleared
     /// `upload` before its response was sent, so the end of the connection that follows never gets here with it.
-    private func abandonUpload() {
+    /// `silentFor`: the request deadline cut it (B269), logged as such; the end that follows finds `upload` cleared.
+    private func abandonUpload(silentFor seconds: Int? = nil) {
         guard let current = upload else { return }
         upload = nil
         try? current.handle.close()
         try? FileManager.default.removeItem(at: current.file)
-        server.logger.info(
-            "upload abandoned by the client",
-            metadata: ["peer": "\(remoteAddress)", "file": "\(current.file.lastPathComponent)", "received": "\(current.request.contentLength - current.remaining)"])
+        var metadata: Logger.Metadata = [
+            "peer": "\(remoteAddress)", "file": "\(current.file.lastPathComponent)", "received": "\(current.request.contentLength - current.remaining)",
+        ]
+        if let seconds {
+            metadata["seconds"] = "\(seconds)"
+            server.logger.warning("upload cut: no data from the client; partial file removed", metadata: metadata)
+        } else {
+            server.logger.info("upload abandoned by the client", metadata: metadata)
+        }
     }
 
     private func send(_ response: HTTPResponse, includeBody: Bool, close: Bool) {
-        let bytes = Data(response.serialized(includeBody: includeBody))
         sending = true
+        send(Data(response.serialized(includeBody: includeBody)), close: close)
+    }
+
+    /// One slice at a time: each slice the transport takes is progress, so a long response to a slow client is not cut
+    /// by the deadline, and a client that takes nothing more is (B269).
+    private func send(_ bytes: Data, close: Bool) {
+        lastSent = Self.now
+        let slice = bytes.prefix(Self.slice)
         connection.send(
-            content: bytes,
+            content: slice,
             completion: .contentProcessed { [self] error in
+                if error == nil, slice.count < bytes.count { return send(bytes.dropFirst(slice.count), close: close) }
+                lastSent = Self.now
                 if close { return connection.cancel() }
                 sending = false
                 if error != nil {  // the connection is gone: answer nothing more, end it
