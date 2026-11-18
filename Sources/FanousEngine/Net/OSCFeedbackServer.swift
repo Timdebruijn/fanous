@@ -37,6 +37,11 @@ public final class OSCFeedbackServer: @unchecked Sendable {
     private var timer: DispatchSourceTimer?
     private var addresses: [FixtureRef: [String]] = [:]
     private var cache: (state: OSCFeedback.State, at: Double)?
+    /// The confirmed keys last handed to `onPins` (queue only).
+    private var pinned: Set<OSCSubscriptions.Key> = []
+    /// Called on this queue with every confirmed key (at most `OSCSubscriptions.limit` and the fixed target) whenever
+    /// that set changes: their inbound UDP flows are kept as long as the subscription lives (B268). Set before start.
+    var onPins: (@Sendable (Set<OSCSubscriptions.Key>) -> Void)?
 
     /// - Parameters:
     ///   - fixtures: resolved raw values per fixture, copied under the DMX lock and nothing more; called on the feedback queue.
@@ -140,9 +145,10 @@ public final class OSCFeedbackServer: @unchecked Sendable {
     }
 
     /// An inbound UDP flow was cancelled (B268): its reply closure is dead, so it is no longer the way to that host:port.
-    /// `send` then opens a connection of its own, which mostly stays in `waiting(EADDRINUSE)` (53 of 60 test runs: it
-    /// comes while the cancelled flow's socket is still there): that host:port gets nothing until it sends again and
-    /// `adopt` binds its new flow (B349).
+    /// A confirmed subscriber's flow is not cancelled while it is subscribed (`onPins`); after that `send` opens a
+    /// connection of its own, which mostly stays in `waiting(EADDRINUSE)` (53 of 60 test runs, measured before the pin:
+    /// it comes while the cancelled flow's socket is still there), until the host:port sends again and `adopt` binds
+    /// its new flow.
     func release(_ source: OSCSource) {
         queue.async { [self] in flows[.init(host: source.host, port: source.port)] = nil }
     }
@@ -177,8 +183,14 @@ public final class OSCFeedbackServer: @unchecked Sendable {
         return state
     }
 
-    /// The tick runs only while someone confirmed (or the fixed target) is listening.
+    /// The tick runs only while someone confirmed (or the fixed target) is listening. Also hands a changed set of
+    /// confirmed keys to `onPins`: every change of the table ends here (a request, or expiry in `notify`).
     private func updateTimer() {
+        let keys = Set(table.keys)
+        if keys != pinned {
+            pinned = keys
+            onPins?(keys)
+        }
         if !started || table.isEmpty {
             timer?.cancel()
             timer = nil

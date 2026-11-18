@@ -212,15 +212,16 @@ import Testing
         #expect(client.messages(for: 0.3) == [OSCMessage("/fanous/show/mode", [.int32(1)])])
     }
 
-    /// A subscriber that listens on the port it sends from (P) and is renewed from another port of its host (Q): once
-    /// P's flow is swept, feedback to P mostly stops (the server's own connection to P, opened while the cancelled
-    /// flow's socket is still there, stays in `waiting(EADDRINUSE)`: nothing arrived in 53 of 60 runs) and comes back
-    /// with the next datagram of any kind from P, whose new flow becomes P's reply path again. The gap is row B349.
-    @Test func subscriberFeedbackComesBackWithItsNextDatagram() async throws {
+    /// A subscriber that listens on the port it sends from (P) and is renewed from another port of its host (Q): P's
+    /// flow is pinned while the subscription lives, so feedback keeps arriving however long P is silent. Once the
+    /// subscription is gone (here unsubscribed from Q; expiry takes the same path) the flow is an ordinary one again
+    /// and is swept after the idle time.
+    @Test func silentSubscriberKeepsItsFlowWhileSubscribed() async throws {
         let box = OSCFeedbackServerTests.StateBox()
         box.state.withLock { $0 = ["/fanous/cue/current": [.float32(1)]] }
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
-        let (receiver, feedback, port) = try await OSCFeedbackServerTests.start(store: store, flowIdle: 0.4) { box.state.withLock { $0 } }
+        // idle 1.5 s: longer than subscribe plus ack take (about 0.6 s), so the handshake itself is never swept
+        let (receiver, feedback, port) = try await OSCFeedbackServerTests.start(store: store, flowIdle: 1.5) { box.state.withLock { $0 } }
         defer {
             receiver.stop()
             feedback.stop()
@@ -232,23 +233,47 @@ import Testing
         let cookie = try OSCFeedbackServerTests.subscribe(p, listener: p, prefix: "/fanous/cue", to: port)
         p.send(OSCMessage("/fanous/subscribe/ack", [.string(cookie)]), to: port)
         #expect(p.messages(for: 0.3).map(\.address) == ["/fanous/cue/current"])
+        let key = OSCSubscriptions.Key(host: "127.0.0.1", port: p.port)
+        #expect(await waitUntil { store.queue.sync { receiver.flows.pinnedKeys == [key] } })
 
         func flowOf(_ client: OSCFeedbackServerTests.Client) -> Bool {
             store.queue.sync {
                 receiver.flows.flows.contains { if case .hostPort(_, let port) = $0.connection.endpoint { port.rawValue == client.port } else { false } }
             }
         }
-        #expect(await waitUntil { !flowOf(p) })  // P is silent: its flow is swept
         q.send(OSCMessage("/fanous/ping"), to: port)  // the host renews from Q
         #expect(q.messages(for: 0.3) == [OSCMessage("/fanous/pong")])
+        try await Task.sleep(for: .seconds(4))  // P silent for more than two idle times, about ten sweeps
+        #expect(flowOf(p))
         box.state.withLock { $0["/fanous/cue/current"] = [.float32(2)] }
-        let gap = p.messages(for: 0.3, first: 1)
-        print("feedback to a subscriber whose flow was swept, before it sends again: \(gap)")
-        _ = gap  // B349: measured, not asserted
+        #expect(p.messages(for: 0.3) == [OSCMessage("/fanous/cue/current", [.float32(2)])])
 
-        p.send(OSCMessage("/fanous/nothing"), to: port)  // any datagram: a new flow, P's reply path again
-        #expect(await waitUntil { flowOf(p) })
-        box.state.withLock { $0["/fanous/cue/current"] = [.float32(3)] }
-        #expect(p.messages(for: 0.3).last == OSCMessage("/fanous/cue/current", [.float32(3)]))
+        q.send(OSCMessage("/fanous/unsubscribe", [.string("127.0.0.1"), .int32(Int32(p.port))]), to: port)
+        #expect(await waitUntil { store.queue.sync { receiver.flows.pinnedKeys.isEmpty } })
+        #expect(await waitUntil { !flowOf(p) }, "the flow stayed after the subscription went")
+    }
+
+    /// Pins are bounded by the subscription table: 20 controllers ask, 16 (`OSCSubscriptions.limit`) are confirmed and
+    /// pinned, the rest are refused and pin nothing.
+    @Test func pinsStayWithinTheSubscriptionLimit() async throws {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
+        let (receiver, feedback, port) = try await OSCFeedbackServerTests.start(store: store) { [:] }
+        defer {
+            receiver.stop()
+            feedback.stop()
+        }
+        let clients = try (0..<20).map { _ in try OSCFeedbackServerTests.Client() }
+        defer { for c in clients { c.close() } }
+        for c in clients {
+            // 10 requests a second per host at most (OSCRateLimiter): two per controller, paced
+            c.send(OSCMessage("/fanous/subscribe", [.string("127.0.0.1"), .int32(Int32(c.port)), .string("/fanous/cue")]), to: port)
+            if let reply = c.messages(for: 0.05, first: 1).first, reply.address == "/fanous/subscribe/confirm", case .string(let cookie)? = reply.arguments.first {
+                try await Task.sleep(for: .milliseconds(120))
+                c.send(OSCMessage("/fanous/subscribe/ack", [.string(cookie)]), to: port)
+            }
+            try await Task.sleep(for: .milliseconds(120))
+        }
+        #expect(await waitUntil { store.queue.sync { receiver.flows.pinnedKeys.count } == OSCSubscriptions.limit })
+        #expect(store.queue.sync { receiver.flows.pinnedKeys.count } == OSCSubscriptions.limit)
     }
 }

@@ -287,6 +287,9 @@ public final class OSCReceiver: @unchecked Sendable {
         self.port = port
         self.feedback = feedback
         flows = UDPFlows(queue: store.queue, logger: logger, name: "OSC")
+        // a live subscription keeps its flow: a hop to the DMX queue per change of the subscriber set (subscribe, ack,
+        // unsubscribe, expiry), never per datagram
+        feedback?.onPins = { [flows, queue = store.queue] keys in queue.async { flows.pinnedKeys = keys } }
     }
 
     /// The UDP port listened on, once the listener is ready (nil or 0 before). Differs from the one given only for port 0
@@ -308,7 +311,9 @@ public final class OSCReceiver: @unchecked Sendable {
             // the fixed feedback target's own flow carries its feedback: kept however long it is silent (B268); a
             // cancelled flow is no longer a subscriber's reply path
             let fixed = feedback?.adopt(source) ?? false
-            let flow = flows.adopt(connection, pinned: fixed) { [feedback] in feedback?.release(source) }
+            let flow = flows.adopt(connection, pinned: fixed, key: .init(host: source.host, port: source.port)) { [feedback] in
+                feedback?.release(source)
+            }
             receiveDatagrams(on: flow, from: source)
         }
         udp.start(queue: store.queue)
@@ -399,28 +404,31 @@ public final class OSCReceiver: @unchecked Sendable {
 /// flood of source ports) would use up the process's open-file limit. A flow silent for `idle` seconds is cancelled
 /// (its sender's next datagram makes a new one). Above `cap` live flows the one silent longest goes, among those that
 /// have delivered a datagram and been silent for at least `floor`; when none qualifies the table runs over the cap.
-/// A pinned flow is never cancelled. DMX queue only: a datagram costs a store of the time into its flow, no lookup,
+/// A pinned flow (the fixed OSC feedback target's, or one whose key is in `pinnedKeys`: a live OSC subscription) is
+/// never cancelled. DMX queue only: a datagram costs a store of the time into its flow, no lookup,
 /// no lock, no allocation.
 final class UDPFlows: @unchecked Sendable {
     final class Flow: @unchecked Sendable {
         let connection: NWConnection
         fileprivate let pinned: Bool
+        /// The sender's host and port as OSC feedback keys them (OSC only).
+        fileprivate let key: OSCSubscriptions.Key?
         fileprivate let released: (() -> Void)?
         /// Uptime nanoseconds of the last datagram (tests set it back).
         var lastSeen = DispatchTime.now().uptimeNanoseconds
         fileprivate var read = false
         fileprivate var live = true
 
-        fileprivate init(_ connection: NWConnection, pinned: Bool, released: (() -> Void)?) {
+        fileprivate init(_ connection: NWConnection, pinned: Bool, key: OSCSubscriptions.Key?, released: (() -> Void)?) {
             self.connection = connection
             self.pinned = pinned
+            self.key = key
             self.released = released
         }
     }
 
     /// Senders do not stay silent this long in a show: a console sends Art-Net continuously or at least every few
-    /// seconds. One that does comes back on a new flow. (An OSC subscriber that listens on the port it sends from but
-    /// renews from another port loses its reply path with it: B349.)
+    /// seconds. One that does comes back on a new flow. A subscribed OSC sender's flow is pinned meanwhile.
     static let idle: Double = 2 * OSCSubscriptions.lifetime
     /// Per receiver; two receivers hold at most 2048 of the 10240 descriptors the engine sets at start. A sender that
     /// uses a new port per message at 10 Hz makes 1200 flows in the idle time: the oldest go.
@@ -439,6 +447,9 @@ final class UDPFlows: @unchecked Sendable {
     private var lastCapWarning: UInt64 = 0
     /// DMX queue only.
     private(set) var flows: [Flow] = []
+    /// Keys of live OSC subscriptions, at most `OSCSubscriptions.limit` and the fixed target (DMX queue only; set from
+    /// the feedback queue by a hop when the set changes). Read by the sweep and the cap, not per datagram.
+    var pinnedKeys: Set<OSCSubscriptions.Key> = []
 
     init(queue: DispatchQueue, logger: Logger, name: String) {
         self.queue = queue
@@ -449,8 +460,8 @@ final class UDPFlows: @unchecked Sendable {
     deinit { timer?.cancel() }
 
     /// A new flow (DMX queue); `released` runs on the DMX queue when it is cancelled.
-    func adopt(_ connection: NWConnection, pinned: Bool = false, released: (() -> Void)? = nil) -> Flow {
-        let flow = Flow(connection, pinned: pinned, released: released)
+    func adopt(_ connection: NWConnection, pinned: Bool = false, key: OSCSubscriptions.Key? = nil, released: (() -> Void)? = nil) -> Flow {
+        let flow = Flow(connection, pinned: pinned, key: key, released: released)
         flows.append(flow)
         if timer == nil {
             let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -485,7 +496,7 @@ final class UDPFlows: @unchecked Sendable {
     private func trim() {
         let now = DispatchTime.now().uptimeNanoseconds
         while flows.count > cap,
-            let oldest = flows.lazy.filter({ $0.read && !$0.pinned && now - $0.lastSeen >= self.floor }).min(by: { $0.lastSeen < $1.lastSeen })
+            let oldest = flows.lazy.filter({ $0.read && !self.isPinned($0) && now - $0.lastSeen >= self.floor }).min(by: { $0.lastSeen < $1.lastSeen })
         {
             if now - lastCapWarning > 60_000_000_000 {
                 lastCapWarning = now
@@ -495,9 +506,11 @@ final class UDPFlows: @unchecked Sendable {
         }
     }
 
+    private func isPinned(_ flow: Flow) -> Bool { flow.pinned || flow.key.map(pinnedKeys.contains) == true }
+
     private func sweep() {
         let now = DispatchTime.now().uptimeNanoseconds
-        for flow in flows where !flow.pinned && now - flow.lastSeen > idle { release(flow) }
+        for flow in flows where !isPinned(flow) && now - flow.lastSeen > idle { release(flow) }
         if flows.count > cap { trim() }
     }
 
