@@ -162,6 +162,9 @@ public final class LayerPlayback: @unchecked Sendable {
     var currentShown = -1
     var previousShown = -1
     var holdFrame: DecodedFrame?
+    /// `holdFrame`'s media frame as it was when it was taken (B371): after a drain its slot is free and the decode thread
+    /// may relabel it while it is still shown (B386), so the stale count compares this. −1 = none.
+    var holdFrameIndex = -1
     /// The mixer channel this playback's decoder fills (movies with an audio track only).
     public var audioChannel: LayerAudioChannel? { decoder?.audio?.channel }
 
@@ -250,7 +253,7 @@ public final class LayerPlayback: @unchecked Sendable {
             if best == nil || behind(f.frameIndex) < behind(best!.frameIndex) { best = f }
         }
         guard let best, behind(best.frameIndex) < ring.capacity + 2 else {
-            if holdFrame == nil { holdFrame = best }  // never shown (held invisible): better a stale picture than none until the seek lands
+            if holdFrame == nil, let best { (holdFrame, holdFrameIndex) = (best, best.frameIndex) }  // never shown (held invisible): better a stale picture than none until the seek lands
             freed = true
             ring.drain()  // everything buffered is on the wrong side of a seek
             return holdFrame
@@ -260,6 +263,7 @@ public final class LayerPlayback: @unchecked Sendable {
             currentShown = best.frameIndex
         }
         holdFrame = best
+        holdFrameIndex = best.frameIndex
         return best
     }
 
@@ -345,6 +349,9 @@ public final class RenderLayer: @unchecked Sendable {
     /// Set by the loader; the compositor takes it with `withLockIfAvailable` (never blocks).
     let pendingScratch = Mutex(PendingScratch())
     var retireLater: [LayerPlayback] = []
+    /// Since start: ticks on which this layer's movie was queued with a frame other than its clock's, one per playback
+    /// (a dissolve's two pictures count apart) (B371). Written by the compositor, read by `/metrics`.
+    public let staleFrames = Atomic<Int>(0)
 
     public init(index: Int) {
         self.index = index

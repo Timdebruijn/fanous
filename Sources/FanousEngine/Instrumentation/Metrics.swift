@@ -14,6 +14,9 @@ public struct FrameRecord: Sendable {
     public var late = false
     public var missed: UInt16 = 0  // display-link ticks skipped before this one
     public var textureMisses: UInt16 = 0  // layers that had no decoded frame ready
+    /// Movie pictures queued with a frame other than the one their clock asked for (B371): one per playback per tick,
+    /// also on an idle tick and for a layer without a canvas.
+    public var staleFrames: UInt16 = 0
     public var dmxToPhotonMicros: UInt32 = 0  // 0 = no new DMX this tick
     public var complete = false
     /// No GPU work was encoded because nothing consumed the canvas; not a drop.
@@ -25,6 +28,7 @@ public struct MetricsSummary: Sendable, CustomStringConvertible {
     public var missed = 0
     public var late = 0
     public var textureMisses = 0
+    public var staleFrames = 0
     public var idle = 0
     public var cpuP50 = 0.0, cpuP99 = 0.0, cpuMax = 0.0
     public var gpuP50 = 0.0, gpuP99 = 0.0, gpuMax = 0.0
@@ -33,8 +37,8 @@ public struct MetricsSummary: Sendable, CustomStringConvertible {
 
     public var description: String {
         String(
-            format: "frames %d  missed %d  late %d  textureMisses %d | cpu ms p50 %.2f p99 %.2f max %.2f | gpu ms p50 %.2f p99 %.2f max %.2f | dmx→photon ms p50 %.1f p99 %.1f (n=%d) | %.1f s",
-            frames, missed, late, textureMisses, cpuP50, cpuP99, cpuMax, gpuP50, gpuP99, gpuMax, dmxP50, dmxP99, dmxSamples, seconds)
+            format: "frames %d  missed %d  late %d  textureMisses %d  staleFrames %d | cpu ms p50 %.2f p99 %.2f max %.2f | gpu ms p50 %.2f p99 %.2f max %.2f | dmx→photon ms p50 %.1f p99 %.1f (n=%d) | %.1f s",
+            frames, missed, late, textureMisses, staleFrames, cpuP50, cpuP99, cpuMax, gpuP50, gpuP99, gpuMax, dmxP50, dmxP99, dmxSamples, seconds)
     }
 }
 
@@ -47,6 +51,8 @@ public final class MetricsRing: @unchecked Sendable {
     public let totalFrames = Atomic<Int>(0)
     public let totalMissed = Atomic<Int>(0)
     public let totalLate = Atomic<Int>(0)
+    /// Since start: `FrameRecord.staleFrames` summed (B371).
+    public let totalStaleFrames = Atomic<Int>(0)
 
     public init(capacity: Int = 16_384) {
         self.capacity = capacity
@@ -59,6 +65,7 @@ public final class MetricsRing: @unchecked Sendable {
         records[index % capacity] = record
         totalFrames.wrappingAdd(1, ordering: .relaxed)
         if record.missed > 0 { totalMissed.wrappingAdd(Int(record.missed), ordering: .relaxed) }
+        if record.staleFrames > 0 { totalStaleFrames.wrappingAdd(Int(record.staleFrames), ordering: .relaxed) }
         return index % capacity
     }
 
@@ -91,6 +98,7 @@ public final class MetricsRing: @unchecked Sendable {
         s.late = frames.filter(\.late).count
         s.idle = frames.filter(\.idle).count
         s.textureMisses = frames.reduce(0) { $0 + Int($1.textureMisses) }
+        s.staleFrames = frames.reduce(0) { $0 + Int($1.staleFrames) }
         func percentiles(_ values: [Double]) -> (Double, Double, Double) {
             guard !values.isEmpty else { return (0, 0, 0) }
             let sorted = values.sorted()

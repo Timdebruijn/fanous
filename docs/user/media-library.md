@@ -306,6 +306,9 @@ real output. Pass means no missed or late frame and no texture miss in a
 10 or 20 s window. The 2026-10-23 runs were idle (macOS 27.0.1); the
 2026-11-03 runs were on a 4K display with other work on the Mac (load 5 to
 24, macOS 27.2), so they say what a busy Mac manages, not a show Mac.
+These runs could not see a layer that showed an older frame on time (a stale
+frame); the benchmark counts those since 2026-11-18, and the numbers below are
+still to be measured again with it.
 
 | Content | Result |
 |---|---|

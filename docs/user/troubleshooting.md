@@ -323,6 +323,17 @@ against the frame budget ([System screen](screens/system.md#live-metrics)).
 - Too much media: 4K60 ProRes, Blur and Edge, dissolves on many layers
   ([Media library](media-library.md#what-a-mac-can-play)).
 
+## A layer shows stale frames
+
+`/metrics` (see [the API](reference/api.md)) counts `staleFrames`: a movie
+shown with an older frame than its play position. `layerStaleFrames` says
+which layer (the first number is layer 1, counted since the engine started).
+Some counts are by design: a bounce turn or a change from forward to reverse
+holds 22 to 23 frames of a 60 Hz output (about 0.4 s), a retrigger and every
+pass of a loop with in and out points 1. A count that keeps rising on a plain
+loop means the decoder cannot keep up: too many or too heavy layers (4K60 on
+several layers), or a slow volume for the library.
+
 ## No sound
 
 Audio plays on the Mac's default output device in one stereo mix
@@ -563,7 +574,7 @@ engine; the role is open again. The certificate is reset with
 
 - Monitor without a login: `https://<mac>:8443/healthz` (status, version,
   uptime; an uptime that reset is a restart), `/metrics` (frames, missed,
-  late, show mode, clients) and `/api/live` (per universe `active` and the
+  late, stale frames per layer, show mode, clients) and `/api/live` (per universe `active` and the
   age of the last packet); use `curl -k -m 8`. Readiness, the show lock and
   timecode are on the WebSocket only. These addresses need no password, so
   reach them from a management network only.

@@ -4508,6 +4508,7 @@ the benchmark.
 |---|---|---|
 | Frame time: CPU encode, GPU time (`GPUStartTime/GPUEndTime`), present deadline miss | compositor / output threads | per-output histogram, p50/p99, status bar fps |
 | Dropped / late frames | `CAMetalDisplayLinkUpdate.targetTimestamp` vs actual present, drawable timeouts | counters per output, red under show lock in the status bar |
+| Stale frames (B371) | a movie picture queued with a frame other than its clock's (the shown frame's index as `select` took it, against the clock's frame in `Compositor.prepare`), one per playback per tick, also on an idle tick and for a layer without a canvas; stills and live inputs never count, a tick without any frame is a texture miss instead | `/metrics` `staleFrames` (the second), `totalStaleFrames`, `layerStaleFrames` (per layer since start); `fanous-bench` fails a step on any; not in the UI |
 | Decode latency per layer | sample request → texture ready | p50/p99 per layer, ring occupancy graph |
 | HAP chunk-pool utilisation, Snappy MB/s | chunk pool | System screen |
 | DMX | packets/s, sequence gaps, last-seen per universe, parse errors | status bar + Patch screen |
