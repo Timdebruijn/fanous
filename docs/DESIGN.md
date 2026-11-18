@@ -341,7 +341,10 @@ display link's `targetTimestamp`:
   live input) is handed over at once, also while a file opens; a further file
   selection waits for the layer's open in flight. Until a file's playback is
   handed over, the loader's books (the live input a layer shows, its status)
-  stay on what the layer shows. A layer stops waiting after 2 s: its status
+  stay on what the layer shows, and a catalog or library change reopens a
+  live input or a missing number only on a layer whose selection is what it
+  shows; a live input that comes back while the layer's file has not come
+  keeps its last frame and "not running". A layer stops waiting after 2 s: its status
   keeps describing the picture and gains "M/N file is not answering", and it
   takes its next selection; the stuck thread cannot be stopped and still
   counts. An answer is played only when it is the layer's newest open and the

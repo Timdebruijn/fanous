@@ -560,7 +560,9 @@ public final class MediaLoader: @unchecked Sendable {
             // gone, back under another uid, or a failed session: never shared again
             if let open, captureShared[kind]?[open.uid]?.input === open.input { captureShared[kind]?[open.uid] = nil }
             if source?.running == true || open.map({ runningElsewhere.contains($0.uid) }) == true {
-                loaded[i] = .max  // came back, no longer in use elsewhere, or moved to another number: opened again below
+                // came back, no longer in use elsewhere, or moved to another number: opened again below, unless the
+                // layer's selection is a file that has not come (B277: it keeps the last frame)
+                if loaded[i] == shown[i] { loaded[i] = .max }
             } else {
                 if kind == .screens { open?.input.halt("not running") }
                 captureOpen[i] = nil  // the input stays on the layer: the last frame
@@ -583,7 +585,8 @@ public final class MediaLoader: @unchecked Sendable {
                 for i in loaded.indices {
                     let key = MediaKey(packed: loaded[i])
                     guard !key.isNone, key.folder != 0, media[key] == nil else { continue }
-                    if all || (layers[i].mediaStatus.withLock { $0.kind == "missing" } && resolver?(key) != nil) {
+                    // a missing number is retried only where it is what the layer shows (B277: not a file that has not come)
+                    if all || (loaded[i] == shown[i] && layers[i].mediaStatus.withLock { $0.kind == "missing" } && resolver?(key) != nil) {
                         loaded[i] = .max  // never a packed key: opened again below
                     }
                 }
@@ -598,8 +601,9 @@ public final class MediaLoader: @unchecked Sendable {
                         syphonOpen[i] = nil
                         layers[i].mediaStatus.withLock { $0.error = "not running" }
                     } else {
-                        // back, or its server moved to another number (a renumber, B137): the number shows what is on it now
-                        loaded[i] = .max  // never a packed key: opened again below
+                        // back, or its server moved to another number (a renumber, B137): the number shows what is on it now;
+                        // not while the layer's selection is a file that has not come (B277)
+                        if loaded[i] == shown[i] { loaded[i] = .max }  // never a packed key: opened again below
                     }
                 }
             }
@@ -735,7 +739,13 @@ public final class MediaLoader: @unchecked Sendable {
             let givenUp = opening[i]?.id != answer.id
             if !givenUp { opening[i] = nil }
             guard answer.id == newest[i], layers[i].wanted.load(ordering: .relaxed) == answer.key.packed else {
-                if answer.id == newest[i] { loaded[i] = .max }  // never a packed key: what the layer wants now is opened below
+                if answer.id == newest[i] {
+                    loaded[i] = .max  // never a packed key: what the layer wants now is opened below
+                    if notCome[i] != nil {  // its error is about a selection the layer has left
+                        notCome[i] = nil
+                        layers[i].mediaStatus.withLock { $0.error = nil }
+                    }
+                }
                 logger.info("media open answered after a newer selection, dropped", metadata: ["layer": "\(i + 1)", "media": "\(answer.key)"])
                 continue
             }

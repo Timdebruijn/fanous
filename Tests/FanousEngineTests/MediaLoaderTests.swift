@@ -242,6 +242,70 @@ import Testing
         #expect(Self.take(layers[0]) == nil)
     }
 
+    /// A display that goes and comes back while the layer's selection is a file that has not come (in flight, or given
+    /// up) does not reopen that file: no second open starts, and the file, once it answers, is handed over once. Layer 2
+    /// shows the same display and is reopened when it comes back: the sign that the catalog change was handled.
+    @Test(arguments: [false, true])
+    func aDisplayThatComesBackDoesNotReopenAFileSelection(givenUp: Bool) async throws {
+        let opens = Opens()
+        opens.held.withLock { $0 = ["1.png"] }
+        let (loader, layers) = try Self.loader(layers: 2, opens: opens, deadline: givenUp ? .milliseconds(50) : .seconds(60))
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let catalog = LiveCatalog(.screens)
+        catalog.onChange = { [loader] in loader.changed(.screens) }
+        loader.screensCatalog = catalog
+        let displays = [ScreenInputTests.display(1, "uuid-a", "Built-in Retina Display"), ScreenInputTests.display(2, "uuid-b", "DELL U2720Q")]
+        catalog.update(running: LiveCatalog.screens(displays, bound: []))
+        loader.screenFactory = { _ in ScreenInputTests.input(device) }
+        loader.start()
+        defer { loader.stop() }
+        defer { opens.held.withLock { $0 = [] } }
+        for layer in layers {
+            layer.wanted.store(MediaKey(folder: 0, file: 22).packed, ordering: .relaxed)
+            loader.wake.signal()
+            #expect(await waitUntil { Self.take(layer) == MediaKey(folder: 0, file: 22) })
+        }
+        Self.select(layers[0], 1, loader)
+        #expect(await waitUntil { opens.started.withLock { $0 } == ["1.png"] })
+        if givenUp { #expect(await waitUntil { layers[0].mediaStatus.withLock { $0.error?.contains("is not answering") == true } }) }
+        catalog.update(running: LiveCatalog.screens(displays, bound: ["uuid-b"]))
+        #expect(await waitUntil { layers[1].mediaStatus.withLock { $0.error } == "not running" })
+        catalog.update(running: LiveCatalog.screens(displays, bound: []))
+        #expect(await waitUntil { Self.take(layers[1]) == MediaKey(folder: 0, file: 22) }, "the display did not come back on layer 2")
+        #expect(opens.started.withLock { $0 } == ["1.png"], "the display's return opened the file selection again")
+        opens.held.withLock { $0 = [] }
+        #expect(await waitUntil { Self.take(layers[0]) == MediaKey(folder: 1, file: 1) })
+        Self.select(layers[0], 2, loader)
+        #expect(await waitUntil { opens.started.withLock { $0 }.contains("2.png") })
+        #expect(opens.started.withLock { $0 } == ["1.png", "2.png"], "the file was opened twice")
+    }
+
+    /// A library change retries a missing number only on a layer that shows it, not on a layer whose missing picture
+    /// stays while its file selection has not come. Layer 2 shows a missing number that now resolves: the sign that the
+    /// change was handled.
+    @Test func aLibraryChangeDoesNotReopenAFileThatHasNotCome() async throws {
+        let opens = Opens()
+        opens.held.withLock { $0 = ["1-1.png"] }
+        let (loader, layers) = try Self.loader(layers: 2, opens: opens, deadline: .milliseconds(50), media: [])
+        let folder3 = Atomic<Bool>(false)
+        loader.resolver = { key in
+            key.folder == 1 || (key.folder == 3 && folder3.load(ordering: .relaxed)) ? URL(fileURLWithPath: "/nonexistent/\(key.folder)-\(key.file).png") : nil
+        }
+        loader.start()
+        defer { loader.stop() }
+        defer { opens.held.withLock { $0 = [] } }
+        layers[0].wanted.store(MediaKey(folder: 2, file: 1).packed, ordering: .relaxed)
+        layers[1].wanted.store(MediaKey(folder: 3, file: 1).packed, ordering: .relaxed)
+        loader.wake.signal()
+        #expect(await waitUntil { layers.allSatisfy { layer in layer.mediaStatus.withLock { $0.kind } == "missing" } })
+        Self.select(layers[0], 1, loader)
+        #expect(await waitUntil { layers[0].mediaStatus.withLock { $0.kind == "missing" && $0.error?.contains("is not answering") == true } })
+        folder3.store(true, ordering: .relaxed)
+        loader.changed(.missingLibrary)
+        #expect(await waitUntil { opens.started.withLock { $0 }.contains("3-1.png") }, "layer 2's missing number was not retried")
+        #expect(opens.started.withLock { $0 } == ["1-1.png", "3-1.png"], "the library change opened the file that has not come again")
+    }
+
     /// A selection that is not a file (clear, a missing number, a live input) is handed over at once while an open is in
     /// flight on the layer, and the open's late answer is dropped.
     @Test func aSelectionThatIsNotAFileDoesNotWaitForAnOpen() async throws {
