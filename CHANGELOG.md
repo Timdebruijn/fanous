@@ -19,6 +19,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   is made again on its port 1, 2 and 4 s later and then every 5 s until it listens, logged once per change; the
   failed UDP listener's flows go with it, and readiness shows the live state of Art-Net and, in a new item "OSC port
   8000 available", of OSC (PR #408)
+- Engine (B277): a movie or still file opens on a thread of its own, normally 4 at a time and never more than 8
+  threads, so a file on a slow or gone volume no longer holds up every layer's media change; after 2 s its layer
+  keeps its picture and that picture's status, adds "… is not answering", and takes the next selection, and
+  playbacks a layer let go of are stopped meanwhile (PR #409).
 - Engine (B270): an HTTPS connection reads and parses the next request only once the previous response has left, so
   a client that pipelines requests and never reads no longer makes the engine queue responses without bound
   (PR #397).

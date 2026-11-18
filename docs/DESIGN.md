@@ -332,6 +332,28 @@ display link's `targetTimestamp`:
   and restarts; the compositor shows the previous frame (or black, per layer
   setting) until the first new frame is ready, then starts the dissolve if
   dissolve > 0.
+- File opens (B277): the media loader thread resolves every selection; a
+  movie or still file is opened on a thread of its own
+  (`org.fanous.media.open`), normally 4 at a time (a layer that leaves its
+  open for a clear or a live input frees its slot while that thread may still
+  run) and never more than 8 threads, so a file on a slow or gone volume holds
+  up only its layer. A selection that is not a file (clear, a generator, a
+  live input) is handed over at once, also while a file opens; a further file
+  selection waits for the layer's open in flight. Until a file's playback is
+  handed over, the loader's books (the live input a layer shows, its status)
+  stay on what the layer shows, and a catalog or library change reopens a
+  live input or a missing number only on a layer whose selection is what it
+  shows; a live input that comes back while the layer's file has not come
+  keeps its last frame and "not running". A layer stops waiting after 2 s: its status
+  keeps describing the picture and gains "M/N file is not answering", and it
+  takes its next selection; the stuck thread cannot be stopped and still
+  counts. An answer is played only when it is the layer's newest open and the
+  layer still wants its key; otherwise it is dropped before a decoder is made.
+  A given-up open that later fails replaces that error with its own and
+  keeps the picture; one that fails within the 2 s cuts to black (B299).
+  Capture, screen, Syphon and generator opens, and stopping retired
+  playbacks, stay on the loader thread. The layers of one cue each switch
+  when their own first frame is ready; there is no barrier across layers.
 - Frame selection: the compositor picks the ring frame whose pts is the
   closest at-or-before `position`; frames older than that are released to the
   pool. There is **no frame blending** in v1 (nearest frame), which keeps

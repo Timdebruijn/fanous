@@ -183,6 +183,7 @@ The Layers screen shows the problem in the row's Media column.
 | A decoder error ("unsupported codec", "VideoToolbox error", "no video track") | Transcode the file again or replace it, then send Control 24–31 (Clear error) on layer channel 50 from the console and back to 0 |
 | "no capture device / display / Syphon server numbered N" | Nothing has that number in folder 0: Inputs screen, **Number** ([Live inputs](live-inputs.md)) |
 | "not running", "in use by another app", "no signal" | The live input: plugged in, not open in another app, a signal on the card |
+| "M/N <file> is not answering: the volume is slow or gone" | The file selected as M/N did not open within 2 seconds: its disk is asleep, unplugged or a network share that went away, or a cloud copy not downloaded. The layer keeps its picture, and the row still describes that picture with this error added (today the row's chip reads a red "Decoder error" for a movie or still that keeps playing, and the whole text for a live picture); the clip plays if it opens while it is still selected; other layers change as usual meanwhile. If the file then fails to open, the error becomes "M/N <file>: <why>" and the layer still keeps its picture until another selection. Select another clip or bring the volume back; keep show media on the Mac's own disk |
 | A permission text | Inputs screen › **Authorize** (not in show mode); screen recording needs Engine › Restart Engine after the grant |
 
 The row is green and the picture black, in this order, done when the
@@ -416,6 +417,7 @@ log show --predicate 'subsystem == "org.fanous"' --last 1h
 | "sync port in use; not receiving sync packets" | System › Sync: apply a free port |
 | "CITP start failed", "CITP PLoc beacon failed (firewall?)" | The console will not list Fanous |
 | "media not found", "media open failed" | The layer's row says the same |
+| "media open not answering" | A file did not open within 2 seconds (`file`, `layer`): the section [above](#a-layer-shows-an-error-or-the-picture-is-black). "media open answered after a newer selection, dropped" means an open finished (opened or failed) after its layer had moved on: something else was selected, or the newer selection was still waiting for an open slot or for this open; nothing is shown from it. "media open failed" after a "not answering" is that file failing late: the layer keeps its picture |
 | "project file not readable" | The section above |
 | "stale show state ignored" | The engine or the Mac was down for more than 2 hours since show mode was last written: a normal start |
 | "show mode resumed after an unclean stop", "show mode kept across a restart" | Show mode came back; the second is a deliberate Restart Engine |
