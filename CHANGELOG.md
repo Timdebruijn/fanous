@@ -10,6 +10,31 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine (B270): an HTTPS connection reads and parses the next request only once the previous response has left, so
+  a client that pipelines requests and never reads no longer makes the engine queue responses without bound
+  (PR #397).
+- Engine (B281): a `project.json` that does not read at start (cut off, empty, another schema) is copied beside itself
+  (a hard link without space for a copy) and the engine runs the newest project version that can be restored instead
+  of an empty project, also when show mode resumes; the version is saved over the file, and when that save fails the
+  damaged file stays until a later save succeeds; a file that cannot be kept aside is never written over (versions are
+  still made). The new readiness item "Project file read at start" says when, the project, the version, the kept file
+  and what to do, at every start until it is acknowledged as seen (PR #399).
+- Engine (B271): DMX state is bounded: sACN universes outside 1–63999 are refused; universes nobody patched or
+  configured are capped at 256 held in all, sACN sources at 16 per universe (a higher priority replaces the lowest,
+  never the winner), Art-Net sequence state at 16 senders; "DMX receiving" lines come from a budget of 512 that refills
+  one per 15 s, and the caps warn once a minute with counts (PR #400).
+- Engine (B267): a library file or an ingest job that the engine stopped in twice (a crash, a kill, a power cut) is
+  listed as unreadable or failed with the reason and not tried a third time, so a file that stops the engine while
+  the library reads it, or an ingest job, no longer stops it at every start; such a still is no image mask. Failing
+  moves or deletes no file; a job stopped after its result was in place is done and leaves its original where it was;
+  a changed file or a re-queued job is tried again. A decode outside the library (a layer, a mask still cached as
+  playable) is B348 (PR #401).
+- Engine (B346): cues of a hand-written or imported `project.json` without a UUID id get one when the project loads,
+  so a project change no longer drops the current cue and the values the cues hold, and `cue.set`/`cue.remove` find
+  them; the file has the ids from its next save (PR #403).
+- Engine (B284): when show mode resumes after a crash or Engine › Restart Engine, the cue list is back on the cue
+  that was current with the values the cues held, a running fade at its end and no follow replayed; GO and Back go
+  where they would have gone (PR #398).
 - Engine (B268): the engine sets its open-file limit to 10240 at start, also under launchd (which starts it with
   256; Foundation raises that to 2560 at first use, the ceiling measured) and from a shell (far more), and logs it;
   Art-Net and OSC forget a sender silent for two minutes and keep at most 1024 at once, dropping only one silent for

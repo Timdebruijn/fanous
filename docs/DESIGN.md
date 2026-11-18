@@ -741,6 +741,29 @@ three existing modes and their footprints alone.
   source (and, with `both`, Art-Net) silent that long leaves the merge, so a
   lower-priority backup takes over on time. `lossTimeout` only decides when
   the universe counts as lost (status, readiness, hold on signal loss).
+- Bounds (B271): the parser refuses sACN universes outside 1–63999. The table
+  holds at most 256 universes, counting all of them, but a patched or configured
+  universe (or a wire universe that feeds a configured one) always gets in, so
+  only the unused ones are capped: heard, nothing patched, no settings. While
+  the table is full, each 0.5 s tick forgets every unused universe silent past
+  its loss timeout at once. A universe tracks at most 16 sACN sources. A new
+  source with a full set replaces the lowest-priority source that is not the
+  winner (the oldest on a tie) when its priority is strictly higher, and is
+  refused otherwise; the winner is never replaced, so "highest priority wins"
+  holds. The merge equals the uncapped one except when 16 sources already sit
+  at the top priority: a 17th at that priority is refused, so it neither joins
+  an HTP merge nor wins `highest` by arriving last. Art-Net checks sequence
+  numbers for at most 16 senders per universe; a new one replaces the sender
+  seen longest ago. With 17 or more live senders every packet replaces one, so
+  each sender comes back with a fresh gate: no packet is dropped, but reordered
+  packets are no longer filtered (the last-wins flicker of B306 anyway).
+  "DMX receiving" logs each (universe, source) once, not again for a new
+  priority, out of one budget for the engine: 512 lines that refill one per
+  15 s, then one "held back" line until it is full again. A pair whose source
+  went is forgotten and may be logged again only from that budget. While the
+  caps refuse, replace or evict anything, "DMX limits reached in the last
+  minute" comes once a minute with that minute's counts, and one line when a
+  minute passes with nothing.
 - `interface` filters by sender: a packet is accepted when its source address
   is in a subnet of that interface (getifaddrs, re-read on the 0.5 s tick
   while a universe names one, so adapters may come and go). sACN is one BSD
@@ -4785,8 +4808,10 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   re-plug; previous modes persisted in `display-modes.json` and restored on
   the next start after a crash outside show mode; unavailable modes are a non-blocking `warn` readiness item).
   **Show mode survives a crash (as built 2026-10-26):** `show-state.json`
-  (`{on, since, written, restart?}`; files with the earlier `boot` key still load) is written
-  on entering (inside the controller's state lock, refreshed every 30 s) and
+  (`{on, since, written, restart?, cue?, cueNumber?, held?}`; files with the earlier `boot` key still load) is written
+  on entering (inside the controller's state lock, refreshed every 30 s, and on the feed queue when the
+  cue list's state changes, only the newest of a burst: `cue` and `cueNumber` the current cue, `held` the values the
+  cues hold by owning cue id, `"Layer 1/intensity"` → raw, a running fade at its target, B284) and
   removed on leaving. `Engine.stop` leaves show mode, so SIGTERM (launchd stop,
   Stop Engine, Stop Engine and Quit, logout, bootout) clears it; once the stop
   has begun, entering is refused. Engine › Restart Engine (and the shell's
@@ -4803,7 +4828,14 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   runs at the first display sync. The log says "show mode resumed after an
   unclean stop" or "show mode kept across a restart", and live `show.resumedAt`
   (with `show.resumedRestart` telling a kept-for-restart resume from an unclean
-  stop, B181) drives the status-bar and System notice until show mode is left. The first
+  stop, B181) drives the status-bar and System notice until show mode is left. A resume puts
+  `held` back as the cue list's held values with their owners, at once, dropping what a cue no
+  longer in the list held, and `cue` as the current cue if it is still in the list, else the
+  nearest cue numbered before `cueNumber` (B284, "cue position resumed"), applied in one step with
+  the list so only the resumed state is reported; no fade, no follow, timecode unarmed until its
+  next frame. A field or a `held` entry that does not decode is left out; show mode still resumes. `Engine.stop` stops the cue runner
+  and drains the feed queue before the show state is kept. Playback positions and values a console
+  or the UI set are not restored (B334). The first
   display sync is then an apply, not a restore: displays already in their show
   mode are not switched and the ledger is kept for the restore on leaving (no
   flip-flop). The show lock lives in the project document; a lock change is

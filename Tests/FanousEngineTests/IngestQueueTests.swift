@@ -8,6 +8,7 @@ import Foundation
 import ImageIO
 import Logging
 import Metal
+import Synchronization
 import Testing
 import UniformTypeIdentifiers
 import VideoToolbox
@@ -365,6 +366,13 @@ import VideoToolbox
         try encoder.encode([crashed]).write(to: file)
         #expect(IngestQueue(persistenceURL: file).jobs.map(\.state) == [.queued])
 
+        // B267: started over once, saved as such; the second time the engine stops in it, it fails and is not started.
+        #expect(IngestQueue(persistenceURL: file).jobs.first?.interruptedRuns == 1, "the count was saved at the first restore")
+        crashed.interruptedRuns = 1
+        try encoder.encode([crashed]).write(to: file)
+        #expect(IngestQueue(persistenceURL: file).jobs.map(\.state) == [.failed("the engine stopped twice during this job")], "a failed job is never claimed")
+        #expect(IngestQueue(persistenceURL: file).jobs.first?.state == .failed("the engine stopped twice during this job"), "saved as failed")
+
         // Garbage does not stop the queue from starting.
         try Data("not json".utf8).write(to: file)
         #expect(IngestQueue(persistenceURL: file).jobs.isEmpty)
@@ -553,6 +561,121 @@ import VideoToolbox
         }
         #expect(try String(contentsOf: source, encoding: .utf8) == "not a movie")
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["002_bad.mov"])
+    }
+
+    /// B267: a job saved as running whose source, destination and queue file are as given; returns the queue file.
+    private func runningJob(
+        _ directory: URL, outputWritten: Bool?, interruptedRuns: Int?, deleteSource: Bool = false, destinationThere: Bool = true
+    ) throws -> (queue: URL, source: URL, destination: URL, originals: URL) {
+        let source = directory.appending(path: "incoming/clip.mov")
+        let destination = directory.appending(path: "library/001_Clips/001_clip.mov")
+        let originals = directory.appending(path: "library/001_Clips/_originals")
+        for (url, text) in [(source, "the original"), (destination, "the result")] where url != destination || destinationThere {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(text.utf8).write(to: url)
+        }
+        var job = IngestJob(
+            source: source, destination: destination, kind: .transcode(codec: .proRes422HQ), originalsDirectory: deleteSource ? nil : originals,
+            deleteSource: deleteSource)
+        job.state = .running(progress: 1)
+        job.outputWritten = outputWritten
+        job.interruptedRuns = interruptedRuns
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let queue = directory.appending(path: "queue.json")
+        try encoder.encode([job]).write(to: queue)
+        return (queue, source, destination, originals)
+    }
+
+    /// A destination that exists is no proof this job wrote it (another file of that name, copied in before the job got
+    /// to its check): without the record the job is an interrupted run, and its source is not touched.
+    @Test func anExistingDestinationWithoutTheRecordIsNotDone() throws {
+        for runs in [nil, 1] as [Int?] {
+            let (queue, source, destination, originals) = try runningJob(try tempDir("fanous-ingest-tests"), outputWritten: nil, interruptedRuns: runs)
+            let job = try #require(IngestQueue(persistenceURL: queue).jobs.first)
+            #expect(job.state == (runs == nil ? .queued : .failed("the engine stopped twice during this job")))
+            #expect(job.interruptedRuns == (runs ?? 0) + 1)
+            #expect(try String(contentsOf: source, encoding: .utf8) == "the original", "the source stays")
+            #expect(try String(contentsOf: destination, encoding: .utf8) == "the result")
+            #expect(!FileManager.default.fileExists(atPath: originals.path))
+        }
+    }
+
+    /// With the record and the output there the job is done, but nothing is moved or deleted at start, unwatched: the
+    /// original stays where it is (a job that would move it and one that would delete it), the job says so and stays
+    /// listed, and the stop is not counted.
+    @Test func aRecordedOutputIsDoneAndTheOriginalIsLeftInPlace() throws {
+        for (deleteSource, runs) in [(false, nil), (true, nil), (false, 1), (true, 1)] as [(Bool, Int?)] {
+            let (queue, source, destination, originals) = try runningJob(
+                try tempDir("fanous-ingest-tests"), outputWritten: true, interruptedRuns: runs, deleteSource: deleteSource)
+            let job = try #require(IngestQueue(persistenceURL: queue).jobs.first)
+            #expect(job.state == .done && job.interruptedRuns == runs && job.outputWritten == nil)
+            #expect(job.note == IngestQueue.originalLeft)
+            var old = job
+            old.finishedAt = Date().addingTimeInterval(-3600)
+            #expect(!IngestQueue.expired(old), "stays listed with its note")
+            #expect(IngestQueue(persistenceURL: queue).jobs.first?.state == .done, "saved as done")
+            #expect(try String(contentsOf: destination, encoding: .utf8) == "the result")
+            #expect(try String(contentsOf: source, encoding: .utf8) == "the original", "left in place")
+            #expect(!FileManager.default.fileExists(atPath: originals.path))
+        }
+    }
+
+    /// With the record but the output gone since (the operator deleted it after the crash): failed, the source untouched.
+    @Test func aRecordedOutputThatIsGoneFailsTheJob() throws {
+        for deleteSource in [false, true] {
+            let (queue, source, _, originals) = try runningJob(
+                try tempDir("fanous-ingest-tests"), outputWritten: true, interruptedRuns: nil, deleteSource: deleteSource, destinationThere: false)
+            let job = try #require(IngestQueue(persistenceURL: queue).jobs.first)
+            #expect(job.state == .failed(IngestQueue.outputMissing) && job.interruptedRuns == nil)
+            #expect(try String(contentsOf: source, encoding: .utf8) == "the original")
+            #expect(!FileManager.default.fileExists(atPath: originals.path))
+        }
+    }
+
+    /// In place, the record is saved after the replace: the result is at the source's path, the job is done, nothing to say.
+    @Test func aRecordedInPlaceJobIsDone() throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let file = directory.appending(path: "library/001_Clips/002_phone.mov")
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("the result".utf8).write(to: file)
+        var job = IngestJob(source: file, destination: file, kind: .transcode(codec: .proRes422HQ), deleteSource: true)
+        job.state = .running(progress: 1)
+        job.outputWritten = true
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode([job]).write(to: directory.appending(path: "queue.json"))
+        let restored = try #require(IngestQueue(persistenceURL: directory.appending(path: "queue.json")).jobs.first)
+        #expect(restored.state == .done && restored.note == nil && restored.interruptedRuns == nil)
+        #expect(try String(contentsOf: file, encoding: .utf8) == "the result")
+    }
+
+    /// `run` saves the record before the original is put away: some saved queue file shows it while the original is still
+    /// at its path.
+    @Test func theRecordIsSavedBeforeTheOriginalIsPutAway() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let png = directory.appending(path: "incoming/title.png")
+        try FileManager.default.createDirectory(at: png.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Self.writeFramePNG(to: png, index: 3)
+        let file = directory.appending(path: "queue.json")
+        let queue = IngestQueue(persistenceURL: file)
+        final class Seen: Sendable { let recordedBeforeMove = Atomic<Bool>(false) }
+        let seen = Seen()
+        queue.onChange = {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            guard let jobs = try? decoder.decode([IngestJob].self, from: Data(contentsOf: file)) else { return }
+            if jobs.first?.outputWritten == true, FileManager.default.fileExists(atPath: png.path) { seen.recordedBeforeMove.store(true, ordering: .relaxed) }
+        }
+        queue.start()
+        defer { queue.stop() }
+        let library = directory.appending(path: "library/001_Opening")
+        let job = queue.enqueue(IngestJob(source: png, destination: library.appending(path: "002_title.png"), kind: .still, originalsDirectory: library.appending(path: "_originals")))
+        #expect(await Self.wait(for: job.id, in: queue) == .done)
+        let recordedBeforeMove = seen.recordedBeforeMove.load(ordering: .relaxed)
+        #expect(recordedBeforeMove)
+        #expect(!FileManager.default.fileExists(atPath: png.path), "put away by the run itself")
+        #expect(queue.jobs.first?.outputWritten == nil && queue.jobs.first?.note == nil, "cleared with done")
     }
 
     /// B169: a crash between the two renames of an in-place job leaves the original in `_originals/` and the finished result

@@ -95,6 +95,8 @@ public final class Engine: @unchecked Sendable {
     private var lastMIDISettings = MIDISettings()
     private var cues: CueRunner?
     private var lastCues = CueList()
+    /// B284: the newest cue list state the feed queue has not written yet.
+    private let unsavedCueState = Mutex<(current: Cue?, targets: [UUID: [CueValue]])?>(nil)
     /// Internal: a test reads and watches it (B200).
     let showMode: ShowModeController
     /// The last run's items, the acknowledgements (B163) and the run numbers (B187).
@@ -112,7 +114,8 @@ public final class Engine: @unchecked Sendable {
     private let showResumed = Mutex<(at: Double, restart: Bool)?>(nil)
     /// The show lock as last written to disk: a change is saved at once, not with the 2 s autosave.
     private let savedShowLock = Mutex<Bool?>(nil)
-    /// Main actor: after a resume the first display sync runs readiness at once instead of after 30 s.
+    /// Main actor: after a resume, or a start that did not read `project.json` (B281), the first display sync runs
+    /// readiness at once instead of after 30 s (or, outside show mode, at Run checks).
     private var readinessOnNextSync = false
     private var lastPolicy: SourcePolicy?
     private var lastUniverseSettings: [UniverseID: UniverseSettings] = [:]
@@ -121,6 +124,10 @@ public final class Engine: @unchecked Sendable {
     private var lastUniverseIssues: [String] = []
     /// Why the sACN port could not be bound at start (readiness); nil while sACN runs.
     private let sacnError = Mutex<String?>(nil)
+    /// B281: why the project did not come from `project.json` at start (readiness item `project`); nil when it did.
+    let projectProblem = Mutex<String?>(nil)
+    /// B281: the problem the operator acknowledged as seen, for Take back.
+    private let projectSeen = Mutex<String?>(nil)
     /// The project's library root as last seen by `projectChanged` (B51).
     private let libraryRootInProject = Mutex<String?>(nil)
     /// `/syphon`, `/capture` and `/screens` as the engine last applied them (B69, B73): a catalog is written back when it differs.
@@ -143,8 +150,12 @@ public final class Engine: @unchecked Sendable {
     private var dmxTimer: DispatchSourceTimer?
     private(set) var autosave: DispatchWorkItem?
     /// The file `start` loaded the project from; nil before, so an engine that never started (a test) writes no
-    /// project file (B240). A test sets a temporary one.
+    /// project file (B240). A test sets a temporary one. Also nil when an unreadable file could not be kept aside (B281):
+    /// nothing may be written over it.
     var projectFile: URL?
+    /// B281: the notice of an unreadable project at start, removed when readiness item `project` is acknowledged; nil
+    /// before `start`.
+    var projectNotice: URL?
     /// The shell's Engine › Restart Engine marker, which `stop` takes; nil before `start`, so a stop of an engine that
     /// never started (a test) removes no marker (B242).
     var restartPendingFile: URL?
@@ -230,18 +241,18 @@ public final class Engine: @unchecked Sendable {
         // The project document comes first: without a scene file (the bundled agent) it is the source of the layer
         // count, canvas, source policy and library root (DESIGN.md §2.4); a scene file (development, bench) wins,
         // and its canvas is mirrored into the project so the UI shows what renders.
-        var loadedProject = ProjectDocument.load(from: AppPaths.projectFile)
-        projectFile = AppPaths.projectFile
-        if loadedProject == nil {
-            // keep an unreadable file (damaged, another schema) before the new project's autosave writes over it
-            do {
-                if let aside = try ProjectDocument.setAside(AppPaths.projectFile) {
-                    logger.error("project file not readable: a new project starts, the file is kept", metadata: ["kept": "\(aside.lastPathComponent)"])
-                }
-            } catch {
-                logger.error("project file not readable and could not be moved aside", metadata: ["error": "\(error)"])
-            }
+        // B281: an unreadable file is kept and the newest version that restores runs; readiness item `project` says so
+        let versions = ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger)
+        let start = versions.startProject(from: AppPaths.projectFile)
+        // hand-written MIDI map entries and cues get an id on load (B346: before the start version is saved from it), so
+        // per-entry state, midi.map.remove and cue.set/remove can address them and the cue list parses the same every time
+        var loadedProject = start.project.map { project in
+            let project = MIDISettings.assigningIDs(project) ?? project
+            return ShowCommands.assigningCueIDs(project) ?? project
         }
+        projectFile = start.saves ? AppPaths.projectFile : nil
+        projectNotice = ProjectVersions.noticeFile(for: AppPaths.projectFile)
+        projectProblem.withLock { $0 = start.problem }
         for issue in ProjectDocument.wallEntries(from: loadedProject ?? .null).issues { logger.warning("projector wall skipped", metadata: ["entry": "\(issue)"]) }
         let startCanvas = Self.startCanvas(project: loadedProject, scene: options.scene)
         if options.scene != nil, var project = loadedProject {
@@ -369,9 +380,7 @@ public final class Engine: @unchecked Sendable {
 
         // Phase 5: roles, the project and live documents and the WebSocket state server (DESIGN.md §11).
         let auth = RoleAuth(settingsURL: AppPaths.settingsFile, shellTokenURL: AppPaths.shellTokenFile, logger: logger)
-        var project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: startCanvas)
-        // hand-written MIDI map entries get an id on load, so per-entry state and midi.map.remove can address them
-        if let fixed = MIDISettings.assigningIDs(project) { project = fixed }
+        let project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: startCanvas)
         let store = StateStore(project: project, logger: logger)
         ProjectDocument.registerCommands(
             on: store, auth: auth, showModeOn: { [weak self] in self?.showMode.isOn ?? false },
@@ -412,10 +421,9 @@ public final class Engine: @unchecked Sendable {
         liveInProject.withLock { $0 = [.syphon: project["syphon"] ?? [:], .capture: project["capture"] ?? [:], .screens: project["screens"] ?? [:]] }
         libraryRootInProject.withLock { $0 = URL(fileURLWithPath: project["library"]?["root"]?.string ?? libraryRoot.path).path }
         // B23: a version of the project as loaded, then one every 10 minutes when it changed, and one per show-mode enter
-        let versions = ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger)
         versions.registerCommands(on: store, showModeOn: { [weak self] in self?.showMode.isOn ?? false })
         self.versions = versions
-        let startProject = loadedProject
+        let startProject = start.fromVersion ? nil : loadedProject  // a version that runs is one already (B281)
         versionsQueue.async {
             if let startProject { versions.saveAutomatic(startProject, reason: .start) } else { _ = versions.list() }
         }
@@ -424,9 +432,34 @@ public final class Engine: @unchecked Sendable {
         }
         // Phase 7: cues, timecode, show mode (DESIGN.md §14–15)
         let cues = CueRunner(dmx: dmx)
-        cues.replace(list: ShowCommands.cueList(from: project))
-        lastCues = ShowCommands.cueList(from: project)
+        // B284: the current cue and the held values go into the show-state file, written on the feed queue like `touch()`,
+        // not on the cue queue; a burst of GOs writes only the newest
+        cues.onStateChange = { [weak self] current, targets in self?.handOverCueState(current, targets) }
+        let cueList = ShowCommands.cueList(from: project)
+        // B284: a resumed show is back on its cue with the values the cues held, in the same step as the list (so the
+        // runner never reports the empty state in between); nothing fades or follows
+        let resumeCues = resumeShow.flatMap { $0.cue != nil || $0.held != nil ? $0 : nil }
+        cues.replace(list: cueList, resuming: resumeCues.map { ($0.cue, $0.cueNumber, $0.targets) })
+        lastCues = cueList
         self.cues = cues
+        if let resumeCues {
+            // the enter below writes the file: with the state the runner lands on (the same resume on a scratch engine:
+            // the fallback cue, gone owners dropped, raws clamped), not the controller's empty one nor the stored one, so
+            // this write and the runner's report are the same whichever lands last
+            var landed = CueEngine(list: cueList)
+            landed.resume(current: resumeCues.cue, number: resumeCues.cueNumber, targets: resumeCues.targets)
+            let targets = landed.targets
+            showMode.setCue(landed.current?.id, number: landed.current?.number, targets: targets)
+            let values = "\(targets.values.reduce(0) { $0 + $1.count })"
+            let stored = resumeCues.cueNumber.map { "\($0)" } ?? "?"
+            if let cue = landed.current {
+                logger.warning(
+                    cue.id == resumeCues.cue ? "cue position resumed" : "cue position resumed on an earlier cue: the cue is no longer in the cue list",
+                    metadata: ["cue": "\(cue.number)", "name": "\(cue.name)", "stored": "\(stored)", "values": "\(values)"])
+            } else {
+                logger.warning("cue position not resumed: the cue is no longer in the cue list", metadata: ["stored": "\(stored)", "values": "\(values)"])
+            }
+        }
         timecodeClock.onFrame = { [weak self] timecode, _ in self?.cues?.timecode(timecode) }
         ControlCommands.register(on: store, hooks: ControlCommands.Hooks(set: { dmx.setUI($0, $1, raw: $2) }, release: { dmx.releaseUI($0) }, keep: { dmx.keepUI($0) }))
         ShowCommands.register(
@@ -436,7 +469,7 @@ public final class Engine: @unchecked Sendable {
                 go: { cues.go(); oscFeedback?.invalidate(prefix: "/fanous/cue") }, back: { cues.back(); oscFeedback?.invalidate(prefix: "/fanous/cue") },
                 goto: { cues.goto($0); oscFeedback?.invalidate(prefix: "/fanous/cue") },
                 showMode: { [weak self] on in self?.setShowMode(on) ?? nil },
-                acknowledge: { [weak self] id, on in self?.acknowledgeReadiness(id, on) },
+                acknowledge: { [weak self] id, on in try self?.acknowledgeReadiness(id, on) },
                 runReadiness: { [weak self] in self?.runReadiness() }))
         // MIDI control (B36): cue actions run as commands like OSC's; parameter values go straight to the resolvers
         let midi = MIDIInput(dmx: dmx, logger: logger)
@@ -483,6 +516,7 @@ public final class Engine: @unchecked Sendable {
             readinessOnNextSync = true
             showMode.enter(since: since)
         }
+        if start.problem != nil { readinessOnNextSync = true }  // B281: the `project` item shows without Run checks
         savedShowLock.withLock { $0 = project["showLock"]?.bool ?? false }
         applyTimecodeSettings(ShowCommands.timecodeSettings(from: project))
         store.onProjectChanged = { [weak self] document in self?.projectChanged(document) }
@@ -1099,6 +1133,19 @@ public final class Engine: @unchecked Sendable {
             })
     }
 
+    /// B284, on the cue queue: keeps the newest state and queues one write on the feed queue unless one is pending.
+    private func handOverCueState(_ current: Cue?, _ targets: [UUID: [CueValue]]) {
+        let queued = unsavedCueState.withLock { pending in
+            defer { pending = (current, targets) }
+            return pending != nil
+        }
+        guard !queued else { return }
+        feedQueue.async { [self] in
+            guard let state = unsavedCueState.withLock({ pending in defer { pending = nil }; return pending }) else { return }
+            showMode.setCue(state.current?.id, number: state.current?.number, targets: state.targets)
+        }
+    }
+
     private func cueLive() -> JSONValue {
         guard let s = cues?.status.withLock({ $0 }) else { return [:] }
         return [
@@ -1198,6 +1245,7 @@ public final class Engine: @unchecked Sendable {
         }
         context.artnetError = artnet?.failure
         context.sacnError = sacnError.withLock { $0 }
+        context.projectProblem = projectProblem.withLock { $0 }
         let statuses = outputStatus.withLock { $0 }
         context.outputsLost = statuses.filter { $0.state == .lost }.map(\.id)
         context.outputsUnassigned = statuses.filter { $0.state == .unassigned }.map(\.id)
@@ -1206,9 +1254,10 @@ public final class Engine: @unchecked Sendable {
         context.layerErrors = projectLayers.compactMap { layer in layer.mediaStatus.withLock { $0.error.map { "Layer \(layer.index + 1): \($0)" } } }
         context.libraryRoot = library?.snapshot.root ?? ""
         context.maskImagesMissing = Self.imageMasks(in: canvasUse.withLock { $0.outputs }).compactMap { place, image in
-            let item = library?.item(MediaKey(folder: image.folder, file: image.file))
-            guard item?.kind != .still else { return nil }
-            return "\(place): folder \(image.folder) file \(image.file)\(item == nil ? "" : " (not a still image)")"
+            let key = MediaKey(folder: image.folder, file: image.file)
+            guard library?.still(key) == nil else { return nil }  // what `maskFile` reads: none for a still the engine stopped in twice (B267)
+            let item = library?.item(key)
+            return "\(place): folder \(image.folder) file \(image.file)\(item == nil ? "" : item?.kind != .still ? " (not a still image)" : " (unreadable)")"
         }
         context.shownFolder0 = projectLayers.compactMap { layer in layer.mediaStatus.withLock { $0.folder == 0 ? $0.file : nil } }
         context.sceneCapture = options.scene?.media.contains { $0.capture != nil } ?? false
@@ -1289,11 +1338,26 @@ public final class Engine: @unchecked Sendable {
     }
 
     /// `readiness.acknowledge` and `.unacknowledge`: in show mode their own line (B185), with the blocking set after it.
-    func acknowledgeReadiness(_ id: String, _ on: Bool) {
+    func acknowledgeReadiness(_ id: String, _ on: Bool) throws {
+        // B281: acknowledging the project item means "seen": the notice goes and the item passes from now on, in this
+        // run and at later starts; Take back restores both. The file first: one that cannot change refuses the command.
+        var seenChanged = false
+        if id == "project", let projectNotice {
+            let problem = projectProblem.withLock { $0 }, seen = projectSeen.withLock { $0 }
+            if let text = on ? problem : (problem == nil ? seen : nil) {
+                do { try ProjectVersions.markNoticeSeen(on, file: projectNotice, text: text) } catch {
+                    throw CommandError("failed", "the project notice \(projectNotice.lastPathComponent) could not be \(on ? "removed" : "written"): \(error)")
+                }
+                projectProblem.withLock { $0 = on ? nil : text }
+                projectSeen.withLock { $0 = on ? text : nil }
+                seenChanged = true
+            }
+        }
         let blocking = readiness.withLock { ledger in
             ledger.acknowledge(id, on)
             return ledger.items.filter(\.blocks).map(\.id)
         }
+        if seenChanged, store != nil { runReadiness() }  // the item turns green (or red again) without Run checks
         if showMode.isOn {
             let metadata: Logger.Metadata = ["item": "\(id)", "blocking": "\(blocking.isEmpty ? "none" : blocking.joined(separator: ", "))"]
             if on { logger.info("readiness acknowledged in show mode", metadata: metadata) } else { logger.warning("readiness acknowledgement taken back in show mode", metadata: metadata) }
@@ -1366,7 +1430,7 @@ public final class Engine: @unchecked Sendable {
             modeSwitcher.restore(connected: displays)
         }
         refreshModeChecks(displays: displays)
-        if readinessOnNextSync, showMode.isOn {
+        if readinessOnNextSync {
             readinessOnNextSync = false
             runReadiness()
         }
@@ -1577,7 +1641,10 @@ public final class Engine: @unchecked Sendable {
                 }
             }
         }
-        let cueList = ShowCommands.cueList(from: document)
+        // B346: a loaded or reverted project's cues without ids get them once; the runner gets the list with the ids the
+        // correction below writes, so the correction's own change finds the same list and replaces nothing
+        let cuesWithIDs = ShowCommands.assigningCueIDs(document)
+        let cueList = ShowCommands.cueList(from: cuesWithIDs ?? document)
         if cueList != lastCues {
             lastCues = cueList
             cues?.replace(list: cueList)
@@ -1588,6 +1655,10 @@ public final class Engine: @unchecked Sendable {
             // a loaded or replaced project with hand-written entries; not from this queue (correct syncs on it).
             // ponytail: replaces the whole map, so a map edit landing in between is lost; ids then come on the next change
             DispatchQueue.global(qos: .utility).async { store.correct(map, at: "/midi/map") }
+        }
+        if let cues = cuesWithIDs?["cues"], let store {
+            // B346: the same for cues; ponytail: replaces the whole list, as above for the map
+            DispatchQueue.global(qos: .utility).async { store.correct(cues, at: "/cues") }
         }
         // the Syphon, capture and display numbering (B69, B73): a forget, undo, a loaded project; the live feed writes the catalogs back
         for catalog in liveCatalogs {
@@ -2005,11 +2076,13 @@ public final class Engine: @unchecked Sendable {
         citp?.stop()
         // Engine › Restart Engine keeps show mode (and the switched display modes) for the next start; every other
         // stop leaves it. Either way no enter after this point.
+        // B284: a GO still queued, and its hand-over to the feed queue, land before the state is kept, not after
+        cues?.stop()
+        feedQueue.sync {}
         let keepShow = showMode.stop(keepingState: restartPendingFile.map { ShowModeState.takeRestartMarker(at: $0) } ?? false)
         ltc?.stop()
         mtc?.stop()
         midi?.stop()
-        cues?.stop()
         if let coordinator, let displayManager {
             MainActor.assumeIsolated {
                 displayManager.stop()

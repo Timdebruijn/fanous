@@ -19,7 +19,7 @@ public enum SACN {
     }
 
     public enum ParseError: Error, Equatable {
-        case tooShort, badPreamble, badIdentifier, badVector, badLength, badAddressType
+        case tooShort, badPreamble, badIdentifier, badVector, badLength, badAddressType, badUniverse
     }
 
     public static func parse(_ b: [UInt8]) throws -> Packet {
@@ -41,6 +41,8 @@ public enum SACN {
             }
             let count = Int(b.bigEndian(at: 123, as: UInt16.self))
             guard count >= 1, count <= 513, 125 + count <= end else { throw ParseError.badLength }
+            // E1.31 data universes are 1–63999; 0 and 64000 and up are reserved (B271)
+            guard (1...maxUniverse).contains(Int(b.bigEndian(at: 113, as: UInt16.self))) else { throw ParseError.badUniverse }
             return .data(
                 SACNData(
                     cid: cid, sourceName: cString(b, 44, 64), priority: b[108], syncAddress: b.bigEndian(at: 109), sequence: b[111],

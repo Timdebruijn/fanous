@@ -43,7 +43,10 @@ installed" when all is well ([The user interface](ui.md#menus-of-the-app-window)
    status bar reads "Show mode resumed after the engine restarted at
    HH:MM" and the projectors show a picture.
 2. Log in again on every iPad; the logins did not survive the restart.
-3. Go to the section's first cue: no cue is current after a restart.
+3. The cue that was current is current again with the values the cues
+   held; clips start from their first frame (except on layers that chase
+   timecode) and a timecode trigger that fell meanwhile did not fire: Go
+   fires the next cue.
 4. Programmer, System screen: acknowledge again what the red banner "Show
    mode is on with blocking items" names; acknowledgements did not survive
    either.
@@ -268,7 +271,8 @@ layer's audio channels on the console (volume, mute); audio plays only at
   not exist fires nothing. Only `/fanous/show/mode 1` is refused, while
   readiness blocks: the OSC panel says so in red ("Refused at …") and the
   [log](#logs) has "OSC/MIDI command refused".
-- After an engine restart no cue is current: Go to the right one.
+- After an engine start outside show mode no cue is current: Go to the
+  right one. In show mode a crash or a restart keeps the current cue.
 
 ## LTC does not lock
 
@@ -306,13 +310,57 @@ enable a network MIDI session, then choose it under Device or All sources.
 
 ## The project is gone after a restart
 
-The engine starts with the standard patch and no cues when `project.json`
-does not read as a project (a damaged file, a file from another version).
-It keeps the file next to it as `project.json.unreadable-<time>` and the
-log names it. Revert to the newest version (System › Project versions,
-[below](#go-back-to-an-earlier-version)); or, with the engine stopped
-(Engine › **Stop Engine…**), move the kept file back to `project.json` once
-it is repaired.
+When `project.json` does not read as a project at start (a file cut off by
+a crash or a full disk, an empty file, a hand edit, a file from another
+version), the engine keeps a copy of it as `project.json.unreadable-<time>`
+and runs the newest [project version](screens/system.md#project-versions)
+that can be restored instead, skipping versions that are damaged too; that
+version is then saved as `project.json`. If there is no space for the copy,
+the kept name is a second name for the same file until a save succeeds:
+do not edit `project.json` in place until then. If the save fails (a full
+disk), the damaged file stays `project.json` until a later save succeeds,
+and a start before that falls back again. Only when no version can be
+restored does it start with the standard patch and no cues. Show mode that
+resumes after a crash resumes on that version. If the damaged file cannot
+be kept aside at all, the engine runs the version but saves no change to
+`project.json`, so nothing is written over the file; versions are still
+made.
+
+The readiness item **Project file read at start** then fails, without
+**Run checks**. It says when it happened, the project and the version that
+run, with the version's date and time, or that a new project runs, the
+kept file, and what to do, for example "At the start of
+2026-11-18T14:44:45+0100: project.json was not readable; running project
+"B281 show" from version "Manual" of 2026-11-18T14:13:53+0100; the file is
+kept as project.json.unreadable-20261118T134445.943Z. Check the patch, the
+cues and the outputs. A repaired file goes back as project.json with the
+engine stopped." The last sentence is the action:
+
+| The row reads | Do |
+|---|---|
+| "project.json was not readable; running project …" | Check the patch, the cues and the outputs; a repaired file goes back as `project.json` with the engine stopped |
+| "project.json is from a newer Fanous (schema 2); running project …" | The version is the newest one this Fanous can read, from before the newer one was installed: check the project name. For the newer project, go back to the newer Fanous and put the kept file back as `project.json` with the engine stopped |
+| "… not written to project.json (…) until a later save succeeds …" | Free disk space now: until a save succeeds, a stop loses the changes |
+| "… could not be kept aside (…) …; changes are not saved to project.json (versions are still made)" or "… could not be moved aside …" | Fix the permissions of the folder that holds `project.json` or free disk space, then restart the engine |
+| "… and no version restores; a new project runs …" | Repair the kept file and put it back with the engine stopped, or build the show again |
+
+In show mode the status bar reads "not ready: Project file read at start".
+The log line is "project file not readable at start", with the same text.
+
+The text waits in `project.json.notice`: the item fails at every start
+until someone acknowledges it, also after a restart that reads the
+restored `project.json`, and also after you put a repaired file back (the
+engine cannot tell your repair from its own saves; the "At the start of"
+time says how old the notice is). Acknowledging it marks it seen: the
+notice is removed and the item passes from then on, in this run and at
+later starts; **Take back** brings both back. When the notice cannot be
+removed, the acknowledgement is refused with the reason.
+
+Changes made after that version are not in it: versions are saved at
+engine start, on entering show mode and every 10 minutes after a change.
+To get the kept file back: with the engine stopped (Engine › **Stop
+Engine…**), move it back to `project.json` once it is repaired, or after
+going back to the newer Fanous.
 
 ## Logs
 
@@ -349,6 +397,9 @@ log show --predicate 'subsystem == "org.fanous"' --last 1h
 | "show mode resumed after an unclean stop", "show mode kept across a restart" | Show mode came back; the second is a deliberate Restart Engine |
 | "readiness changed in show mode" | A check during the show found an item that started failing or passes again: `failing`, `acknowledged` (of those failing), `passing` and `blocking` (what blocks now). A warning when an item started blocking. An acknowledged item that fails again is here only, not in the status bar |
 | "readiness acknowledged in show mode", "readiness acknowledgement taken back in show mode" | The programmer acknowledged or took back `item` on System during the show; `blocking` is what blocks now |
+| "the engine stopped while reading this library file", "the engine stopped twice while reading this library file" | `file` was being read (probed or thumbnailed) when the engine last stopped: a crash, a kill or a power cut. The first time it is read once more; the second time the Media screen lists it as unreadable, "the engine stopped twice while reading it: replace or re-save the file to try again", and the engine starts without reading it. A copy of the file, or saving it again, is read again; Rescan alone does not |
+| "the engine stopped during this ingest job", "the engine stopped twice during this ingest job: failed; no file is moved or deleted for it" | The same for the ingest job of `source`: the first time it starts over, the second time it fails, "the engine stopped twice during this job"; failing moves or deletes no file. Remove the job and queue it again to try once more |
+| "the engine stopped before this ingest job put its original away", "the engine stopped before this ingest job was done and its output is missing" | The engine stopped after the job's result was in the library. The first: the job is done and the original is left where it was (an upload's copy in `_incoming/`); move or delete it yourself. The second: the result was removed since; the job fails and the source is left in place |
 | "autosave failed", "show mode state not saved" | The disk or the folder is not writable: the engine plays on and saves nothing |
 | "OSC/MIDI command refused" | A show-control command from OSC did nothing; in practice `/fanous/show/mode 1` while readiness blocks. `command` is the message in its plain form, `code` and `reason` say why (`notReady` names the blocking readiness items). One line per command and code every 3 s at most; `repeats` counts the refusals in the 3 s after the previous line, so after a burst that stopped, the rest of its count comes with the next refusal, whenever that is, unless that command was taken from OSC or MIDI in between: then the next refusal logs at once and the old count is dropped |
 

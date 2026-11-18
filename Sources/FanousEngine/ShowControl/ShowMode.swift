@@ -9,8 +9,8 @@ import FanousCore
 import Logging
 import Synchronization
 
-/// Show mode on disk (`show-state.json`): written on enter (and refreshed every 30 s), removed on leave — and every
-/// clean stop leaves show mode. A file still there at start means the last run ended uncleanly (crash, kill -9, power
+/// Show mode on disk (`show-state.json`): written on enter (refreshed every 30 s, and when the current cue changes),
+/// removed on leave — and every clean stop leaves show mode. A file still there at start means the last run ended uncleanly (crash, kill -9, power
 /// loss) or was an Engine › Restart Engine: show mode resumes when the file is young enough (`maxAge`).
 public struct ShowModeState: Codable, Equatable, Sendable {
     public var on: Bool
@@ -20,12 +20,73 @@ public struct ShowModeState: Codable, Equatable, Sendable {
     public var written: Double
     /// Written by the stop for Engine › Restart Engine: show mode kept on purpose.
     public var restart: Bool?
+    /// The cue list when written (B284): the current cue's id and number (the number finds the nearest earlier cue when
+    /// that one is gone) and the values the cues hold, by owning cue id, `"Layer 1/intensity"` → raw (a running fade at
+    /// its target). Absent in files of older builds, and ignored by them.
+    public var cue: UUID?
+    public var cueNumber: Double?
+    public var held: [String: [String: UInt16]]?
 
-    public init(on: Bool = true, since: Double, written: Double, restart: Bool? = nil) {
+    public init(
+        on: Bool = true, since: Double, written: Double, restart: Bool? = nil, cue: UUID? = nil, cueNumber: Double? = nil,
+        held: [String: [String: UInt16]]? = nil
+    ) {
         self.on = on
         self.since = since
         self.written = written
         self.restart = restart
+        self.cue = cue
+        self.cueNumber = cueNumber
+        self.held = held
+    }
+
+    private struct AnyKey: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+        init(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
+
+    /// A hand edit that does not decode loses only itself, never the resume (B284): a bad `cue` or `cueNumber` is no
+    /// current cue, a bad entry in `held` (a raw beyond 0–65535, not a number) is left out and the rest stays.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        on = try c.decode(Bool.self, forKey: .on)
+        since = try c.decode(Double.self, forKey: .since)
+        written = try c.decode(Double.self, forKey: .written)
+        restart = try c.decodeIfPresent(Bool.self, forKey: .restart)
+        cue = try? c.decodeIfPresent(UUID.self, forKey: .cue)
+        cueNumber = (try? c.decodeIfPresent(Double.self, forKey: .cueNumber)).flatMap { $0.isFinite ? $0 : nil }
+        if let cues = try? c.nestedContainer(keyedBy: AnyKey.self, forKey: .held) {
+            var held: [String: [String: UInt16]] = [:]
+            for cue in cues.allKeys {
+                guard let values = try? cues.nestedContainer(keyedBy: AnyKey.self, forKey: cue) else { continue }
+                for key in values.allKeys {
+                    if let raw = try? values.decode(UInt16.self, forKey: key) { held[cue.stringValue, default: [:]][key.stringValue] = raw }
+                }
+            }
+            self.held = held
+        }
+    }
+
+    /// `CueEngine.targets` as written.
+    static func encode(_ targets: [UUID: [CueValue]]) -> [String: [String: UInt16]] {
+        Dictionary(uniqueKeysWithValues: targets.map { id, values in
+            (id.uuidString, Dictionary(values.map { ("\($0.fixture)/\($0.parameter.key)", $0.raw) }, uniquingKeysWith: { a, _ in a }))
+        })
+    }
+
+    /// `held` for `CueEngine.resume`; an entry that does not parse is left out.
+    public var targets: [UUID: [CueValue]] {
+        var out: [UUID: [CueValue]] = [:]
+        for (cue, values) in held ?? [:] {
+            guard let id = UUID(uuidString: cue) else { continue }
+            out[id] = values.compactMap { path, raw in
+                guard case .parameter(let fixture, let parameter) = MIDITarget("fixture:" + path, cue: nil) else { return nil }
+                return CueValue(fixture: fixture, parameter: parameter, raw: raw)
+            }
+        }
+        return out
     }
 
     /// A file this young still resumes the show (engine crash, restart, or the Mac went down mid-show); an older one is
@@ -71,6 +132,10 @@ public final class ShowModeController: @unchecked Sendable {
         var stopping = false
         /// Where the on/off state survives an unclean end; nil: not persisted.
         var file: URL?
+        /// The cue list's current cue and held values (B284), also while off, so entering writes them.
+        var cue: UUID?
+        var cueNumber: Double?
+        var held: [String: [String: UInt16]] = [:]
     }
 
     private let logger: Logger
@@ -123,6 +188,19 @@ public final class ShowModeController: @unchecked Sendable {
         onChange?(false)
     }
 
+    /// The cue list's current cue or held values changed (B284): written at once while on. The engine calls it on the
+    /// feed queue (and once at a resume, before entering), never on the cue queue (a timing path).
+    public func setCue(_ id: UUID?, number: Double?, targets: [UUID: [CueValue]]) {
+        let held = ShowModeState.encode(targets)
+        state.withLock { s in
+            guard s.cue != id || s.cueNumber != number || s.held != held else { return }
+            s.cue = id
+            s.cueNumber = number
+            s.held = held
+            if s.on { persist(s) }
+        }
+    }
+
     /// Refreshes the write time while on (readiness timer), so a show longer than `maxAge` still resumes after
     /// a crash or a power loss.
     public func touch() {
@@ -167,7 +245,7 @@ public final class ShowModeController: @unchecked Sendable {
         guard let stateURL = s.file else { return }
         do {
             if s.on || restart {
-                let value = ShowModeState(since: s.since, written: Date().timeIntervalSince1970, restart: restart ? true : nil)
+                let value = ShowModeState(since: s.since, written: Date().timeIntervalSince1970, restart: restart ? true : nil, cue: s.cue, cueNumber: s.cueNumber, held: s.held.isEmpty ? nil : s.held)
                 try JSONEncoder().encode(value).write(to: stateURL, options: .atomic)
             } else if FileManager.default.fileExists(atPath: stateURL.path) {
                 try FileManager.default.removeItem(at: stateURL)
@@ -284,6 +362,8 @@ public struct ReadinessContext: Sendable {
     public var artnetError: String?
     /// Why the sACN port could not be bound at start; nil when sACN runs.
     public var sacnError: String?
+    /// B281: the project did not come from `project.json` at start, and what runs instead.
+    public var projectProblem: String?
     public var outputsLost: [Int] = []
     public var outputsUnassigned: [Int] = []
     public var outputsBound = 0
@@ -328,6 +408,9 @@ public enum Readiness {
             let state: ReadinessItem.State = ok == nil ? .manual : (ok! ? .ok : failing)
             items.append(ReadinessItem(id: id, title: title, state: state, detail: detail, fix: fix, acknowledged: acknowledged.contains(id)))
         }
+        add(
+            "project", "Project file read at start", context.projectProblem == nil, context.projectProblem ?? "read",
+            "Do what the last sentence above says, then acknowledge: that marks it seen, and the item passes from then on, also at later starts")
         let power = powerState()
         add("power", "On AC power", power.onAC, power.detail, "Connect the power adapter")
         let thermal = ProcessInfo.processInfo.thermalState

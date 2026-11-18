@@ -61,6 +61,26 @@ public enum ShowCommands {
         CueList(cues: (project["cues"]?.array ?? []).compactMap(cue(from:)))
     }
 
+    /// B346: a stored cue whose `id` is missing, no UUID, or the id of a cue before it (a hand-written or imported
+    /// `project.json`; `cue.add` always writes a fresh one) gets a new UUID, once, when a project is loaded: `cue(from:)`
+    /// would make a new one at every parse, so every project change would look like a new cue list (the current cue and
+    /// what the cues hold dropped), and `cue.set`/`cue.remove` could not find the cue. Nil when nothing changes.
+    public static func assigningCueIDs(_ project: JSONValue) -> JSONValue? {
+        guard var cues = project["cues"]?.array else { return nil }
+        var seen = Set<UUID>()
+        var changed = false
+        for i in cues.indices {
+            if let id = cues[i]["id"]?.string.flatMap(UUID.init(uuidString:)), seen.insert(id).inserted { continue }
+            let id = UUID()
+            guard (try? cues[i].set(.string(id.uuidString), at: "/id")) != nil else { continue }  // not an object: no cue
+            seen.insert(id)
+            changed = true
+        }
+        guard changed else { return nil }
+        var fixed = project
+        return (try? fixed.set(.array(cues), at: "/cues")) != nil ? fixed : nil
+    }
+
     /// "hh:mm:ss:ff@25", 25 without "@rate"; the rate as the guide writes it ("29.97df", "29.97ndf") or the engine's label
     /// ("29.97 DF"), case and spaces ignored. `strict` (cue.add, cue.set) is the web's `parseTrigger` minus the conveniences
     /// it normalizes before sending (`;`, spaces before `@`, surrounding whitespace): one or two digits per field, at most
@@ -128,7 +148,7 @@ public enum ShowCommands {
         /// Entering is called off the control queue (B200).
         public var showMode: @Sendable (Bool) -> [String]?
         /// Acknowledge (true) or take back (false) a readiness item's acknowledgement.
-        public var acknowledge: @Sendable (_ id: String, _ on: Bool) -> Void
+        public var acknowledge: @Sendable (_ id: String, _ on: Bool) throws -> Void
         public var runReadiness: @Sendable () -> Void
     }
 
@@ -226,12 +246,12 @@ public enum ShowCommands {
         })
         store.register(CommandSpec(name: "readiness.acknowledge", role: .programmer, mutatesConfig: false, undoable: false, summary: "Acknowledge a failed readiness item so show mode can be entered.", argsType: "{ id: string }") { _, args in
             guard let id = args["id"]?.string else { throw CommandError.invalidArgs("args: { id }") }
-            hooks.acknowledge(id, true)
+            try hooks.acknowledge(id, true)
             return nil
         })
         store.register(CommandSpec(name: "readiness.unacknowledge", role: .programmer, mutatesConfig: false, undoable: false, summary: "Take back a readiness item's acknowledgement; a failed item blocks show mode again.", argsType: "{ id: string }") { _, args in
             guard let id = args["id"]?.string else { throw CommandError.invalidArgs("args: { id }") }
-            hooks.acknowledge(id, false)
+            try hooks.acknowledge(id, false)
             return nil
         })
     }

@@ -51,6 +51,14 @@ public struct IngestJob: Codable, Sendable, Identifiable {
     /// In place with an originals directory: where the source goes, saved just before it moves there. `deleteSource`
     /// replaces the source in one rename, which leaves no state to recover from.
     var originalMovedTo: URL?
+    /// B267: how often the engine stopped (crashed, was killed, lost power) while this job ran; nil = never. Absent from the
+    /// JSON while nil.
+    public var interruptedRuns: Int?
+    /// B267: saved right after the result took its name (the rename to the destination, or in place the replace), before
+    /// the original is moved or deleted; cleared when `done` is saved. A restart takes only such a job as done.
+    var outputWritten: Bool?
+    /// B267: shown under a finished job in the queue; a done job that has one stays listed until it is removed.
+    public var note: String?
 
     public init(
         source: URL, destination: URL, kind: Kind, originalsDirectory: URL? = nil, deleteSource: Bool = false
@@ -68,8 +76,9 @@ public struct IngestJob: Codable, Sendable, Identifiable {
 }
 
 /// Runs ingest jobs one at a time on a single `.utility` thread, persists the queue as JSON, and reloads it at init
-/// (jobs that were running when the process died start over from `queued`). Output is written to a hidden temp file in
-/// the destination directory and renamed on success, so the library index never sees a partial movie.
+/// (jobs that were running when the process died start over from `queued`, once: the second time they fail, B267).
+/// Output is written to a hidden temp file in the destination directory and renamed on success, so the library index
+/// never sees a partial movie.
 /// The running worker keeps the queue alive: call `stop()` when done.
 public final class IngestQueue: @unchecked Sendable {
     private struct State {
@@ -101,7 +110,7 @@ public final class IngestQueue: @unchecked Sendable {
                 try? FileManager.default.moveItem(at: persistenceURL, to: persistenceURL.appendingPathExtension("corrupt"))
             }
         }
-        var recovered = false
+        var changed = false
         for index in jobs.indices {
             if case .running = jobs[index].state {
                 let files = FileManager.default, job = jobs[index], temporary = Self.temporaryURL(for: job)
@@ -112,25 +121,62 @@ public final class IngestQueue: @unchecked Sendable {
                 {
                     jobs[index].state = .done
                     jobs[index].finishedAt = Date()
-                    recovered = true
+                    changed = true
                     continue
                 }
-                jobs[index].state = .queued
+                // B267: a stop after the result took its name, before `done` was saved. Recorded, not inferred from the
+                // files: a destination can exist without this job having written it (a stop before the record was saved
+                // runs the job again, which fails on the existing destination). Nothing is moved or deleted here, unwatched:
+                // done while the output is there, the original left where it is if it was still to be put away; failed
+                // when the output has gone since.
+                if job.outputWritten == true {
+                    jobs[index].outputWritten = nil
+                    jobs[index].finishedAt = Date()
+                    changed = true
+                    if files.fileExists(atPath: job.destination.path) {
+                        jobs[index].state = .done
+                        if !job.inPlace, job.originalsDirectory != nil || job.deleteSource, files.fileExists(atPath: job.source.path) {
+                            jobs[index].note = Self.originalLeft
+                            logger.warning("the engine stopped before this ingest job put its original away: done, the original is left in place", metadata: ["source": "\(job.source.path)"])
+                        }
+                    } else {
+                        jobs[index].state = .failed(Self.outputMissing)
+                        logger.warning("the engine stopped before this ingest job was done and its output is missing: failed, the source is left in place", metadata: ["source": "\(job.source.path)"])
+                    }
+                    continue
+                }
                 try? files.removeItem(at: temporary)  // the half-written output of the crashed run
+                // B267: a job the engine stopped in twice (in show mode a paused job counts too) is not started a third time.
+                // Failing it moves and deletes nothing (an in-place job may have replaced its source already). Saved now, so a
+                // stop before the job is claimed again is not counted.
+                let runs = (job.interruptedRuns ?? 0) + 1
+                jobs[index].interruptedRuns = runs
+                changed = true
+                if runs >= 2 {
+                    jobs[index].state = .failed("the engine stopped twice during this job")
+                    jobs[index].finishedAt = Date()
+                    logger.warning("the engine stopped twice during this ingest job: failed; no file is moved or deleted for it", metadata: ["source": "\(job.source.path)"])
+                } else {
+                    jobs[index].state = .queued
+                    logger.warning("the engine stopped during this ingest job: it starts over", metadata: ["source": "\(job.source.path)"])
+                }
             }
         }
-        if recovered { save(jobs) }
+        if changed { save(jobs) }
         state.withLock { $0.jobs = jobs }
     }
 
     // MARK: API
 
-    /// Done and cancelled jobs leave the list this long after they finished (a failed one stays with its error until it
-    /// is removed): the Media screen showed a cancelled job for days otherwise. Filtered on read, dropped from the file at
-    /// the next change.
+    /// Done and cancelled jobs leave the list this long after they finished (a failed one stays with its error, and a done
+    /// one with a `note` with its note, until it is removed): the Media screen showed a cancelled job for days otherwise.
+    /// Filtered on read, dropped from the file at the next change.
     static let forgetAfter: TimeInterval = 60
+    /// B267: the texts of a job the engine stopped in after its output took its name.
+    static let originalLeft = "the original was left in place: the engine stopped before it was put away"
+    static let outputMissing = "the engine stopped before this job was done, and its output is missing"
     static func expired(_ job: IngestJob) -> Bool {
-        guard let finishedAt = job.finishedAt, job.state == .done || job.state == .cancelled else { return false }
+        guard let finishedAt = job.finishedAt, job.state == .done || job.state == .cancelled, job.note == nil else { return false }
         return Date().timeIntervalSince(finishedAt) > forgetAfter
     }
 
@@ -249,6 +295,9 @@ public final class IngestQueue: @unchecked Sendable {
         do {
             try execute(job, temporary: temporary, gate: gate)
             outcome = .done
+            mutate { state in  // saved before the original is touched (B267)
+                if let index = state.jobs.firstIndex(where: { $0.id == job.id }) { state.jobs[index].outputWritten = true }
+            }
             if !job.inPlace { finishOriginal(of: job) }
         } catch TranscodeError.cancelled {
             try? FileManager.default.removeItem(at: temporary)
@@ -268,6 +317,7 @@ public final class IngestQueue: @unchecked Sendable {
                 state.jobs[index].state = outcome
                 state.jobs[index].finishedAt = Date()
             }
+            state.jobs[index].outputWritten = nil
         }
     }
 

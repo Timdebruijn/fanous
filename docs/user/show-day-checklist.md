@@ -114,8 +114,9 @@ on the night, [Troubleshooting](troubleshooting.md).
 
 Show mode runs the checks when it turns on, every 30 seconds while it is
 on, once after a resumed show mode and after a display mode switch in show
-mode; **Run checks** runs them at any time, and nothing else does: after an
-engine start the list is empty until you run it. Each row shows the item,
+mode; **Run checks** runs them at any time. After an engine start the list
+is empty until you run it, unless `project.json` could not be read: then
+the engine runs it once by itself. Each row shows the item,
 what it found, a fix hint when it is not green, and **Acknowledge** or a
 badge. An item that turns red during the show and is not acknowledged shows
 on every screen: the status bar reads "not ready: " and the item's title, in
@@ -177,7 +178,10 @@ projectors may blank for a moment.
 
 ### What comes back after the engine stops
 
-The engine writes its show-mode state to disk every 30 seconds.
+The engine writes its show-mode state to disk every 30 seconds, with the
+current cue and the values the cues hold, which it also writes whenever
+the cue list changes (Go, Back, Go to, a follow, a timecode trigger, an
+edit of the cue list).
 
 ```mermaid
 flowchart TD
@@ -188,7 +192,7 @@ flowchart TD
   why -- "power cut" --> login["After the Mac is up and the show user logged in, the engine starts"]
   auto --> age{"Last write under 2 hours old?"}
   login --> age
-  age -- yes --> resume["Back in show mode: display modes kept, ingest paused, cursor hidden"]
+  age -- yes --> resume["Back in show mode: display modes kept, ingest paused, cursor hidden, the current cue current again"]
   age -- no --> normal
   resume --> banner["Status bar: 'Show mode resumed after the engine restarted at HH:MM'"]
 ```
@@ -210,8 +214,10 @@ kept show mode on; check the outputs." instead.
    picture.
 2. Every iPad logs in again: the logins did not survive the restart. The
    app window on the Mac needs no login.
-3. Operator: Go to the section's first cue; no cue is current after a
-   restart.
+3. Operator: the cue that was current is current again with the values
+   the cues held; clips started again from their first frame, except on
+   layers that chase timecode, and a timecode trigger that fell meanwhile
+   did not fire. Check the picture; Go fires the next cue.
 4. Programmer, on the System screen: the red banner "Show mode is on with
    blocking items" when an acknowledged item failed again; acknowledgements
    did not survive either. Acknowledge them again.
