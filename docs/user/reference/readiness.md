@@ -17,7 +17,7 @@ check; Blocking cannot be acknowledged. The "What to do" column is the
 row's fix hint, shortened; the on-screen hint for the hardware item
 says "M1 Pro or newer", while every chip but the base M1 passes. The checks run when
 show mode turns on, every 30 seconds while it is on, once after a resumed
-show mode, after a display mode switch in show mode, and on **Run checks**;
+show mode or a start that did not read `project.json`, after a display mode switch in show mode, and on **Run checks**;
 an item that turns red in show mode shows in the log, and in the status bar
 when it is not acknowledged (below). The Spotlight, Time
 Machine and display sleep rows ask macOS tools (`mdutil`, `tmutil`,
@@ -36,6 +36,7 @@ the id the API's `readiness.acknowledge` and `readiness.unacknowledge` take and 
 
 | Item | Fails or warns when | The row reads | What to do | Type | Id |
 |---|---|---|---|---|---|
+| Project file read at start | `project.json` did not read as a project at this engine start; the engine runs the newest version that can be restored, or a new project ([The project is gone after a restart](../troubleshooting.md#the-project-is-gone-after-a-restart)). The engine runs the list once by itself after such a start | "read", "project.json was not readable; running version \"Show mode\" of 2026-11-18T21:40:12+0100; the file is kept as project.json.unreadable-…", "project.json is from a newer Fanous (schema 2); …", "… and no version restores; a new project runs; …" | Check the patch, the cues and the outputs, then acknowledge; a repaired file goes back as `project.json` with the engine stopped | Fails | `project` |
 | On AC power | The first power source is not mains; a Mac without a battery passes | "AC power (battery N %)", "on battery, N %", "no battery" | Connect the power adapter | Fails | `power` |
 | Thermal state nominal | macOS reports serious or critical; nominal and fair pass | "nominal", "fair", "serious", "critical" | Let the machine cool down, improve airflow | Fails | `thermal` |
 | Free disk > 10 % | The library's volume has 10 % or less free; the home volume with the project and the log is not checked | "N % free (X GB)", "library volume not answering" | Free space on the library volume; when not answering: reconnect the library volume, or copy the library to the internal disk | Fails | `disk` |

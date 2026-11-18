@@ -150,6 +150,39 @@ public final class ProjectVersions: Sendable {
         return versions.first { !$0.automatic && $0.name.caseInsensitiveCompare(key) == .orderedSame }?.id ?? versions.first { $0.id == key }?.id
     }
 
+    /// B281: the project to start on. A `file` that does not read as a project is set aside (kept byte for byte, as
+    /// before) and the newest version that `checkRestorable` accepts runs instead, walking back past damaged ones; it is
+    /// written to `file` at once, so a second restart finds it. Without such a version, or when the file cannot be
+    /// moved, `project` is nil and a new project starts, as before. `problem` is what the readiness item `project` says;
+    /// nil when the file read (or there was none: a first start).
+    public func startProject(from file: URL, now: Date = Date()) -> (project: JSONValue?, problem: String?) {
+        if let project = ProjectDocument.load(from: file) { return (project, nil) }
+        // a downgrade is not damage: say so, the newer file is kept like any other
+        let schema = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }?["schema"]?.int ?? 0
+        let what = schema > ProjectDocument.schema ? "project.json is from a newer Fanous (schema \(schema))" : "project.json was not readable"
+        let aside: URL
+        do {
+            guard let moved = try ProjectDocument.setAside(file, now: now) else { return (nil, nil) }
+            aside = moved
+        } catch {
+            logger.error("project file not readable and could not be moved aside", metadata: ["reason": "\(what)", "error": "\(error)"])
+            return (nil, "\(what) and could not be moved aside (\(error)); a new project runs")
+        }
+        let kept = "the file is kept as \(aside.lastPathComponent)"
+        for version in list() {
+            guard let restored = try? document(id: version.id), (try? Self.checkRestorable(restored)) != nil else {
+                logger.warning("project version skipped at start: it does not restore", metadata: ["id": "\(version.id)"])
+                continue
+            }
+            logger.error("project file not readable: the newest version that restores runs, the file is kept", metadata: ["reason": "\(what)", "kept": "\(aside.lastPathComponent)", "version": "\(version.id)"])
+            do { try ProjectDocument.save(restored, to: file) } catch { logger.error("project file not rewritten from the version", metadata: ["error": "\(error)"]) }
+            let at = Date(timeIntervalSince1970: version.at).formatted(Date.ISO8601FormatStyle(timeZone: .current))
+            return (restored, "\(what); running version \"\(version.name)\" of \(at); \(kept)")
+        }
+        logger.error("project file not readable: a new project starts, the file is kept", metadata: ["reason": "\(what)", "kept": "\(aside.lastPathComponent)"])
+        return (nil, "\(what) and no version restores; a new project runs; \(kept)")
+    }
+
     private func url(_ id: String) -> URL { directory.appending(path: id + ".json") }
 
     private static func notFound(_ id: String) -> CommandError { CommandError("notFound", "no project version \(id)") }

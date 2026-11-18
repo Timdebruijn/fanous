@@ -112,7 +112,8 @@ public final class Engine: @unchecked Sendable {
     private let showResumed = Mutex<(at: Double, restart: Bool)?>(nil)
     /// The show lock as last written to disk: a change is saved at once, not with the 2 s autosave.
     private let savedShowLock = Mutex<Bool?>(nil)
-    /// Main actor: after a resume the first display sync runs readiness at once instead of after 30 s.
+    /// Main actor: after a resume, or a start that did not read `project.json` (B281), the first display sync runs
+    /// readiness at once instead of after 30 s (or, outside show mode, at Run checks).
     private var readinessOnNextSync = false
     private var lastPolicy: SourcePolicy?
     private var lastUniverseSettings: [UniverseID: UniverseSettings] = [:]
@@ -121,6 +122,8 @@ public final class Engine: @unchecked Sendable {
     private var lastUniverseIssues: [String] = []
     /// Why the sACN port could not be bound at start (readiness); nil while sACN runs.
     private let sacnError = Mutex<String?>(nil)
+    /// B281: why the project did not come from `project.json` at start (readiness item `project`); nil when it did.
+    private let projectProblem = Mutex<String?>(nil)
     /// The project's library root as last seen by `projectChanged` (B51).
     private let libraryRootInProject = Mutex<String?>(nil)
     /// `/syphon`, `/capture` and `/screens` as the engine last applied them (B69, B73): a catalog is written back when it differs.
@@ -230,18 +233,12 @@ public final class Engine: @unchecked Sendable {
         // The project document comes first: without a scene file (the bundled agent) it is the source of the layer
         // count, canvas, source policy and library root (DESIGN.md §2.4); a scene file (development, bench) wins,
         // and its canvas is mirrored into the project so the UI shows what renders.
-        var loadedProject = ProjectDocument.load(from: AppPaths.projectFile)
+        // B281: an unreadable file is kept and the newest version that restores runs; readiness item `project` says so
+        let versions = ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger)
+        let start = versions.startProject(from: AppPaths.projectFile)
+        var loadedProject = start.project
         projectFile = AppPaths.projectFile
-        if loadedProject == nil {
-            // keep an unreadable file (damaged, another schema) before the new project's autosave writes over it
-            do {
-                if let aside = try ProjectDocument.setAside(AppPaths.projectFile) {
-                    logger.error("project file not readable: a new project starts, the file is kept", metadata: ["kept": "\(aside.lastPathComponent)"])
-                }
-            } catch {
-                logger.error("project file not readable and could not be moved aside", metadata: ["error": "\(error)"])
-            }
-        }
+        projectProblem.withLock { $0 = start.problem }
         for issue in ProjectDocument.wallEntries(from: loadedProject ?? .null).issues { logger.warning("projector wall skipped", metadata: ["entry": "\(issue)"]) }
         let startCanvas = Self.startCanvas(project: loadedProject, scene: options.scene)
         if options.scene != nil, var project = loadedProject {
@@ -412,10 +409,9 @@ public final class Engine: @unchecked Sendable {
         liveInProject.withLock { $0 = [.syphon: project["syphon"] ?? [:], .capture: project["capture"] ?? [:], .screens: project["screens"] ?? [:]] }
         libraryRootInProject.withLock { $0 = URL(fileURLWithPath: project["library"]?["root"]?.string ?? libraryRoot.path).path }
         // B23: a version of the project as loaded, then one every 10 minutes when it changed, and one per show-mode enter
-        let versions = ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger)
         versions.registerCommands(on: store, showModeOn: { [weak self] in self?.showMode.isOn ?? false })
         self.versions = versions
-        let startProject = loadedProject
+        let startProject = start.problem == nil ? loadedProject : nil  // a version that runs is one already (B281)
         versionsQueue.async {
             if let startProject { versions.saveAutomatic(startProject, reason: .start) } else { _ = versions.list() }
         }
@@ -483,6 +479,7 @@ public final class Engine: @unchecked Sendable {
             readinessOnNextSync = true
             showMode.enter(since: since)
         }
+        if start.problem != nil { readinessOnNextSync = true }  // B281: the `project` item shows without Run checks
         savedShowLock.withLock { $0 = project["showLock"]?.bool ?? false }
         applyTimecodeSettings(ShowCommands.timecodeSettings(from: project))
         store.onProjectChanged = { [weak self] document in self?.projectChanged(document) }
@@ -1196,6 +1193,7 @@ public final class Engine: @unchecked Sendable {
         }
         context.artnetError = artnet?.failure
         context.sacnError = sacnError.withLock { $0 }
+        context.projectProblem = projectProblem.withLock { $0 }
         let statuses = outputStatus.withLock { $0 }
         context.outputsLost = statuses.filter { $0.state == .lost }.map(\.id)
         context.outputsUnassigned = statuses.filter { $0.state == .unassigned }.map(\.id)
@@ -1364,7 +1362,7 @@ public final class Engine: @unchecked Sendable {
             modeSwitcher.restore(connected: displays)
         }
         refreshModeChecks(displays: displays)
-        if readinessOnNextSync, showMode.isOn {
+        if readinessOnNextSync {
             readinessOnNextSync = false
             runReadiness()
         }

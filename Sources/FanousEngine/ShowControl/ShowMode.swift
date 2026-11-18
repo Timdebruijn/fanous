@@ -284,6 +284,8 @@ public struct ReadinessContext: Sendable {
     public var artnetError: String?
     /// Why the sACN port could not be bound at start; nil when sACN runs.
     public var sacnError: String?
+    /// B281: the project did not come from `project.json` at start, and what runs instead.
+    public var projectProblem: String?
     public var outputsLost: [Int] = []
     public var outputsUnassigned: [Int] = []
     public var outputsBound = 0
@@ -328,6 +330,9 @@ public enum Readiness {
             let state: ReadinessItem.State = ok == nil ? .manual : (ok! ? .ok : failing)
             items.append(ReadinessItem(id: id, title: title, state: state, detail: detail, fix: fix, acknowledged: acknowledged.contains(id)))
         }
+        add(
+            "project", "Project file read at start", context.projectProblem == nil, context.projectProblem ?? "read",
+            "Check the patch, the cues and the outputs, then acknowledge; a repaired file goes back as project.json with the engine stopped")
         let power = powerState()
         add("power", "On AC power", power.onAC, power.detail, "Connect the power adapter")
         let thermal = ProcessInfo.processInfo.thermalState

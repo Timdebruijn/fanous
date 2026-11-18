@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine (B281): a `project.json` that does not read at start (cut off, empty, another schema) is kept as before, and
+  the engine runs the newest project version that can be restored instead of an empty project, also when show mode
+  resumes; the new readiness item "Project file read at start" says which version runs and where the file is (PR #N).
 - Engine (B265): decoding a corrupt HAP frame returns an error instead of reading outside the sample (a crash in
   the thumbnailer or on a layer); the vendored `hap.c` checks chunk offsets, sizes and section lengths (PR #392).
 - Release: 1.0.0-rc.14 is on GitHub as a pre-release with the signed, notarized dmg, built from main bcdb5f3

@@ -306,13 +306,32 @@ enable a network MIDI session, then choose it under Device or All sources.
 
 ## The project is gone after a restart
 
-The engine starts with the standard patch and no cues when `project.json`
-does not read as a project (a damaged file, a file from another version).
-It keeps the file next to it as `project.json.unreadable-<time>` and the
-log names it. Revert to the newest version (System › Project versions,
-[below](#go-back-to-an-earlier-version)); or, with the engine stopped
-(Engine › **Stop Engine…**), move the kept file back to `project.json` once
-it is repaired.
+When `project.json` does not read as a project at start (a file cut off by
+a crash or a full disk, an empty file, a hand edit, a file from another
+version), the engine keeps it next to itself as
+`project.json.unreadable-<time>` and runs the newest
+[project version](screens/system.md#project-versions) that can be restored
+instead, skipping versions that are damaged too; that version is written
+to `project.json` at once. Only when no version can be restored does it
+start with the standard patch and no cues. Show mode that resumes after a
+crash resumes on that version.
+
+The readiness item **Project file read at start** then fails, without
+**Run checks**, and reads which version runs and from when, or that a new
+project runs, and the name of the kept file, for example "project.json was
+not readable; running version "Show mode" of 2026-11-18T21:40:12+0100; the
+file is kept as project.json.unreadable-20261118T205233.104Z". A file
+written by a newer Fanous reads "project.json is from a newer Fanous
+(schema 2)" instead: the version that runs is the newest one this Fanous
+can read, from before the newer one was installed. In show mode the status
+bar reads "not ready: Project file read at start". The log line is
+"project file not readable", with the kept file and the version.
+
+Check the patch, the cues and the outputs, then acknowledge the item.
+Changes made after that version are not in it: versions are saved at
+engine start, on entering show mode and every 10 minutes after a change. To get the kept file back: with the engine stopped (Engine ›
+**Stop Engine…**), move it back to `project.json` once it is repaired, or
+after going back to the newer Fanous.
 
 ## Logs
 

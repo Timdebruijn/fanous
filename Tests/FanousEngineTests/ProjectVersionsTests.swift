@@ -49,6 +49,94 @@ struct ProjectVersionsTests {
         try FileManager.default.removeItem(at: aside)
     }
 
+    /// B281: the kinds of damage a crash, a full disk, a hand edit or a downgrade leave in `project.json`.
+    enum Damage: CaseIterable, Sendable { case truncated, otherSchema, empty, newerSchema }
+
+    static func damaged(_ project: JSONValue, _ damage: Damage) throws -> Data {
+        let data = try JSONEncoder().encode(project)
+        var other = project
+        switch damage {
+        case .truncated: return data.prefix(data.count / 2)
+        case .empty: return Data()
+        case .otherSchema: try other.set(0, at: "/schema")
+        case .newerSchema: try other.set(2, at: "/schema")
+        }
+        return try JSONEncoder().encode(other)
+    }
+
+    /// B281: an unreadable project at start runs the newest version that restores, says so for readiness and keeps the
+    /// file byte for byte. Everything lives in a temporary folder: no engine runs, nothing reaches the real home.
+    @Test(arguments: Damage.allCases) func anUnreadableProjectStartsOnTheNewestVersion(_ damage: Damage) throws {
+        let f = Self.make()
+        let file = f.base.appending(path: "project.json")
+        _ = try f.versions.save(f.store.project, name: "Engine start", automatic: true, now: Date(timeIntervalSince1970: 1_795_000_000))
+        _ = try f.store.execute("project.set", args: ["path": "/name", "value": "Doors"], role: .programmer).get()
+        _ = try f.store.execute("layers.setCount", args: ["count": 6], role: .programmer).get()
+        let newest = try f.versions.save(f.store.project, name: "Show mode", automatic: true, now: Date(timeIntervalSince1970: 1_795_000_600))
+        let bytes = try Self.damaged(f.store.project, damage)
+        try bytes.write(to: file)
+
+        let start = f.versions.startProject(from: file, now: Date(timeIntervalSince1970: 1_795_001_000))
+        #expect(start.project?["name"]?.string == "Doors")
+        #expect(start.project?["layerCount"]?.int == 6)
+        #expect(start.project == (try f.versions.document(id: newest.id)))
+        let aside = f.base.appending(path: "project.json.unreadable-20261118T112320.000Z")
+        #expect(try Data(contentsOf: aside) == bytes, "the damaged file is kept byte for byte")
+        #expect(ProjectDocument.load(from: file) == start.project, "project.json is the version now, so a second restart finds it")
+        let problem = try #require(start.problem)
+        #expect(problem.contains("running version \"Show mode\""))
+        #expect(problem.contains(aside.lastPathComponent))
+        #expect(problem.contains("newer Fanous (schema 2)") == (damage == .newerSchema), "a downgrade is named, not called damage")
+        #expect(f.versions.list().count == 2, "the fallback writes no version")
+    }
+
+    @Test func aDamagedNewestVersionFallsBackToTheOneBefore() throws {
+        let f = Self.make()
+        let file = f.base.appending(path: "project.json")
+        _ = try f.store.execute("project.set", args: ["path": "/name", "value": "Doors"], role: .programmer).get()
+        _ = try f.versions.save(f.store.project, name: "Periodic", automatic: true, now: Date(timeIntervalSince1970: 1_795_000_000))
+        var noLayers = f.store.project
+        try noLayers.set(0, at: "/layerCount")  // reads, does not restore
+        _ = try f.versions.save(noLayers, name: "Show mode", automatic: true, now: Date(timeIntervalSince1970: 1_795_000_600))
+        try Data("{ \"schema\": 1, \"snap".utf8).write(to: f.directory.appending(path: "20261118T113000.000Z-auto-periodic.json"))  // newest, cut off
+        try Data().write(to: file)
+
+        let start = f.versions.startProject(from: file)
+        #expect(start.project?["name"]?.string == "Doors")
+        #expect(start.problem?.contains("running version \"Periodic\"") == true)
+    }
+
+    @Test func noUsableVersionStartsANewProjectAsBefore() throws {
+        let f = Self.make()
+        let file = f.base.appending(path: "project.json")
+        let none = f.versions.startProject(from: file)
+        #expect(none.project == nil && none.problem == nil, "no file: a first start, nothing to say")
+        _ = try f.versions.save(f.store.project, name: "Engine start", automatic: true)
+        try ProjectDocument.save(f.store.project, to: file)
+        let readable = f.versions.startProject(from: file)
+        #expect(readable.project == f.store.project && readable.problem == nil, "a readable file runs as it is")
+        for id in f.versions.list().map(\.id) { try FileManager.default.removeItem(at: f.directory.appending(path: id + ".json")) }
+        try Data("{".utf8).write(to: file)
+
+        let start = f.versions.startProject(from: file, now: Date(timeIntervalSince1970: 1_795_001_000))
+        #expect(start.project == nil)
+        #expect(start.problem?.contains("no version restores") == true)
+        #expect(!FileManager.default.fileExists(atPath: file.path), "nothing is written over: the new project's autosave makes the file")
+        #expect(try Data(contentsOf: f.base.appending(path: "project.json.unreadable-20261118T112320.000Z")) == Data("{".utf8))
+    }
+
+    /// B281: the operator sees it on the System screen (and, in show mode, in the status bar) until acknowledged.
+    @Test func theReadinessItemSaysWhichVersionRuns() {
+        var context = ReadinessContext()
+        let ok = Readiness.check(context, acknowledged: []).first { $0.id == "project" }
+        #expect(ok?.state == .ok && ok?.detail == "read")
+        context.projectProblem = "project.json was not readable; running version \"Show mode\" of 2026-11-18T12:40:00+01:00"
+        let item = Readiness.check(context, acknowledged: []).first { $0.id == "project" }
+        #expect(item?.state == .fail && item?.blocks == true)
+        #expect(item?.detail == context.projectProblem)
+        #expect(Readiness.check(context, acknowledged: ["project"]).first { $0.id == "project" }?.blocks == false)
+    }
+
     static func failure(_ result: Result<CommandResult, CommandError>) -> CommandError? {
         if case .failure(let error) = result { return error }
         return nil
