@@ -505,18 +505,30 @@ public enum ProjectDocument {
     /// fresh project's first autosave does not write over it. Nil when there is no file.
     public static func setAside(_ url: URL, now: Date = Date()) throws -> URL? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        let aside = url.appendingPathExtension("unreadable-" + ProjectVersions.stamp(now.timeIntervalSince1970))
+        let aside = asideURL(url, now: now)
         try FileManager.default.moveItem(at: url, to: aside)
         return aside
     }
 
-    /// B281: keeps an unreadable file's bytes next to it as `project.json.unreadable-<time>` while it stays in place: a
-    /// hard link (needs no space; the atomic save over the file leaves the link's bytes alone), or a copy where the
-    /// volume cannot link. Throws when neither works, also when that name exists.
-    public static func keepAside(_ url: URL, now: Date = Date()) throws -> URL {
-        let aside = url.appendingPathExtension("unreadable-" + ProjectVersions.stamp(now.timeIntervalSince1970))
-        do { try FileManager.default.linkItem(at: url, to: aside) } catch { try FileManager.default.copyItem(at: url, to: aside) }
-        return aside
+    /// `project.json.unreadable-<time>`: where `setAside` and `keepAside` keep an unreadable file.
+    static func asideURL(_ url: URL, now: Date) -> URL {
+        url.appendingPathExtension("unreadable-" + ProjectVersions.stamp(now.timeIntervalSince1970))
+    }
+
+    /// B281: keeps an unreadable file's bytes at `aside` while it stays in place: a copy (a separate file, so a repair in
+    /// place cannot reach it), or, where the copy cannot be written (no space), a hard link: then the two names are one
+    /// file until an atomic save replaces `url`. Returns true for the link. Throws when neither works, also when `aside`
+    /// exists (it is never replaced).
+    public static func keepAside(_ url: URL, as aside: URL) throws -> Bool {
+        guard !FileManager.default.fileExists(atPath: aside.path) else { throw CocoaError(.fileWriteFileExists) }
+        do {
+            try FileManager.default.copyItem(at: url, to: aside)
+            return false
+        } catch {
+            try? FileManager.default.removeItem(at: aside)  // a partial copy: the name did not exist before
+            try FileManager.default.linkItem(at: url, to: aside)
+            return true
+        }
     }
 
     public static func save(_ document: JSONValue, to url: URL) throws {

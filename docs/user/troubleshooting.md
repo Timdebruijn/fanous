@@ -308,37 +308,50 @@ enable a network MIDI session, then choose it under Device or All sources.
 
 When `project.json` does not read as a project at start (a file cut off by
 a crash or a full disk, an empty file, a hand edit, a file from another
-version), the engine keeps its bytes next to it as
-`project.json.unreadable-<time>` and runs the newest
-[project version](screens/system.md#project-versions) that can be restored
-instead, skipping versions that are damaged too; that version is then
-saved as `project.json`. If that save fails (a full disk), the damaged
-file stays `project.json` and the next start falls back again. Only when
-no version can be restored does it start with the standard patch and no
-cues. Show mode that resumes after a crash resumes on that version. If the
-damaged file cannot even be kept aside, the engine runs the version but
-saves no change to the project, so nothing is written over the file.
+version), the engine keeps a copy of it as `project.json.unreadable-<time>`
+and runs the newest [project version](screens/system.md#project-versions)
+that can be restored instead, skipping versions that are damaged too; that
+version is then saved as `project.json`. If there is no space for the copy,
+the kept name is a second name for the same file until a save succeeds:
+do not edit `project.json` in place until then. If the save fails (a full
+disk), the damaged file stays `project.json` until a later save succeeds,
+and a start before that falls back again. Only when no version can be
+restored does it start with the standard patch and no cues. Show mode that
+resumes after a crash resumes on that version. If the damaged file cannot
+be kept aside at all, the engine runs the version but saves no change to
+`project.json`, so nothing is written over the file; versions are still
+made.
 
 The readiness item **Project file read at start** then fails, without
-**Run checks**: it names the project and the version that run, the
-version's date and time, or that a new project runs, and the kept file, for
-example "project.json was not readable; running project "B281 show" from
-version "Manual" of 2026-11-18T14:13:53+0100; the file is kept as
-project.json.unreadable-20261118T133407.492Z". A file written by a newer
-Fanous reads "project.json is from a newer Fanous (schema 2)" instead: the
-version that runs is the newest one this Fanous can read, from before the
-newer one was installed, so check that the project name is the show you
-expect. A failed save adds "not written to project.json (…), so the next
-start falls back again"; a file that could not be kept aside ends "changes
-are not saved, so nothing is written over it". In show mode the status bar
-reads "not ready: Project file read at start". The log line is "project
-file not readable at start", with the same text.
+**Run checks**. It says when it happened, the project and the version that
+run, with the version's date and time, or that a new project runs, the
+kept file, and what to do, for example "At the start of
+2026-11-18T14:44:45+0100: project.json was not readable; running project
+"B281 show" from version "Manual" of 2026-11-18T14:13:53+0100; the file is
+kept as project.json.unreadable-20261118T134445.943Z. Check the patch, the
+cues and the outputs. A repaired file goes back as project.json with the
+engine stopped." The last sentence is the action:
 
-The item keeps failing at every start, also after a restart that reads
-the restored `project.json`, until someone acknowledges it: the text waits
-in `project.json.notice`, which the acknowledgement removes.
+| The row reads | Do |
+|---|---|
+| "project.json was not readable; running project …" | Check the patch, the cues and the outputs; a repaired file goes back as `project.json` with the engine stopped |
+| "project.json is from a newer Fanous (schema 2); running project …" | The version is the newest one this Fanous can read, from before the newer one was installed: check the project name. For the newer project, go back to the newer Fanous and put the kept file back as `project.json` with the engine stopped |
+| "… not written to project.json (…) until a later save succeeds …" | Free disk space now: until a save succeeds, a stop loses the changes |
+| "… could not be kept aside (…) …; changes are not saved to project.json (versions are still made)" or "… could not be moved aside …" | Fix the permissions of the folder that holds `project.json` or free disk space, then restart the engine |
+| "… and no version restores; a new project runs …" | Repair the kept file and put it back with the engine stopped, or build the show again |
 
-Check the patch, the cues and the outputs, then acknowledge the item.
+In show mode the status bar reads "not ready: Project file read at start".
+The log line is "project file not readable at start", with the same text.
+
+The text waits in `project.json.notice`: the item fails at every start
+until someone acknowledges it, also after a restart that reads the
+restored `project.json`, and also after you put a repaired file back (the
+engine cannot tell your repair from its own saves; the "At the start of"
+time says how old the notice is). Acknowledging it marks it seen: the
+notice is removed and the item passes from then on, in this run and at
+later starts; **Take back** brings both back. When the notice cannot be
+removed, the acknowledgement is refused with the reason.
+
 Changes made after that version are not in it: versions are saved at
 engine start, on entering show mode and every 10 minutes after a change.
 To get the kept file back: with the engine stopped (Engine › **Stop

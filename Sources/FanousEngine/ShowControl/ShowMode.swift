@@ -332,7 +332,7 @@ public enum Readiness {
         }
         add(
             "project", "Project file read at start", context.projectProblem == nil, context.projectProblem ?? "read",
-            "Check the patch, the cues and the outputs, then acknowledge; a repaired file goes back as project.json with the engine stopped")
+            "Do what the last sentence above says, then acknowledge: that marks it seen, and the item passes from then on, also at later starts")
         let power = powerState()
         add("power", "On AC power", power.onAC, power.detail, "Connect the power adapter")
         let thermal = ProcessInfo.processInfo.thermalState

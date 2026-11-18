@@ -123,7 +123,9 @@ public final class Engine: @unchecked Sendable {
     /// Why the sACN port could not be bound at start (readiness); nil while sACN runs.
     private let sacnError = Mutex<String?>(nil)
     /// B281: why the project did not come from `project.json` at start (readiness item `project`); nil when it did.
-    private let projectProblem = Mutex<String?>(nil)
+    let projectProblem = Mutex<String?>(nil)
+    /// B281: the problem the operator acknowledged as seen, for Take back.
+    private let projectSeen = Mutex<String?>(nil)
     /// The project's library root as last seen by `projectChanged` (B51).
     private let libraryRootInProject = Mutex<String?>(nil)
     /// `/syphon`, `/capture` and `/screens` as the engine last applied them (B69, B73): a catalog is written back when it differs.
@@ -151,7 +153,7 @@ public final class Engine: @unchecked Sendable {
     var projectFile: URL?
     /// B281: the notice of an unreadable project at start, removed when readiness item `project` is acknowledged; nil
     /// before `start`.
-    private var projectNotice: URL?
+    var projectNotice: URL?
     /// The shell's Engine › Restart Engine marker, which `stop` takes; nil before `start`, so a stop of an engine that
     /// never started (a test) removes no marker (B242).
     var restartPendingFile: URL?
@@ -437,7 +439,7 @@ public final class Engine: @unchecked Sendable {
                 go: { cues.go(); oscFeedback?.invalidate(prefix: "/fanous/cue") }, back: { cues.back(); oscFeedback?.invalidate(prefix: "/fanous/cue") },
                 goto: { cues.goto($0); oscFeedback?.invalidate(prefix: "/fanous/cue") },
                 showMode: { [weak self] on in self?.setShowMode(on) ?? nil },
-                acknowledge: { [weak self] id, on in self?.acknowledgeReadiness(id, on) },
+                acknowledge: { [weak self] id, on in try self?.acknowledgeReadiness(id, on) },
                 runReadiness: { [weak self] in self?.runReadiness() }))
         // MIDI control (B36): cue actions run as commands like OSC's; parameter values go straight to the resolvers
         let midi = MIDIInput(dmx: dmx, logger: logger)
@@ -1290,19 +1292,26 @@ public final class Engine: @unchecked Sendable {
     }
 
     /// `readiness.acknowledge` and `.unacknowledge`: in show mode their own line (B185), with the blocking set after it.
-    func acknowledgeReadiness(_ id: String, _ on: Bool) {
+    func acknowledgeReadiness(_ id: String, _ on: Bool) throws {
+        // B281: acknowledging the project item means "seen": the notice goes and the item passes from now on, in this
+        // run and at later starts; Take back restores both. The file first: one that cannot change refuses the command.
+        var seenChanged = false
+        if id == "project", let projectNotice {
+            let problem = projectProblem.withLock { $0 }, seen = projectSeen.withLock { $0 }
+            if let text = on ? problem : (problem == nil ? seen : nil) {
+                do { try ProjectVersions.markNoticeSeen(on, file: projectNotice, text: text) } catch {
+                    throw CommandError("failed", "the project notice \(projectNotice.lastPathComponent) could not be \(on ? "removed" : "written"): \(error)")
+                }
+                projectProblem.withLock { $0 = on ? nil : text }
+                projectSeen.withLock { $0 = on ? text : nil }
+                seenChanged = true
+            }
+        }
         let blocking = readiness.withLock { ledger in
             ledger.acknowledge(id, on)
             return ledger.items.filter(\.blocks).map(\.id)
         }
-        // B281: acknowledged for good: the next start no longer reports it; Take back writes the notice again
-        if id == "project", let projectNotice, let problem = projectProblem.withLock({ $0 }) {
-            do {
-                if on {
-                    if FileManager.default.fileExists(atPath: projectNotice.path) { try FileManager.default.removeItem(at: projectNotice) }
-                } else { try Data(problem.utf8).write(to: projectNotice, options: .atomic) }
-            } catch { logger.error("project start notice not changed", metadata: ["error": "\(error)"]) }
-        }
+        if seenChanged, store != nil { runReadiness() }  // the item turns green (or red again) without Run checks
         if showMode.isOn {
             let metadata: Logger.Metadata = ["item": "\(id)", "blocking": "\(blocking.isEmpty ? "none" : blocking.joined(separator: ", "))"]
             if on { logger.info("readiness acknowledged in show mode", metadata: metadata) } else { logger.warning("readiness acknowledgement taken back in show mode", metadata: metadata) }

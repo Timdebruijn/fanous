@@ -87,14 +87,41 @@ struct ProjectVersionsTests {
         #expect(problem.contains("running project \"Doors\" from version \"Show mode\""))
         #expect(problem.contains(aside.lastPathComponent))
         #expect(problem.contains("newer Fanous (schema 2)") == (damage == .newerSchema), "a downgrade is named, not called damage")
+        #expect(problem.hasSuffix(damage == .newerSchema ? "go back to the newer Fanous and put \(aside.lastPathComponent) back as project.json with the engine stopped." : "A repaired file goes back as project.json with the engine stopped."))
+        #expect(problem.hasPrefix("At the start of 2026-11-18T"), "the notice says when it happened, also after a repair by hand")
         #expect(start.saves && start.fromVersion)
         #expect(f.versions.list().count == 2, "the fallback writes no version")
 
         // the notice outlives a restart (project.json reads now) until the item is acknowledged, which removes it
         let again = f.versions.startProject(from: file)
         #expect(again.project == start.project && again.problem == problem && !again.fromVersion)
-        try FileManager.default.removeItem(at: ProjectVersions.noticeFile(for: file))
+        try ProjectVersions.markNoticeSeen(true, file: ProjectVersions.noticeFile(for: file), text: problem)
         #expect(f.versions.startProject(from: file).problem == nil)
+    }
+
+    /// B281: the notice is on disk before the file is kept aside or saved over, so whatever point a crash hits, the next
+    /// start either finds the damaged `project.json` again (and falls back again) or a notice that says what it runs.
+    @Test func theNoticeIsWrittenBeforeTheFilesChange() throws {
+        let f = Self.make()
+        let file = f.base.appending(path: "project.json"), notice = ProjectVersions.noticeFile(for: file)
+        _ = try f.versions.save(f.store.project, name: "Periodic", automatic: true)
+        try Data("{".utf8).write(to: file)
+        let atSave = Mutex<String?>(nil)
+        let start = f.versions.startProject(from: file) { project, url in
+            atSave.withLock { $0 = try? String(contentsOf: notice, encoding: .utf8) }  // a crash right after the save sees this
+            try ProjectDocument.save(project, to: url)
+        }
+        #expect(atSave.withLock { $0 } == start.problem, "the notice of the version branch is in place before the save")
+        let next = f.versions.startProject(from: file)
+        #expect(next.project == start.project && next.problem == start.problem)
+
+        // no version: the notice says "a new project runs" before the file moves
+        for id in f.versions.list().map(\.id) { try FileManager.default.removeItem(at: f.directory.appending(path: id + ".json")) }
+        try Data("{".utf8).write(to: file)
+        let empty = f.versions.startProject(from: file, now: Date(timeIntervalSince1970: 1_795_002_000))
+        #expect(empty.problem?.contains("no version restores; a new project runs") == true)
+        #expect(try String(contentsOf: notice, encoding: .utf8) == empty.problem)
+        #expect(f.versions.startProject(from: file).problem == empty.problem, "a crash before the first autosave: no file, the notice still tells")
     }
 
     @Test func aDamagedNewestVersionFallsBackToTheOneBefore() throws {
@@ -132,8 +159,8 @@ struct ProjectVersionsTests {
         #expect(try Data(contentsOf: f.base.appending(path: "project.json.unreadable-20261118T112320.000Z")) == Data("{".utf8))
     }
 
-    /// B281: a full disk lets the link be made but not the save: the damaged file stays `project.json` and the next
-    /// start falls back again.
+    /// B281: a full disk lets the copy aside be made (a few KB) but not the save: the damaged file stays `project.json`
+    /// until a later save succeeds, or the next start falls back again; the kept copy is a separate file.
     @Test func aVersionThatCannotBeWrittenLeavesTheDamagedFileInPlace() throws {
         let f = Self.make()
         let file = f.base.appending(path: "project.json")
@@ -143,9 +170,17 @@ struct ProjectVersionsTests {
 
         let start = f.versions.startProject(from: file, now: Date(timeIntervalSince1970: 1_795_001_000), save: { _, _ in throw DiskFull() })
         #expect(start.project != nil && start.saves && start.fromVersion)
-        #expect(start.problem?.contains("not written to project.json (DiskFull()), so the next start falls back again") == true)
+        #expect(start.problem?.contains("not written to project.json (DiskFull()) until a later save succeeds; the file is kept as project.json.unreadable-20261118T112320.000Z.") == true)
+        #expect(start.problem?.hasSuffix("Free disk space now: until a save succeeds, a stop loses the changes.") == true)
+        #expect(try String(contentsOf: ProjectVersions.noticeFile(for: file), encoding: .utf8) == start.problem)
         #expect(try Data(contentsOf: file) == Data("{".utf8), "the damaged file is still project.json")
         #expect(try Data(contentsOf: f.base.appending(path: "project.json.unreadable-20261118T112320.000Z")) == Data("{".utf8))
+        // a repair in place (an editor, `cp`) reaches project.json only, not the kept copy
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.write(contentsOf: Data("x".utf8))
+        try handle.close()
+        #expect(try Data(contentsOf: f.base.appending(path: "project.json.unreadable-20261118T112320.000Z")) == Data("{".utf8))
+        try Data("{".utf8).write(to: file)
 
         let next = f.versions.startProject(from: file, now: Date(timeIntervalSince1970: 1_795_001_100))
         #expect(next.fromVersion && next.problem?.contains("the file is kept as project.json.unreadable-20261118T112500.000Z") == true)
@@ -165,13 +200,36 @@ struct ProjectVersionsTests {
         let start = f.versions.startProject(from: file)
         #expect(start.project != nil && !start.saves)
         #expect(start.problem?.contains("could not be kept aside") == true)
-        #expect(start.problem?.hasSuffix("changes are not saved, so nothing is written over it") == true)
+        #expect(start.problem?.hasSuffix("changes are not saved to project.json (versions are still made). Fix the permissions of the folder that holds project.json or free disk space, then restart the engine.") == true)
         for id in f.versions.list().map(\.id) { try FileManager.default.removeItem(at: f.directory.appending(path: id + ".json")) }
         let empty = f.versions.startProject(from: file)
         #expect(empty.project == nil && !empty.saves)
         #expect(empty.problem?.contains("no version restores and it could not be moved aside") == true)
         #expect(try Data(contentsOf: file) == Data("{".utf8))
         #expect(try FileManager.default.contentsOfDirectory(atPath: f.base.path).sorted() == ["project.json", "versions"])
+    }
+
+    /// B281: `readiness.acknowledge project` on the engine's command path marks the notice seen (the item passes from
+    /// then on), Take back restores both, and a notice that cannot be removed refuses the command. A never-started
+    /// engine: its only file is the temporary notice the test hands it.
+    @Test func acknowledgingTheProjectItemMarksItSeen() throws {
+        let base = tempFile("fanous-notice")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        let notice = base.appending(path: "project.json.notice"), text = "At the start of …: project.json was not readable"
+        try Data(text.utf8).write(to: notice)
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
+        engine.projectNotice = notice
+        engine.projectProblem.withLock { $0 = text }
+
+        try engine.acknowledgeReadiness("project", true)
+        #expect(!FileManager.default.fileExists(atPath: notice.path) && engine.projectProblem.withLock { $0 } == nil)
+        try engine.acknowledgeReadiness("project", false)
+        #expect(try String(contentsOf: notice, encoding: .utf8) == text && engine.projectProblem.withLock { $0 } == text)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: base.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: base.path) }
+        #expect(throws: CommandError.self) { try engine.acknowledgeReadiness("project", true) }
+        #expect(engine.projectProblem.withLock { $0 } == text, "refused: the item still fails")
     }
 
     /// B281: the operator sees it on the System screen (and, in show mode, in the status bar) until acknowledged.
