@@ -9,6 +9,9 @@ day it was built. New entries go under Unreleased. The design each phase
 implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
+
+## 1.0.0-rc.15 — 2026-11-18
+
 - Engine (B372): a playing movie layer shows the frame its clock is on, at every rate. The frame is picked from the
   whole decode ring, so the layer catches up after a skipped or unseen tick and keeps up at two or more frames per
   tick. The clock's frame turns over 11/24 of a frame before the frame starts (it rounded down), so at matched rates
