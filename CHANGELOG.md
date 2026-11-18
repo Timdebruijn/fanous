@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: five findings of the 2026-11-18 stability round that no fix recorded are backlog rows B376 to B380 (the
+  check-mallocs Syphon ratchet flake, a stale `welcome` document, slow `UDPFlowTests`, two suites missing from the
+  hosted run, a status text the decoder can remove); the rows from B352 on are in id order again (PR #414).
 - Engine (B364): a playing movie layer no longer sits on 2 frames of every 11 (with the 8-frame ring): the decode
   thread went back to the requested frame whenever it was ahead of it, so the ring held two frames in turn; it now
   fills the ring with the frames ahead in play direction. The layer advances at most one frame per tick, so after a
