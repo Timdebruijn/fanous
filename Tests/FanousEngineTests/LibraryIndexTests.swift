@@ -415,7 +415,32 @@ struct LibraryIndexTests {
         #expect(!FileManager.default.fileExists(atPath: index.markerFile.path))
     }
 
-    /// A marker under another root is another index's (B51: the old index still probes while the root is replaced).
+    /// A still the engine stopped in twice is not handed to a decoder as an image mask (decoded at every start, no
+    /// console needed): `still` has none for it, like for a missing file; the other still is found.
+    @Test func aStoppedTwiceStillIsNoMask() throws {
+        let (root, cache, _, key) = try twoStills()
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        let entry = LibraryIndex.CacheEntry(metadata: nil, thumbnail: nil, status: .unreadable, reason: LibraryIndex.stoppedTwice, reasonsVersion: LibraryIndex.reasonsVersion)
+        try JSONEncoder().encode([key: entry]).write(to: cache.appending(path: "library-index.json"))
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.rescan()
+        #expect(index.still(MediaKey(folder: 1, file: 1)) == nil)
+        #expect(index.still(MediaKey(folder: 1, file: 2)) != nil)
+    }
+
+    /// A replacement index (B51, made while the engine runs) does not read the live marker of the index it replaces as a
+    /// stop: nothing stopped.
+    @Test func aReplacementDoesNotReadTheMarkerAsAStop() async throws {
+        let (root, cache, first, key) = try twoStills()
+        try leaveMarker(cache, path: first, key: key, stops: 1)  // what the old index writes for a file in its second try
+        let old = LibraryIndex(root: try tempDir("fanous-library"), cacheDirectory: cache, logger: testLogger, readsStopMarker: false)
+        let next = old.replacement(root: root)
+        defer { next.stop() }
+        #expect(await waitUntil(every: .milliseconds(20)) { next.snapshot.folders.first?.items.allSatisfy { $0.status != .probing } == true })
+        #expect(next.snapshot.folders.first?.items.map(\.status) == [.playable, .playable])
+    }
+
+    /// A marker under another root is from a run on another root.
     @Test func aMarkerUnderAnotherRootIsLeftAlone() async throws {
         let (root, cache, _, _) = try twoStills()
         let elsewhere = try tempDir("fanous-library").appending(path: "001_Show/001_poison.png")

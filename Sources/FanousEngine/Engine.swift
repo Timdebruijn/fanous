@@ -1204,9 +1204,10 @@ public final class Engine: @unchecked Sendable {
         context.layerErrors = projectLayers.compactMap { layer in layer.mediaStatus.withLock { $0.error.map { "Layer \(layer.index + 1): \($0)" } } }
         context.libraryRoot = library?.snapshot.root ?? ""
         context.maskImagesMissing = Self.imageMasks(in: canvasUse.withLock { $0.outputs }).compactMap { place, image in
-            let item = library?.item(MediaKey(folder: image.folder, file: image.file))
-            guard item?.kind != .still else { return nil }
-            return "\(place): folder \(image.folder) file \(image.file)\(item == nil ? "" : " (not a still image)")"
+            let key = MediaKey(folder: image.folder, file: image.file)
+            guard library?.still(key) == nil else { return nil }  // what `maskFile` reads: none for a still the engine stopped in twice (B267)
+            let item = library?.item(key)
+            return "\(place): folder \(image.folder) file \(image.file)\(item == nil ? "" : item?.kind != .still ? " (not a still image)" : " (unreadable)")"
         }
         context.shownFolder0 = projectLayers.compactMap { layer in layer.mediaStatus.withLock { $0.folder == 0 ? $0.file : nil } }
         context.sceneCapture = options.scene?.media.contains { $0.capture != nil } ?? false

@@ -196,7 +196,11 @@ so a 25 fps clip takes about two and a half times its length; ProRes at
 1080p is not measured. The queue survives an engine restart; a job that was running starts over, once: when the engine stops during the
 same job a second time (a crash, or a power cut; also while it waits in show mode), it fails with "the engine stopped
 twice during this job". Failing moves or deletes no file: the source is where the job left it, and so is any output it
-already wrote. A job that had saved its finished result when the engine stopped is done. Jobs can be
+already wrote. When the engine stopped after the result was in the folder but before the original was put away, the
+restart moves or deletes nothing: the job is done and reads "the original was left in place: the engine stopped before
+it was put away" until you remove it (an upload's copy then stays in `_incoming/`, as after a failed job; move or delete
+it yourself). If the result was removed in between, the job fails with "the engine stopped before this job was done,
+and its output is missing". Jobs can be
 queued in show mode, but they wait until it ends. The status bar shows the
 running job's progress; do it before the show.
 
@@ -245,9 +249,10 @@ Layers screen for a layer that shows nothing. A file that changes, moves or
 is renamed is probed again. A file the engine stopped on while reading it
 (a crash, or a power cut) is read once more at the next start; after the
 second time it is listed as unreadable and not read again until it changes,
-so a file that crashes the engine cannot keep it from starting. After an update that rewords the reasons, every
-file that is not playable (needs transcode, unreadable) is probed again once
-and shows "probing…" until then; playable files are not touched.
+so a file that crashes the engine while it is read cannot keep it from starting (a still used as an image mask that
+is listed so is treated as a missing mask). After an update that rewords the reasons, every file that is not playable
+(needs transcode, unreadable) is probed again once and shows "probing…" until then; playable files and files listed
+as stopping the engine twice are not touched.
 
 ## Audio
 

@@ -152,12 +152,14 @@ public final class LibraryIndex: @unchecked Sendable {
     /// start knows which file was in work when the engine stopped. `stops`: how often that happened before this probe.
     struct ProbeMarker: Codable { var path: String; var key: String; var stops: Int }
 
-    public init(root: URL, cacheDirectory: URL, logger: Logger) {
+    /// `readsStopMarker`: only the index made at engine start reads a probe marker as a stop of the engine (B267); a
+    /// replacement made while the engine runs (B51) would read the live marker of the index it replaces.
+    public init(root: URL, cacheDirectory: URL, logger: Logger, readsStopMarker: Bool = true) {
         self.root = root
         self.cacheDirectory = cacheDirectory
         self.logger = logger
         state.withLock { $0.snapshot.root = root.path }
-        loadCache()
+        loadCache(readsStopMarker: readsStopMarker)
     }
 
     // MARK: Public
@@ -174,17 +176,19 @@ public final class LibraryIndex: @unchecked Sendable {
 
     /// The still numbered `key` for an image mask (DESIGN.md §9.10 item 5), also while it is probed again after a save,
     /// when `resolve` has none (the mask reads the file itself, and its stamp sees the change); nil when there is none or
-    /// it is not a still.
-    public func still(_ key: MediaKey) -> URL? { item(key).flatMap { $0.kind == .still ? URL(fileURLWithPath: $0.path) : nil } }
+    /// it is not a still, or the engine stopped twice while reading it (B267: a mask is decoded at every start).
+    public func still(_ key: MediaKey) -> URL? {
+        item(key).flatMap { $0.kind == .still && $0.reason != Self.stoppedTwice ? URL(fileURLWithPath: $0.path) : nil }
+    }
 
     public func start() {
         running.store(true, ordering: .relaxed)
+        rescan()  // before the thread: its first pass must see the queue, or it takes it as drained and drops a kept marker (B267)
         let thread = Thread { [self] in probeLoop() }
         thread.name = "org.fanous.library"
         thread.qualityOfService = .utility
         thread.start()
         probeThread = thread
-        rescan()
         watch()
     }
 
@@ -207,7 +211,7 @@ public final class LibraryIndex: @unchecked Sendable {
     /// keeps running until the caller has swapped them and calls `stop()` (FSEvents released, probe thread joined).
     /// The cache is keyed by absolute path and shared, so switching back to a root probed before needs no new probes.
     public func replacement(root: URL) -> LibraryIndex {
-        let next = LibraryIndex(root: root, cacheDirectory: cacheDirectory, logger: logger)
+        let next = LibraryIndex(root: root, cacheDirectory: cacheDirectory, logger: logger, readsStopMarker: false)
         next.thumbnailer = thumbnailer
         next.onChange = onChange
         next.start()
@@ -347,7 +351,8 @@ public final class LibraryIndex: @unchecked Sendable {
         }
         // ponytail: one small file written and removed per probe, beside the full cache rewrite of B328; not atomic, a torn
         // marker reads as none (the file is then not blamed). One marker per cache directory: while the root is replaced
-        // (B51) two indexes probe on two threads and each removes the other's marker, so a stop in that window blames no one.
+        // (B51) two indexes probe on two threads, the marker names whichever file was written last and either removes it, so a
+        // stop in that window can count against the other index's file (once: the second count needs another stop in it).
         try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
         try? JSONEncoder().encode(ProbeMarker(path: item.path, key: key, stops: stops)).write(to: markerFile)
         defer { try? FileManager.default.removeItem(at: markerFile) }
@@ -479,14 +484,14 @@ public final class LibraryIndex: @unchecked Sendable {
     private var cacheFile: URL { cacheDirectory.appending(path: "library-index.json") }
     var markerFile: URL { cacheDirectory.appending(path: "library-probing.json") }
 
-    private func loadCache() {
+    private func loadCache(readsStopMarker: Bool) {
         if let data = try? Data(contentsOf: cacheFile), let cache = try? JSONDecoder().decode([String: CacheEntry].self, from: data) {
             state.withLock { $0.cache = cache }
         }
         // B267: a marker means the engine stopped while that file was read (a crash, a kill, a power cut). The second time it
         // is unreadable until it changes (a new size or date is a new cache key); the first time it is read once more. A
-        // marker under another root belongs to an index that runs beside this one while the root is replaced (B51).
-        guard let data = try? Data(contentsOf: markerFile), let marker = try? JSONDecoder().decode(ProbeMarker.self, from: data),
+        // marker under another root is from a run on another root.
+        guard readsStopMarker, let data = try? Data(contentsOf: markerFile), let marker = try? JSONDecoder().decode(ProbeMarker.self, from: data),
             marker.path.hasPrefix(root.path + "/")
         else { return }
         if marker.stops + 1 >= 2 {
@@ -497,7 +502,9 @@ public final class LibraryIndex: @unchecked Sendable {
             saveCache()  // before the marker goes: a stop in between keeps the count
             try? FileManager.default.removeItem(at: markerFile)
         } else {
-            // the marker stays until a probe overwrites it or the queue drains: a stop before that leaves the count at one
+            // the marker stays until the next probe (of any file) overwrites it or the queue drains, and a stop before that leaves
+            // the count at one; after that the count is in memory only, so a stop before this file's re-probe loses it (the
+            // safe side: three stops instead of two)
             logger.warning("the engine stopped while reading this library file: it is read once more", metadata: ["file": "\(marker.path)"])
             state.withLock { $0.stoppedIn = (marker.key, marker.stops + 1) }
         }

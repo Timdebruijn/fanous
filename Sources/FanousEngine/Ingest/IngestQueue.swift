@@ -57,6 +57,8 @@ public struct IngestJob: Codable, Sendable, Identifiable {
     /// B267: saved right after the result took its name (the rename to the destination, or in place the replace), before
     /// the original is moved or deleted; cleared when `done` is saved. A restart takes only such a job as done.
     var outputWritten: Bool?
+    /// B267: shown under a finished job in the queue; a done job that has one stays listed until it is removed.
+    public var note: String?
 
     public init(
         source: URL, destination: URL, kind: Kind, originalsDirectory: URL? = nil, deleteSource: Bool = false
@@ -122,16 +124,25 @@ public final class IngestQueue: @unchecked Sendable {
                     changed = true
                     continue
                 }
-                // B267: a stop after the result took its name, before `done` was saved: done, and the original goes as
-                // configured if it is still there. Recorded, not inferred from the files: a destination can exist without
-                // this job having written it. A stop before the record was saved runs the job again (it fails on the
-                // existing destination, the source untouched).
+                // B267: a stop after the result took its name, before `done` was saved. Recorded, not inferred from the
+                // files: a destination can exist without this job having written it (a stop before the record was saved
+                // runs the job again, which fails on the existing destination). Nothing is moved or deleted here, unwatched:
+                // done while the output is there, the original left where it is if it was still to be put away; failed
+                // when the output has gone since.
                 if job.outputWritten == true {
-                    jobs[index].state = .done
-                    jobs[index].finishedAt = Date()
                     jobs[index].outputWritten = nil
+                    jobs[index].finishedAt = Date()
                     changed = true
-                    if !job.inPlace, files.fileExists(atPath: job.source.path) { finishOriginal(of: job) }
+                    if files.fileExists(atPath: job.destination.path) {
+                        jobs[index].state = .done
+                        if !job.inPlace, job.originalsDirectory != nil || job.deleteSource, files.fileExists(atPath: job.source.path) {
+                            jobs[index].note = Self.originalLeft
+                            logger.warning("the engine stopped before this ingest job put its original away: done, the original is left in place", metadata: ["source": "\(job.source.path)"])
+                        }
+                    } else {
+                        jobs[index].state = .failed(Self.outputMissing)
+                        logger.warning("the engine stopped before this ingest job was done and its output is missing: failed, the source is left in place", metadata: ["source": "\(job.source.path)"])
+                    }
                     continue
                 }
                 try? files.removeItem(at: temporary)  // the half-written output of the crashed run
@@ -157,12 +168,15 @@ public final class IngestQueue: @unchecked Sendable {
 
     // MARK: API
 
-    /// Done and cancelled jobs leave the list this long after they finished (a failed one stays with its error until it
-    /// is removed): the Media screen showed a cancelled job for days otherwise. Filtered on read, dropped from the file at
-    /// the next change.
+    /// Done and cancelled jobs leave the list this long after they finished (a failed one stays with its error, and a done
+    /// one with a `note` with its note, until it is removed): the Media screen showed a cancelled job for days otherwise.
+    /// Filtered on read, dropped from the file at the next change.
     static let forgetAfter: TimeInterval = 60
+    /// B267: the texts of a job the engine stopped in after its output took its name.
+    static let originalLeft = "the original was left in place: the engine stopped before it was put away"
+    static let outputMissing = "the engine stopped before this job was done, and its output is missing"
     static func expired(_ job: IngestJob) -> Bool {
-        guard let finishedAt = job.finishedAt, job.state == .done || job.state == .cancelled else { return false }
+        guard let finishedAt = job.finishedAt, job.state == .done || job.state == .cancelled, job.note == nil else { return false }
         return Date().timeIntervalSince(finishedAt) > forgetAfter
     }
 

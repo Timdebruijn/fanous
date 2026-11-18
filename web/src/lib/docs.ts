@@ -220,6 +220,8 @@ export interface IngestJobDoc {
   kind: unknown;
   state: unknown; // {queued:{}} | {running:{progress}} | {done:{}} | {failed:{_0}} | {cancelled:{}}
   queuedAt?: string;
+  /** B267: a remark on a finished job (the original left in place after an engine stop); the job stays until removed */
+  note?: string;
 }
 
 export interface LiveDoc {

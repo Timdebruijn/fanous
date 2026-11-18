@@ -52,6 +52,7 @@
             <button class="btn" disabled={locked} title={locked ? LOCKED_TITLE : undefined} onclick={() => act(job.id, 'remove')}>Remove</button>
           {/if}
           {#if state.error}<div class="error">{state.error}</div>{/if}
+          {#if job.note}<div class="note">{job.note}</div>{/if}
         </li>
       {/each}
     </ul>
@@ -70,4 +71,5 @@
   .state.fail { color: var(--red); font-weight: 500; }
   .bar { flex: 0 0 140px; }
   .error { flex-basis: 100%; color: var(--red); font-size: 13px; overflow-wrap: anywhere; user-select: text; }
+  .note { flex-basis: 100%; color: var(--text-2); font-size: 13px; overflow-wrap: anywhere; user-select: text; }
 </style>
