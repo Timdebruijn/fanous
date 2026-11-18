@@ -51,7 +51,7 @@ and the TLS fingerprint from programmer.
 | Route | Method | Role | Does |
 |---|---|---|---|
 | `/healthz` | any | none | `{"status":"ok","version":"…","uptimeSeconds":N,"chip":"…"}` |
-| `/metrics` | any | none | The last second as JSON: `frames`, `missed`, `late`, `textureMisses`, `cpuMsP50`, `cpuMsP99`, `cpuMsMax`, `gpuMsP50`, `gpuMsP99`, `gpuMsMax`, `dmxToPhotonMsP50`, `dmxToPhotonMsP99`, `dmxSamples`, `windowSeconds`, `clients`, `lagging`, `showMode`, `uptimeSeconds`, `totalFrames`, `totalMissed`, `totalLate`, `pid`, and when present `completionWaits`, `gpuErrors`, `audio`, `sync`, `preview` |
+| `/metrics` | any | none | The last second as JSON: `frames`, `missed`, `late`, `textureMisses`, `cpuMsP50`, `cpuMsP99`, `cpuMsMax`, `gpuMsP50`, `gpuMsP99`, `gpuMsMax`, `dmxToPhotonMsP50`, `dmxToPhotonMsP99`, `dmxSamples`, `windowSeconds`, `clients`, `lagging`, `showMode`, `uptimeSeconds`, `totalFrames`, `totalMissed`, `totalLate`, `pid`, `openFiles` (descriptors the engine has open; it should not grow over a show; left out when they cannot be listed, as happens at the engine's limit of 10240), and when present `completionWaits`, `gpuErrors`, `audio`, `sync`, `preview` |
 | `/api/metrics` | any | none | The 10-second summary as text |
 | `/api/live` | any | none | Every universe, fixture value with its source, policy and UI expiry; exposes the DMX senders' addresses |
 | `/api/patch` | any | none | The patch as JSON |

@@ -64,11 +64,12 @@ import Testing
     }
 
     static func start(
-        store: DMXStore, fixed: OSCFeedbackTarget? = nil, state: @escaping @Sendable () -> OSCFeedback.State = { [:] },
+        store: DMXStore, fixed: OSCFeedbackTarget? = nil, flowIdle: Double? = nil, state: @escaping @Sendable () -> OSCFeedback.State = { [:] },
         fixtures: @escaping @Sendable () -> [FixtureRef: [UInt16]] = { [:] }
     ) async throws -> (OSCReceiver, OSCFeedbackServer, UInt16) {
         let feedback = OSCFeedbackServer(fixed: fixed, logger: testLogger, fixtures: fixtures, engine: state)
         let receiver = OSCReceiver(store: store, logger: testLogger, port: 0, feedback: feedback)
+        if let flowIdle { receiver.flows.idle = UInt64(flowIdle * 1e9) }
         try receiver.start()
         feedback.start()
         var started = false

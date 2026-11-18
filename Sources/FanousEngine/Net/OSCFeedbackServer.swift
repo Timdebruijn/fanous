@@ -37,6 +37,11 @@ public final class OSCFeedbackServer: @unchecked Sendable {
     private var timer: DispatchSourceTimer?
     private var addresses: [FixtureRef: [String]] = [:]
     private var cache: (state: OSCFeedback.State, at: Double)?
+    /// The confirmed keys last handed to `onPins` (queue only).
+    private var pinned: Set<OSCSubscriptions.Key> = []
+    /// Called on this queue with every confirmed key (at most `OSCSubscriptions.limit` and the fixed target) whenever
+    /// that set changes: their inbound UDP flows are kept as long as the subscription lives (B268). Set before start.
+    var onPins: (@Sendable (Set<OSCSubscriptions.Key>) -> Void)?
 
     /// - Parameters:
     ///   - fixtures: resolved raw values per fixture, copied under the DMX lock and nothing more; called on the feedback queue.
@@ -123,10 +128,29 @@ public final class OSCFeedbackServer: @unchecked Sendable {
         }
     }
 
-    /// Every new inbound UDP flow: the fixed target's own one becomes the way to reach it.
-    func adopt(_ source: OSCSource) {
-        guard let fixed, fixed.port == source.port, Self.sameHost(fixed.host, source.host) else { return }
-        queue.async { [self] in useFlow(source, as: .init(host: fixed.host, port: fixed.port)) }
+    /// Every new inbound UDP flow: the fixed target's own one, or a confirmed subscriber's, becomes the way to reach
+    /// it (B268: a subscriber whose flow was cancelled is answered on its new one from its next datagram). True for the
+    /// fixed target's: once that flow is cancelled, a connection of our own to the same host:port fails with
+    /// EADDRINUSE (measured), so the receiver keeps it.
+    func adopt(_ source: OSCSource) -> Bool {
+        let isFixed = fixed.map { $0.port == source.port && Self.sameHost($0.host, source.host) } ?? false
+        queue.async { [self] in
+            if isFixed, let fixed {
+                useFlow(source, as: .init(host: fixed.host, port: fixed.port))
+            } else if table.isConfirmed(.init(host: source.host, port: source.port)) {
+                useFlow(source)
+            }
+        }
+        return isFixed
+    }
+
+    /// An inbound UDP flow was cancelled (B268): its reply closure is dead, so it is no longer the way to that host:port.
+    /// A confirmed subscriber's flow is not cancelled while it is subscribed (`onPins`); after that `send` opens a
+    /// connection of its own, which mostly stays in `waiting(EADDRINUSE)` (53 of 60 test runs, measured before the pin:
+    /// it comes while the cancelled flow's socket is still there), until the host:port sends again and `adopt` binds
+    /// its new flow.
+    func release(_ source: OSCSource) {
+        queue.async { [self] in flows[.init(host: source.host, port: source.port)] = nil }
     }
 
     /// Everything at or below the prefix goes out again at the next tick, changed or not (every cue go).
@@ -159,8 +183,14 @@ public final class OSCFeedbackServer: @unchecked Sendable {
         return state
     }
 
-    /// The tick runs only while someone confirmed (or the fixed target) is listening.
+    /// The tick runs only while someone confirmed (or the fixed target) is listening. Also hands a changed set of
+    /// confirmed keys to `onPins`: every change of the table ends here (a request, or expiry in `notify`).
     private func updateTimer() {
+        let keys = Set(table.keys)
+        if keys != pinned {
+            pinned = keys
+            onPins?(keys)
+        }
         if !started || table.isEmpty {
             timer?.cancel()
             timer = nil
