@@ -19,15 +19,18 @@ import Testing
         func stop() { stops.wrappingAdd(1, ordering: .relaxed) }
     }
 
-    /// The opener tests stand in: a file whose name is held waits until the test lets it go; running opens are counted.
+    /// The opener tests stand in: a file whose name is held waits until the test lets it go, one whose name is failing
+    /// then throws; running opens are counted.
     final class Opens: Sendable {
+        struct Failed: Error {}
         let held = Mutex<Set<String>>([])
+        let failing = Mutex<Set<String>>([])
         let started = Mutex<[String]>([])
         let finished = Mutex<[String]>([])
         let running = Atomic<Int>(0)
         let most = Atomic<Int>(0)
 
-        func open(_ url: URL) -> MediaLoader.OpenedFile {
+        func open(_ url: URL) throws -> MediaLoader.OpenedFile {
             let name = url.lastPathComponent
             started.withLock { $0.append(name) }
             let now = running.wrappingAdd(1, ordering: .relaxed).newValue
@@ -35,6 +38,7 @@ import Testing
             while held.withLock({ $0.contains(name) }) { usleep(1000) }
             running.wrappingSubtract(1, ordering: .relaxed)
             finished.withLock { $0.append(name) }
+            if failing.withLock({ $0.contains(name) }) { throw Failed() }
             return .still(DecodedFrame(poolIndex: 0))
         }
     }
@@ -45,7 +49,7 @@ import Testing
         let device = try #require(MTLCreateSystemDefaultDevice())
         let entries = media ?? (1...9).map { MediaEntry(folder: 1, file: $0, path: "/nonexistent/\($0).png") }
         let loader = MediaLoader(layers: layers, media: entries, device: device, ringCapacity: 4, logger: testLogger)
-        if let opens { loader.openFile = { url, _ in opens.open(url) } }
+        if let opens { loader.openFile = { url, _ in try opens.open(url) } }
         loader.openDeadline = deadline
         return (loader, layers)
     }
@@ -135,6 +139,110 @@ import Testing
         opens.held.withLock { $0 = [] }
         #expect(await waitUntil { Self.take(layers[0]) == MediaKey(folder: 1, file: 1) })
         #expect(layers[0].mediaStatus.withLock { $0.kind == "still" && $0.error == nil })
+    }
+
+    /// The last selection wins also when the newer one has not started: an open that answers after the layer moved on
+    /// is dropped, whether it was given up (its newer file waits for the one open thread) or still in flight (its newer
+    /// file waits for it). The dropped one is never handed over; nothing replaces it while the newer file is held.
+    @Test(arguments: [true, false])
+    func anAnswerTheLayerMovedAwayFromIsDropped(givenUp: Bool) async throws {
+        let opens = Opens()
+        opens.held.withLock { $0 = ["1.png", "2.png"] }
+        let (loader, layers) = try Self.loader(layers: 1, opens: opens, deadline: givenUp ? .milliseconds(50) : .seconds(60))
+        loader.maxOpenThreads = 1
+        loader.start()
+        defer { loader.stop() }
+        defer { opens.held.withLock { $0 = [] } }
+        Self.select(layers[0], 1, loader)
+        #expect(await waitUntil { opens.started.withLock { $0 } == ["1.png"] })
+        if givenUp { #expect(await waitUntil { layers[0].mediaStatus.withLock { $0.error } != nil }) }
+        Self.select(layers[0], 2, loader)
+        try await Task.sleep(for: .milliseconds(100))  // nothing to wait for: 2 cannot start while 1 holds the one thread
+        opens.held.withLock { $0.remove("1.png") }
+        #expect(await waitUntil { opens.started.withLock { $0 } == ["1.png", "2.png"] }, "1's answer was not taken")
+        #expect(Self.take(layers[0]) == nil, "the open the layer moved away from was handed over")
+        opens.held.withLock { $0 = [] }
+        #expect(await waitUntil { Self.take(layers[0]) == MediaKey(folder: 1, file: 2) })
+    }
+
+    /// A given-up open that fails later writes the layer's status but hands nothing over: the layer keeps the picture it
+    /// kept at the give-up. A failure within the deadline still hands over no media (B299, unchanged).
+    @Test func aGivenUpOpenThatFailsKeepsThePicture() async throws {
+        let opens = Opens()
+        opens.held.withLock { $0 = ["1.png"] }
+        opens.failing.withLock { $0 = ["1.png", "2.png"] }
+        let (loader, layers) = try Self.loader(layers: 1, opens: opens, deadline: .milliseconds(50))
+        loader.start()
+        defer { loader.stop() }
+        defer { opens.held.withLock { $0 = [] } }
+        Self.select(layers[0], 1, loader)
+        #expect(await waitUntil { layers[0].mediaStatus.withLock { $0.error } == "not answering: the volume is slow or gone" })
+        opens.held.withLock { $0 = [] }
+        #expect(await waitUntil { layers[0].mediaStatus.withLock { $0.file == 1 && $0.error != nil && $0.error != "not answering: the volume is slow or gone" } })
+        try await Task.sleep(for: .milliseconds(300))  // nothing to wait for: no hand-off follows the status
+        #expect(Self.take(layers[0]) == nil, "a late failure cut the layer to black")
+        Self.select(layers[0], 2, loader)
+        #expect(await waitUntil { Self.take(layers[0]) == MediaKey(packed: 0) }, "a failure within the deadline hands over no media")
+    }
+
+    /// A selection that is not a file (clear, a missing number, a live input) is handed over at once while an open is in
+    /// flight on the layer, and the open's late answer is dropped.
+    @Test func aSelectionThatIsNotAFileDoesNotWaitForAnOpen() async throws {
+        let opens = Opens()
+        opens.held.withLock { $0 = ["1.png"] }
+        let (loader, layers) = try Self.loader(layers: 1, opens: opens)
+        loader.start()
+        defer { loader.stop() }
+        defer { opens.held.withLock { $0 = [] } }
+        Self.select(layers[0], 1, loader)
+        #expect(await waitUntil { opens.started.withLock { $0 } == ["1.png"] })
+        layers[0].wanted.store(0, ordering: .relaxed)
+        loader.wake.signal()
+        #expect(await waitUntil(.seconds(2)) { Self.take(layers[0]) == MediaKey(packed: 0) }, "a clear waited for the open")
+        layers[0].wanted.store(MediaKey(folder: 2, file: 1).packed, ordering: .relaxed)  // no such file: "missing"
+        loader.wake.signal()
+        #expect(await waitUntil(.seconds(2)) { Self.take(layers[0]) == MediaKey(packed: 0) })
+        #expect(layers[0].mediaStatus.withLock { $0.kind } == "missing")
+        opens.held.withLock { $0 = [] }
+        #expect(await waitUntil { opens.finished.withLock { $0 } == ["1.png"] })
+        try await Task.sleep(for: .milliseconds(300))  // nothing to wait for: the dropped answer changes nothing
+        #expect(Self.take(layers[0]) == nil, "the late answer replaced the newer selection")
+        #expect(layers[0].mediaStatus.withLock { $0.kind } == "missing")
+    }
+
+    /// After a non-file selection the layer no longer waits for its open: the deadline does not write "not answering"
+    /// over the new selection's status.
+    @Test func aGiveUpDoesNotWriteOverANewerSelection() async throws {
+        let opens = Opens()
+        opens.held.withLock { $0 = ["1.png"] }
+        let (loader, layers) = try Self.loader(layers: 1, opens: opens, deadline: .milliseconds(100))
+        loader.start()
+        defer { loader.stop() }
+        defer { opens.held.withLock { $0 = [] } }
+        Self.select(layers[0], 1, loader)
+        #expect(await waitUntil { opens.started.withLock { $0 } == ["1.png"] })
+        layers[0].wanted.store(MediaKey(folder: 2, file: 1).packed, ordering: .relaxed)
+        loader.wake.signal()
+        #expect(await waitUntil { layers[0].mediaStatus.withLock { $0.kind } == "missing" })
+        try await Task.sleep(for: .milliseconds(300))  // past the deadline of the open
+        #expect(layers[0].mediaStatus.withLock { $0.kind == "missing" && $0.folder == 2 })
+    }
+
+    /// A thread stuck in an open keeps no stopped loader alive (the layers, the mixer, live inputs).
+    @Test func aStuckOpenKeepsNoStoppedLoaderAlive() async throws {
+        let opens = Opens()
+        opens.held.withLock { $0 = ["1.png"] }
+        defer { opens.held.withLock { $0 = [] } }
+        weak var gone: MediaLoader?
+        do {
+            let (loader, layers) = try Self.loader(layers: 1, opens: opens)
+            gone = loader
+            loader.start()
+            Self.select(layers[0], 1, loader)
+            #expect(await waitUntil { opens.started.withLock { $0 } == ["1.png"] })
+            loader.stop()
+        }
+        #expect(await waitUntil { gone == nil }, "the open thread holds the stopped loader")
     }
 
     /// At most `maxOpens` opens run within their deadline, and at most `maxOpenThreads` threads are in opens at all

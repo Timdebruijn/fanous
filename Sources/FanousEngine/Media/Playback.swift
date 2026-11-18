@@ -434,13 +434,21 @@ public final class MediaLoader: @unchecked Sendable {
     var maxOpenThreads = 8
     /// Loader thread: the open each layer waits for; nil when none, or given up.
     private var opening: [(id: Int, key: MediaKey, url: URL, deadline: ContinuousClock.Instant)?]
-    /// Loader thread: the id of each layer's newest open (file or not); an answer with an older one is dropped, so the
-    /// last selection wins whatever order the opens answer in.
+    /// Loader thread: the id of each layer's newest open (file or not). An answer is played only when its id is the
+    /// newest and the layer still wants its key, so neither an older open nor one the layer has moved away from (a
+    /// selection still waiting for a slot) replaces the last selection.
     private var newest: [Int]
     private var lastID = 0
     /// Loader thread: open threads started whose answer has not been taken.
     private var openThreads = 0
-    private let answers = Mutex<[(layer: Int, id: Int, key: MediaKey, url: URL, result: Result<OpenedFile, Error>)]>([])
+    typealias Answer = (layer: Int, id: Int, key: MediaKey, url: URL, result: Result<OpenedFile, Error>)
+    /// What the open threads hand back. They hold this box, not the loader, so a thread stuck on a gone volume keeps no
+    /// stopped loader alive; after the stop it hands nothing back.
+    private final class Answers: Sendable {
+        let list = Mutex<[Answer]>([])
+        let stopped = Atomic<Bool>(false)
+    }
+    private let answers = Answers()
 
     public init(layers: [RenderLayer], media: [MediaEntry], device: MTLDevice, ringCapacity: Int, logger: Logger) {
         self.layers = layers
@@ -632,22 +640,33 @@ public final class MediaLoader: @unchecked Sendable {
                     }
                 }
                 let want = layer.wanted.load(ordering: .relaxed)
-                // B277: a layer with an open in flight takes its newest selection when that open answers or is given up
-                guard want != loaded[i], opening[i] == nil else { continue }
+                guard want != loaded[i] else { continue }
+                let live = (syphonOpen[i], captureOpen[i])  // what `open` clears; put back while a file waits
                 var file: URL?
                 let playback = autoreleasepool { open(MediaKey(packed: want), layer: i, file: &file) }
                 if let file {
-                    // all open slots taken: the layer keeps its picture and asks again on the next pass
-                    guard opening.count(where: { $0 != nil }) < maxOpens, openThreads < maxOpenThreads else { continue }
+                    // B277: the layer's open in flight answers or is given up first, and with all open slots taken the
+                    // layer keeps its picture (and its live input's status polling) and asks again on the next pass
+                    guard opening[i] == nil, opening.count(where: { $0 != nil }) < maxOpens, openThreads < maxOpenThreads else {
+                        (syphonOpen[i], captureOpen[i]) = live
+                        continue
+                    }
                     loaded[i] = want
                     startOpen(MediaKey(packed: want), url: file, layer: i)
                 } else {
+                    // not a file: at once, also with an open in flight (its answer is no longer the newest, and it is
+                    // not given up over this selection's status)
                     loaded[i] = want
+                    opening[i] = nil
                     lastID += 1
                     newest[i] = lastID
                     hand(playback, to: i)
                 }
             }
+        }
+        answers.list.withLock { list in
+            answers.stopped.store(true, ordering: .relaxed)  // under the lock: no thread appends after this
+            list.removeAll()
         }
         for layer in layers {
             layer.pending.withLock { box in
@@ -675,13 +694,15 @@ public final class MediaLoader: @unchecked Sendable {
         opening[layer] = (id, key, url, .now + openDeadline)
         openThreads += 1
         let audio = mixer.map { layer * 2 + 1 < $0.channels.count } ?? false
-        let openFile = openFile
-        let thread = Thread { [self] in
+        let openFile = openFile, answers = answers, wake = wake
+        let thread = Thread {
             let signpost = Signposts.id(Thread.current)
             Signposts.begin("open", id: signpost)
             let result = Result { try autoreleasepool { try openFile(url, audio) } }
             Signposts.end("open", id: signpost)
-            answers.withLock { $0.append((layer, id, key, url, result)) }
+            answers.list.withLock { list in
+                if !answers.stopped.load(ordering: .relaxed) { list.append((layer, id, key, url, result)) }
+            }
             wake.signal()
         }
         thread.name = "org.fanous.media.open"
@@ -689,26 +710,36 @@ public final class MediaLoader: @unchecked Sendable {
         thread.start()
     }
 
-    /// Loader thread (B277): the opens that answered. The newest of its layer is finished and handed over, even one that
-    /// was given up; an older one (the layer moved on) is dropped, before any decoder was made for it.
+    /// Loader thread (B277): the opens that answered. One that is its layer's newest and whose key the layer still wants
+    /// is finished and handed over, even one that was given up; any other (the layer moved on, or its newer selection
+    /// waits for a slot) is dropped before a decoder is made for it. A given-up open that fails writes the layer's status
+    /// and logs but hands nothing: the layer keeps its picture, as it did at the give-up (a decision; a failure within
+    /// the deadline still cuts to black, B299).
     private func takeAnswers() {
-        let taken = answers.withLock { list in
+        let taken = answers.list.withLock { list -> [Answer] in
+            guard !list.isEmpty else { return [] }  // no allocation on a pass without answers
             defer { list.removeAll(keepingCapacity: true) }
             return list
         }
         for answer in taken {
+            let i = answer.layer
             openThreads -= 1
-            if opening[answer.layer]?.id == answer.id { opening[answer.layer] = nil }
-            guard answer.id == newest[answer.layer] else {
-                logger.info("media open answered after a newer selection, dropped", metadata: ["layer": "\(answer.layer + 1)", "media": "\(answer.key)"])
+            let givenUp = opening[i]?.id != answer.id
+            if !givenUp { opening[i] = nil }
+            guard answer.id == newest[i], layers[i].wanted.load(ordering: .relaxed) == answer.key.packed else {
+                if answer.id == newest[i] { loaded[i] = .max }  // never a packed key: what the layer wants now is opened below
+                logger.info("media open answered after a newer selection, dropped", metadata: ["layer": "\(i + 1)", "media": "\(answer.key)"])
                 continue
             }
-            hand(autoreleasepool { finish(answer.key, layer: answer.layer, url: answer.url, answer.result) }, to: answer.layer)
+            let playback = autoreleasepool { finish(answer.key, layer: i, url: answer.url, answer.result) }
+            if givenUp, case .failure = answer.result { continue }  // status and log written; the picture stays
+            hand(playback, to: i)
         }
     }
 
     /// Loader thread (B277): a layer whose open has not answered within `openDeadline` stops waiting for it. It keeps
-    /// its picture (a failed open cuts to black; this is not worse), says so, and takes the next selection.
+    /// its picture (a failed open cuts to black; this is not worse), says so, and takes the next selection. When that
+    /// picture is a live input, its status is not polled until the next selection, as during any file open.
     private func giveUpLateOpens() {
         let now = ContinuousClock.now
         for i in opening.indices {

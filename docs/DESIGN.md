@@ -335,14 +335,19 @@ display link's `targetTimestamp`:
 - File opens (B277): the media loader thread resolves every selection; a
   movie or still file is opened on a thread of its own
   (`org.fanous.media.open`), at most 4 at a time, so a file on a slow or gone
-  volume holds up only its layer. A layer stops waiting after 2 s (status
-  "not answering", the picture stays) and takes its next selection; the
-  stuck thread cannot be stopped and still counts, and with 8 threads in
-  opens no further open starts until one answers. A layer's last selection
-  wins: an answer for an older one is dropped. Capture, screen, Syphon and
-  generator opens, and stopping retired playbacks, stay on the loader thread.
-  The layers of one cue each switch when their own first frame is ready;
-  there is no barrier across layers.
+  volume holds up only its layer. A selection that is not a file (clear, a
+  generator, a live input) is handed over at once, also while a file opens.
+  A further file selection on the layer waits for its open in flight. A layer
+  stops waiting after 2 s (status "not answering", the picture stays) and
+  takes its next selection; the stuck thread cannot be stopped and still
+  counts, and with 8 threads in opens no further file open starts until one
+  answers. An answer is played only when it is the layer's newest open and
+  the layer still wants its key; otherwise it is dropped before a decoder is
+  made. A given-up open that later fails writes the status and keeps the
+  picture; one that fails within the 2 s cuts to black (B299). Capture,
+  screen, Syphon and generator opens, and stopping retired playbacks, stay on
+  the loader thread. The layers of one cue each switch when their own first
+  frame is ready; there is no barrier across layers.
 - Frame selection: the compositor picks the ring frame whose pts is the
   closest at-or-before `position`; frames older than that are released to the
   pool. There is **no frame blending** in v1 (nearest frame), which keeps
