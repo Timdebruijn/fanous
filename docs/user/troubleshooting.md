@@ -93,6 +93,30 @@ black for a moment. Read the log first. A port held by another program
 the engine runs without that listener; for Art-Net the readiness item
 **Art-Net port 6454 available** warns too ([known limitations](reference/known-limitations.md#show-mode-and-the-machine)).
 
+## An iPad or browser is refused or dropped
+
+The engine limits what one device holds and closes connections that went
+silent ([the limits](reference/files-and-ports.md)). What the log says:
+
+- "HTTPS connection refused: too many open from one address" with the
+  device's address (`peer`): that device already holds 32 connections to the
+  engine, and the next one is closed at once; the device shows the UI as
+  unreachable or a page that does not load. At most one such line a minute;
+  `refused` counts the connections closed since the last line. Usually a
+  browser with very many tabs of the UI, or a script; close tabs, or reload
+  the page. Devices behind one address (a router doing NAT, a VPN) count
+  together. The app window on the Mac is never refused.
+- "WebSocket closed: client silent": a device sent nothing, not even the
+  answer to the engine's ping, for 45 s: it went to sleep, out of Wi-Fi
+  range, or its battery died. Its UI shows "Connection lost" when it wakes
+  and reconnects by itself. "WebSocket closed: no hello" is a client that
+  connected and did not log in within 10 s.
+- "CITP connection refused: too many open from one address": a console
+  holds 8 CITP connections already. "CITP client closed: stalled": a console
+  stopped reading what the engine sends, or left half a message, for 30 s
+  (a console that died without closing is closed this way within about two
+  minutes); it connects again by itself when it is back.
+
 ## The iPad warns about the certificate
 
 Expected once per device: the engine makes its own certificate. On the

@@ -93,4 +93,5 @@ link here. Back to the [index](../README.md).
 |---|---|
 | A few addresses need no login whatever passwords are set: `/healthz`, `/metrics`, `/api/metrics`, `/api/live` (DMX senders and every fixture value), `/api/patch`, `/api/gdtf`, `/api/session`, `/api/library` (paths only, no root, below operator), `/api/login` and `/api/logout`, the channel map, the thumbnails and `/api/library/rescan` (any method). Keep the Mac on the show network, not on a guest network. | B160 |
 | OSC has no passwords. | — |
+| A device may hold 32 connections to the web UI and 8 CITP connections; devices behind one address (NAT, a VPN) share that. An iPad that sleeps or leaves the Wi-Fi is dropped after 45 s and reconnects when it is back. A download slower than about 9 KB/s (256 KB in 30 s) is cut off. A WebSocket client of your own must answer pings, as every browser and WebSocket library does. | B269 |
 | The engine's certificate is self-signed, so every browser warns once; confirm it against the fingerprint under System › Network. | — |

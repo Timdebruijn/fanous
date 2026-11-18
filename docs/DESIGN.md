@@ -3566,6 +3566,17 @@ groundwork and small engine pieces first):
   `[OPEN-18]` decided in Phase 5: roles are open or protected independently,
   and a client is granted the highest role up to the one it requested that it
   is entitled to (cookie, shell token or open role).
+- Connection limits (B269): at most 32 HTTPS connections per client address
+  (loopback not counted: the shell's `/healthz` is never refused) and 8 CITP
+  sessions; the next one is closed at accept with one log line a minute. A
+  connection is closed when its client makes no progress for 30 s: no byte of
+  a request (head or body chunk), no 256 KB slice of a response taken, or idle
+  between requests. A WebSocket must be authenticated by `hello` within 10 s,
+  is pinged every 15 s and is closed after 45 s without receiving anything:
+  liveness by the client's pongs, not by its messages, so a quiet UI stays.
+  A CITP session is closed when it holds half a message, or has sends its
+  console does not take, for 30 s. No TCP keepalive: the pings and the send
+  progress find a dead peer without it.
 - Rate limiting on login (5/min per IP), CSRF not needed (cookie SameSite
   Strict + same-origin WebSocket check), all REST mutations go through
   WebSocket commands anyway.

@@ -93,6 +93,18 @@ on the rows you use. The Mac and the console must be on the same subnet for
 Art-Net broadcast, sACN multicast and CITP; unicast Art-Net or sACN to the
 Mac's address works across subnets.
 
+Connection limits on TCP 8443 and the CITP port (B269):
+
+| Limit | 8443 (web UI) | CITP |
+|---|---|---|
+| Open connections per device (per IP address) | 32; this Mac (127.0.0.1) is not counted, so the app window and `/healthz` are never refused | 8 |
+| A request that stops arriving, a connection idle between requests, or a response the device stops taking | closed after 30 s | a console that holds half a message, or stops taking what is sent to it, is closed after 30 s |
+| A WebSocket | `hello` within 10 s of connecting; then the engine pings every 15 s and closes a socket that sent nothing, not even the answer, for 45 s | — |
+
+A browser answers the pings by itself, so a UI left open on a screen nobody
+touches stays connected. A connection past the limit is closed at once and
+the log says so (see [troubleshooting](../troubleshooting.md#an-ipad-or-browser-is-refused-or-dropped)).
+
 ## The engine on the command line
 
 The app starts the engine for you. The command line is for a test engine next

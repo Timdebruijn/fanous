@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine (B269): HTTPS takes at most 32 connections per device (this Mac not counted) and CITP 8, and both close a
+  connection whose client stopped making progress for 30 s; a WebSocket must say `hello` within 10 s, is pinged every
+  15 s and is closed after 45 s without a word or a pong (PR #N).
 - Engine (B270): an HTTPS connection reads and parses the next request only once the previous response has left, so
   a client that pipelines requests and never reads no longer makes the engine queue responses without bound
   (PR #397).

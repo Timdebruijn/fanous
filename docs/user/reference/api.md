@@ -168,7 +168,10 @@ between can put it above the project patch's. The counter starts at 0
 when the engine starts: after a reconnect, take the new `welcome` and
 throw the old state away. Nothing resumes: a new connection means a new
 `hello`, a full `welcome`, and every `sub` again. The engine answers
-pings and sends none, so a client that needs liveness pings itself.
+pings, and sends an empty ping every 15 s: a client that sends nothing, not
+even the pong (which WebSocket libraries send by themselves), for 45 s is
+closed without a close frame, and one that sends no `hello` within 10 s of
+the upgrade likewise (B269).
 
 Other close codes: 1002 protocol error or wrong schema, 1007 invalid text,
 1009 message too large (16 MiB), 4401 auth required. Error codes in an
