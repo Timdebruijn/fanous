@@ -139,11 +139,17 @@ struct DMXStateBoundsTests {
         #expect(lines.all.withLock { $0.contains { $0.contains("sacn:4000 from late") } })
     }
 
-    /// Ten simulated minutes, a tick every 0.5 s, `packets(tick, time)` sent before each tick on the DMX queue.
+    /// Ten minutes of the log budget in one simulated minute (B353): the bucket, its refill time and the warning interval
+    /// a tenth of the engine's (51 lines, 1.5 s, 6 s), so the rules are the same at a tenth of the packets and ticks.
+    static let scaled = (burst: 51, refill: 1.5, warnEvery: 6.0)
+
+    /// One simulated minute on the `scaled` budget, a tick every 0.5 s, `packets(tick, time)` sent before each tick on the
+    /// DMX queue.
     static func tenMinutes(_ store: DMXStore, packets: (Int, Double) -> Void) {
         store.queue.sync {
+            store.logBudget = scaled
             var tick = 1
-            while tick <= 1200 {
+            while tick <= 120 {
                 let time = Double(tick) / 2
                 packets(tick, time - 0.25)
                 store.tick(at: time)
@@ -152,16 +158,16 @@ struct DMXStateBoundsTests {
         }
     }
 
-    /// The most a flood may log in ten minutes: the 512-line budget plus 40 lines of refill (one per 15 s), and the one
-    /// "held back" line. The warning comes once a minute (10 in ten minutes), each with the counts of its minute.
+    /// The most a flood may log in ten minutes of the budget: the bucket plus 40 lines of refill, and the one "held back"
+    /// line. The warning comes once an interval (10 in the ten), each with the counts of its interval.
     static func expectBoundedLog(_ lines: HTTPSServerLogTests.Lines, _ shape: String, sourceLocation: SourceLocation = #_sourceLocation) {
         let receiving = count(lines, "DMX receiving"), heldBack = count(lines, "Further DMX receiving lines held back")
         let warnings = lines.all.withLock { $0.filter { $0.hasPrefix("DMX limits reached") } }
         print("B271 ten minutes of \(shape): \(receiving) receiving lines, \(heldBack) held-back lines, \(warnings.count) warnings")
-        #expect(receiving <= 512 + 40 + 1, "\(shape): \(receiving) receiving lines", sourceLocation: sourceLocation)
+        #expect(receiving <= scaled.burst + 40 + 1, "\(shape): \(receiving) receiving lines", sourceLocation: sourceLocation)
         #expect(heldBack <= 1, sourceLocation: sourceLocation)
         #expect((10...11).contains(warnings.count), "\(shape): \(warnings.count) warnings", sourceLocation: sourceLocation)
-        // the first warning holds half a second, the second a whole minute
+        // the first warning holds half a second, the second a whole interval
         let total = { (line: String) in line.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }.reduce(0, +) }
         if warnings.count >= 2 { #expect(total(warnings[1]) > total(warnings[0]), "\(shape): \(warnings.prefix(2))", sourceLocation: sourceLocation) }
     }
@@ -176,10 +182,10 @@ struct DMXStateBoundsTests {
             for k in 0..<20 { store.receive(sacn: SACNData(cid: Self.cid(tick * 20 + k), sourceName: "rogue \(tick * 20 + k)", universe: 1, slots: [1]), at: time) }
         }
         Self.expectBoundedLog(lines, "rotating sACN sources")
-        #expect(Self.intensity(store, at: 600) == 77 << 8)
+        #expect(Self.intensity(store, at: 60) == 77 << 8)
         store.queue.sync {
-            var t = 600.5
-            while t < 630 {
+            var t = 60.5
+            while t < 90 {
                 store.receive(sacn: SACNData(cid: Self.cid(1_000_000), sourceName: "late", sequence: UInt8(Int(t * 2) % 256), universe: 4000, slots: [1]), at: t)
                 store.tick(at: t)
                 t += 0.5
@@ -189,7 +195,7 @@ struct DMXStateBoundsTests {
     }
 
     /// 17 Art-Net senders on the patched A 0.0.0, each sending every tick: every packet still reaches the universe.
-    @Test(.offPool) func tenMinutesOfSeventeenArtNetSendersLogBounded() {
+    @Test func tenMinutesOfSeventeenArtNetSendersLogBounded() {
         let lines = HTTPSServerLogTests.Lines()
         let store = Self.store(.standard(layers: 1, outputs: 1), lines)
         var packets = 0
@@ -200,17 +206,17 @@ struct DMXStateBoundsTests {
             }
         }
         Self.expectBoundedLog(lines, "17 Art-Net senders")
-        #expect(store.snapshot(at: 600).universes.first { $0.id == "artnet:0.0.0" }?.packets == packets, "no packet dropped")
+        #expect(store.snapshot(at: 60).universes.first { $0.id == "artnet:0.0.0" }?.packets == packets, "no packet dropped")
         #expect(lines.all.withLock { $0.contains { $0.hasPrefix("DMX limits reached") && !$0.contains("; 0 Art-Net senders replaced") } })
     }
 
-    /// A burst over 600 sACN universes (past the 256 held) every second, the same sources each time.
-    @Test(.offPool) func tenMinutesOfABurstEverySecondLogBounded() {
+    /// A burst over 300 sACN universes (past the 256 held) every second, the same sources each time.
+    @Test func tenMinutesOfABurstEverySecondLogBounded() {
         let lines = HTTPSServerLogTests.Lines()
         let store = Self.store(.standard(layers: 1, outputs: 1), lines)
         Self.tenMinutes(store) { tick, time in
             guard tick % 2 == 0 else { return }
-            for universe in 1...600 {
+            for universe in 1...300 {
                 store.receive(sacn: SACNData(cid: Self.cid(universe), sourceName: "burst", sequence: UInt8(tick / 2 % 256), universe: UInt16(universe), slots: [1]), at: time)
             }
         }

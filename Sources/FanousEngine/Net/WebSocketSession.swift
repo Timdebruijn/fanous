@@ -24,11 +24,14 @@ public final class WebSocketSession: @unchecked Sendable {
     private let closed = Atomic<Bool>(false)
     private let ended = Atomic<Bool>(false)
     private var fragment: (opcode: WebSocketFrame.Opcode, payload: [UInt8])?
+    /// `maxMessageBytes`; a test passes a small one so it need not build 16 MB frames (B353).
+    private let messageLimit: Int
 
-    init(connection: NWConnection, remoteAddress: String, handler: StateServer.Connection) {
+    init(connection: NWConnection, remoteAddress: String, handler: StateServer.Connection, messageLimit: Int = maxMessageBytes) {
         self.connection = connection
         self.remoteAddress = remoteAddress
         self.handler = handler
+        self.messageLimit = messageLimit
     }
 
     public var isClosed: Bool { closed.load(ordering: .relaxed) }
@@ -73,7 +76,7 @@ public final class WebSocketSession: @unchecked Sendable {
         while !buffer.isEmpty {
             let parsed: (frame: WebSocketFrame, length: Int)?
             do {
-                parsed = try WebSocketFrame.parse(buffer, maxPayload: Self.maxMessageBytes)
+                parsed = try WebSocketFrame.parse(buffer, maxPayload: messageLimit)
             } catch {
                 close(code: 1002, reason: "protocol error")
                 return false
@@ -105,7 +108,7 @@ public final class WebSocketSession: @unchecked Sendable {
                     return false
                 }
                 current.payload.append(contentsOf: frame.payload)
-                guard current.payload.count <= Self.maxMessageBytes else {
+                guard current.payload.count <= messageLimit else {
                     close(code: 1009, reason: "message too large")
                     return false
                 }

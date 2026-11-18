@@ -76,7 +76,7 @@ struct WebSocketSessionTests {
             }
         }
 
-        static func make() async throws -> Pair {
+        static func make(messageLimit: Int = WebSocketSession.maxMessageBytes) async throws -> Pair {
             let (store, auth) = testStore()
             let server = StateServer(store: store, auth: auth, caps: ["schema": 1], logger: testLogger)
             let request = try #require(try HTTPRequest.parse(Array("GET /ws HTTP/1.1\r\nHost: x\r\n\r\n".utf8))).request
@@ -96,7 +96,7 @@ struct WebSocketSessionTests {
             client.start(queue: queue)
             try #require(await waitUntil { accepted.withLock { $0?.state == .ready } && client.state == .ready })
             let session = WebSocketSession(
-                connection: try #require(accepted.withLock { $0 }), remoteAddress: "test", handler: handler)
+                connection: try #require(accepted.withLock { $0 }), remoteAddress: "test", handler: handler, messageLimit: messageLimit)
             session.opened()
             let pair = Pair(session: session, queue: queue, listener: listener, client: client)
             pair.receive()
@@ -153,17 +153,15 @@ struct WebSocketSessionTests {
         #expect(await pair.closeCode() == 1007)
     }
 
-    /// Each frame is within `maxMessageBytes` (the parser's limit), the reassembled message is one byte over it.
+    /// Each frame is within the message limit (the parser's limit too), the reassembled message is one byte over it. The
+    /// session gets a 64 KB limit: the rule is the same as at 16 MB, without building 16 MB in a debug build (B353). Off
+    /// the pool all the same: on a one-thread pool this test held the thread for about 3.7 s (measured, cause not traced).
     @Test(.offPool) func fragmentsAboveTheMessageLimitAreRefusedWith1009() async throws {
-        let pair = try await Pair.make()
+        let limit = 64 * 1024
+        let pair = try await Pair.make(messageLimit: limit)
         defer { pair.stop() }
-        // 8 MB frames by hand with a zero mask key: `encode(key:)` would mask 16 MB in a debug build
-        let half = WebSocketSession.maxMessageBytes / 2
-        func large(_ first: UInt8) -> [UInt8] {
-            [first, 0xFF] + withUnsafeBytes(of: UInt64(half).bigEndian, Array.init) + [0, 0, 0, 0]
-                + [UInt8](repeating: 0x61, count: half)
-        }
-        #expect(!pair.feed(large(0x01), large(0x00), Self.frame(.continuation, [0x61])))
+        let half = [UInt8](repeating: 0x61, count: limit / 2)
+        #expect(!pair.feed(Self.frame(.text, fin: false, half), Self.frame(.continuation, fin: false, half), Self.frame(.continuation, [0x61])))
         #expect(await pair.closeCode() == 1009)
     }
 }

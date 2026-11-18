@@ -20,6 +20,9 @@ import UniformTypeIdentifiers
 /// with every pool thread parked the run hangs, B63; a `recv` with a timeout) or computes for long (a simulated ten
 /// minutes) holds a pool thread meanwhile; on a 3-core runner three of them stall every other test's `Task.sleep` and
 /// network completion for seconds, and the tightest 10 s `waitUntil` fails (B353). Such a test runs its body in here.
+/// Limits: a `Task {}` started in the body does not inherit the executor and runs on the pool again (task-locals do
+/// reach it); a `@MainActor` body still runs on the main thread. The threads compete for the cores like any other: off
+/// the pool frees a pool thread, not CPU time.
 func offPool<T>(_ body: () async throws -> T) async throws -> T {
     try await withTaskExecutorPreference(ThreadExecutor.shared, operation: body)
 }
@@ -43,13 +46,21 @@ private final class ThreadExecutor: TaskExecutor {
 /// Polls `condition` every `every` until it holds or `deadline` has passed; true = it held. For "eventually" checks: a
 /// fixed sleep before an assertion encodes how fast this Mac is, and a loaded one (other builds, a parallel run) is
 /// slower (B67). Negative checks ("nothing happened") still need a fixed window: there is nothing to poll for.
+/// A condition that held only after more than half the deadline prints a "waitUntil margin" line with the caller and
+/// the time it took, so a CI log shows how close a deadline came (B353).
 @discardableResult
-nonisolated(nonsending) func waitUntil(_ deadline: Duration = .seconds(10), every: Duration = .milliseconds(10), _ condition: () -> Bool) async -> Bool {
-    let end = ContinuousClock.now + deadline
-    while !condition() {
-        guard ContinuousClock.now < end, (try? await Task.sleep(for: every)) != nil else { return condition() }
-    }
-    return true
+nonisolated(nonsending) func waitUntil(
+    _ deadline: Duration = .seconds(10), every: Duration = .milliseconds(10), fileID: String = #fileID, line: Int = #line,
+    _ condition: () -> Bool
+) async -> Bool {
+    let start = ContinuousClock.now
+    let end = start + deadline
+    var held = condition()
+    while !held, ContinuousClock.now < end, (try? await Task.sleep(for: every)) != nil { held = condition() }
+    if !held { held = condition() }
+    let took = ContinuousClock.now - start
+    if held, took > deadline / 2 { print("waitUntil margin: \(fileID):\(line) held after \(took) of \(deadline)") }
+    return held
 }
 
 /// The logger every test hands the engine.
@@ -318,7 +329,7 @@ extension Trait where Self == CleansTempFiles {
 }
 
 /// `@Test(.offPool)`: the whole test runs in `offPool`. For a test that blocks or computes for more than a fraction of a
-/// second without suspending (B353).
+/// second without suspending (B353). It does nothing for a `@MainActor` test, which runs on the main thread regardless.
 struct OffPool: TestTrait, TestScoping {
     func provideScope(for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void) async throws {
         try await FanousEngineTests.offPool { try await function() }  // unqualified: the trait's own `.offPool`

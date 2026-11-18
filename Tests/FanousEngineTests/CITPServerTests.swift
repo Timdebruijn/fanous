@@ -208,7 +208,7 @@ struct CITPServerTests {
 
     /// MSEX numbering (B78): folders 1, 3, 7 with files 2, 5 are libraries 0…2 with elements 0…1; the DMX ranges
     /// carry the folder and file numbers; request filters and layer status use the indexes.
-    @Test func libraryWithGapsIsNumberedByIndex() throws {
+    @Test(.offPool) func libraryWithGapsIsNumberedByIndex() throws {
         let folders = [1, 3, 7].map { folder in
             LibraryFolder(
                 number: folder, name: "F\(folder)", path: "/lib/\(folder)",
