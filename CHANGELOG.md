@@ -19,7 +19,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Tests (B260): `scripts/test.sh` runs the suite in a fresh temporary `FANOUS_HOME`, so no test engine can write the real install's files (PR #386).
 - Fix (B266): numbers only a hand-edited or foreign project file can hold no longer crash the engine: a cue trigger hour past
   2147483647, a patch address outside 1–512, a layer count below 1 or past 64, a canvas or mapping mesh past any real size; such a
-  value stays in the file and has no effect or is refused, and a version with such a patch address is not restored (PR #N).
+  value stays in the file and has no effect or is refused, and a version with such a patch address is not restored (PR #393).
 
 ## 1.0.0-rc.14 — 2026-11-17
 
