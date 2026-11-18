@@ -15,11 +15,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   (60p on 60 Hz) it no longer repeats and skips about one tick in four, 25p on 50 Hz plays 2-2-2-2 instead of a mix of
   1, 2 and 3, a bounce shows its end frames, a once-then-black clip shows its last frame, and the tick of a trigger
   shows the first frame. Against the sound the picture was 0 to 1 frame behind and is now 11/24 of a frame ahead to
-  13/24 behind; timecode chase shows the frame centred on the timecode, about 11/24 of a frame (18 ms at 25p) earlier
-  than before. A looping clock keeps its position inside the shown frame, so a sync slave agrees with its master at the
+  13/24 behind; timecode chase shows its frame about 11/24 of a frame (18 ms at 25p) earlier than
+  before. A looping clock keeps its position inside the shown frame, so a sync slave agrees with its master at the
   wrap and freeze holds the frame on screen (PR #415).
 - Engine (B372), visible to clients: the frame number in the live document (`layers[n].frame`) and CITP's layer
-  position is the clock's shown frame, up to one frame later than before (PR #415).
+  position read up to one frame later than before, and in a loop's last 11/24 frame the in point where they read the
+  out point (PR #415).
 
 - Engine (B364): a playing movie layer no longer sits on 2 frames of every 11 (with the 8-frame ring): the decode
   thread went back to the requested frame whenever it was ahead of it, so the ring held two frames in turn; it now
