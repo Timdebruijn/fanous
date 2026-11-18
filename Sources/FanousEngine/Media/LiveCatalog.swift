@@ -214,7 +214,11 @@ public final class LiveCatalog: @unchecked Sendable {
     }
 
     static var syphonDirectory: [Entry] {
-        SyphonInput.directoryServers.map { Entry(kind: .syphon, file: 0, source: $0.appName, name: $0.serverName, runtimeID: $0.uuid) }
+        SyphonInput.directoryServers.map(syphonEntry)
+    }
+
+    static func syphonEntry(_ info: SyphonInput.ServerInfo) -> Entry {
+        Entry(kind: .syphon, file: 0, source: info.appName, name: info.serverName, runtimeID: info.uuid)
     }
 
     /// Applies the project's numbering (start, a forget, undo, a loaded project); true when anything changed.

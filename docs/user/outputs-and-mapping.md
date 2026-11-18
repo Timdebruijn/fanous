@@ -152,7 +152,8 @@ to what renders, and what was on it moves to Canvas 1.
 ### The canvas for other apps
 
 To send Canvas 1 to another app on this Mac, choose the Syphon server
-**Fanous – Canvas** in that app. The other canvases are not published.
+**Fanous – Canvas** in that app. The other canvases are not published. An
+engine started with `--no-network` does not announce its canvas: no app lists it.
 Other apps' Syphon servers are layer content in folder 0, files 150 to 169
 ([Live inputs](live-inputs.md#syphon-servers-150169)).
 

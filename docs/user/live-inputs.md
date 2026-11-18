@@ -200,7 +200,10 @@ back the picture returns without selecting it again. Selecting a server that
 is not running shows black until it starts. After an engine restart a server
 that has not answered yet is listed grey, "not seen since the engine
 started". Two servers with the same app and server name (two Fanous canvases
-on one Mac) keep their numbers, as Fanous cannot tell them apart. Fanous's own
+on one Mac) keep their numbers, as Fanous cannot tell them apart. Another
+engine's canvas is listed only when that engine runs with the network on; that
+costs a second CITP announcement to the console and a second Bonjour service. An
+engine started with `--no-network` announces no canvas. Fanous's own
 canvas is not listed; it is published to other apps as "Fanous – Canvas"
 ([Outputs and mapping](outputs-and-mapping.md#the-canvas-for-other-apps)).
 

@@ -26,6 +26,13 @@ public final class SyphonInput: @unchecked Sendable {
         public let appName: String
         public let serverName: String
         public let uuid: String
+
+        /// From a server description: one of the directory's, or a private server's `SyphonOutput.serverDescription`.
+        public init(description: [String: Any]) {
+            appName = description[SyphonServerDescriptionAppNameKey] as? String ?? ""
+            serverName = description[SyphonServerDescriptionNameKey] as? String ?? ""
+            uuid = description[SyphonServerDescriptionUUIDKey] as? String ?? ""
+        }
     }
 
     private let device: MTLDevice
@@ -52,12 +59,7 @@ public final class SyphonInput: @unchecked Sendable {
 
     /// Servers the directory currently knows about (all processes, including this one; one directory per process).
     public static var directoryServers: [ServerInfo] {
-        SyphonServerDirectory.shared().servers.map { description in
-            ServerInfo(
-                appName: description[SyphonServerDescriptionAppNameKey] as? String ?? "",
-                serverName: description[SyphonServerDescriptionNameKey] as? String ?? "",
-                uuid: description[SyphonServerDescriptionUUIDKey] as? String ?? "")
-        }
+        SyphonServerDirectory.shared().servers.map { ServerInfo(description: $0) }
     }
 
     /// The newest frame, or nil before the first frame or after `disconnect`. The texture is backed by the
