@@ -31,6 +31,7 @@ Apple page on 2026-10-22 and must be checked before the tier is shown as
 | M5 Pro | 2 Pro | 1 | 3 | 307 | Apple (regional spec) |
 | M5 Max | 3 Max | 2 | 4 (MBP) / 5 (Studio) | 460/614 | Apple |
 | M5 Ultra | 4 Ultra | 4 | 8 | 1200 | Apple (single source) |
+| M6 | 1 Base | 1 | 3 (Mac mini) | 153/170 | Apple, Mac mini tech specs read 2026-11-18 (displays; bandwidth 153 with 16 GB, 170 with 24 or 32 GB); the page lists a ProRes encode and decode engine without a count: 1 is *unverified* |
 | unknown | conservative = Base | 1 | 1 | — | planned: the UI shows "unknown chip, run the benchmark" (not built) |
 
 Apple publishes display limits per Mac model, not per chip; the planned tier
