@@ -90,10 +90,84 @@ public final class LayerDecoder: @unchecked Sendable {
                 ring.commit()
                 lastProduced = next
                 decoded.wrappingAdd(1, ordering: .relaxed)
+                if run > 0 { recovered(at: next) }
             } catch {
-                logger.error("decode failed", metadata: ["file": "\(source.url.lastPathComponent)", "frame": "\(next)", "error": "\(error)"])
-                Thread.sleep(forTimeInterval: 0.05)
+                failed(next, error)
             }
+        }
+    }
+
+    // B278: the error path. A frame gets `Self.tries` tries (a read that fails once on a slow volume succeeds on the
+    // next), then it is skipped: the ring keeps its last good frame and the thread goes on with the next one. Skipped
+    // frames with no good one between are tried with a pause that grows from 50 ms; a run that lasts `failingAfter` is a
+    // failing file: the layer's status carries the error (B342), and the log gets one line when it starts, a count at
+    // most every `reportEvery` and one line when it recovers. One bad frame on stage (the thread may come back to it
+    // while the clock still shows it) stays one log line and never reaches the status.
+
+    /// Tries of one frame before it is skipped.
+    static let tries = 3
+    /// Seconds a run of skipped frames lasts before the layer reads as failing.
+    var failingAfter = 0.5
+    /// The longest pause between skipped frames; it starts at 50 ms and doubles.
+    var longestPause = 1.0
+    /// Seconds between the count lines of a failing file.
+    var reportEvery = 10.0
+    /// The layer's status: the error text while frame after frame fails, nil when a frame decodes again. Set by the
+    /// loader before `start`; called on the decode thread.
+    public var failing: (@Sendable (String?) -> Void)?
+    /// Decode thread only.
+    private var tries = 0
+    private var triedFrame = -1
+    private var run = 0
+    private var runStart = ContinuousClock.now
+    private var isFailing = false
+    private var skipped = -1
+    private var lastReport = ContinuousClock.now
+
+    private func failed(_ frame: Int, _ error: any Error) {
+        // counted per frame: between two tries of it the thread may decode the requested frame again
+        if frame != triedFrame { (triedFrame, tries) = (frame, 0) }
+        tries += 1
+        guard tries >= Self.tries else { return pause(0.01) }
+        tries = 0
+        lastProduced = frame  // skipped: the next pass goes on after it
+        run += 1
+        let file = source.url.lastPathComponent
+        if run == 1 {
+            runStart = .now
+            // once per bad frame: the thread comes back to it while the request stands, and on every pass of a loop
+            if frame != skipped { logger.error("decode failed, frame skipped", metadata: ["file": "\(file)", "frame": "\(frame)", "error": "\(error)"]) }
+            skipped = frame
+            return
+        }
+        if !isFailing, runStart.duration(to: .now) >= .seconds(failingAfter) {
+            isFailing = true
+            logger.error("decode failing", metadata: ["file": "\(file)", "frame": "\(frame)", "error": "\(error)"])
+            lastReport = .now
+        } else if isFailing, lastReport.duration(to: .now) >= .seconds(reportEvery) {
+            logger.warning("decode still failing", metadata: ["file": "\(file)", "skipped": "\(run)", "error": "\(error)"])
+            lastReport = .now
+        }
+        if isFailing { failing?(error.clientText) }  // every time: the loader writes a new layer's status after starting its decoder
+        pause(min(0.05 * Double(1 << min(run - 2, 10)), longestPause))
+    }
+
+    private func recovered(at frame: Int) {
+        if isFailing {
+            logger.info("decode recovered", metadata: ["file": "\(source.url.lastPathComponent)", "frame": "\(frame)", "skipped": "\(run)"])
+            failing?(nil)
+        }
+        run = 0
+        isFailing = false
+    }
+
+    /// Waits `seconds`, feeding audio meanwhile; a changed request does not cut it short, a stop does.
+    private func pause(_ seconds: Double) {
+        let until = DispatchTime.now() + seconds
+        while running.load(ordering: .relaxed), DispatchTime.now() < until {
+            let feeding = audio != nil && audioEnabled.load(ordering: .relaxed)
+            if feeding, let audio { audio.channel.fill(from: audio.reader) }
+            _ = wake.wait(timeout: feeding ? min(until, .now() + .milliseconds(10)) : until)
         }
     }
 }

@@ -161,6 +161,7 @@ The Layers screen shows the problem in the row's Media column.
 |---|---|
 | "no file N in folder M" | The number does not exist or the file is not playable: Media screen, that folder: invalid name, needs transcode, unreadable ("AVFoundation cannot open .webm files": a `.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`, `.f4v`, `.divx`, convert it on another machine) ([Media library](media-library.md)) |
 | A decoder error ("unsupported codec", "VideoToolbox error", "no video track") | Transcode the file again or replace it, then send Control 24–31 (Clear error) on layer channel 50 from the console and back to 0 |
+| A decoder error on a movie that was playing ("HapDecode failed", "VideoToolbox error") | Frame after frame of the file does not decode: the layer holds the last frame that did, or, when not one frame of the new file decodes, goes on playing the clip it showed before. The error goes by itself when a frame decodes again or another file is selected. Transcode the file again or replace it |
 | "no capture device / display / Syphon server numbered N" | Nothing has that number in folder 0: Inputs screen, **Number** ([Live inputs](live-inputs.md)) |
 | "not running", "in use by another app", "no signal" | The live input: plugged in, not open in another app, a signal on the card |
 | A permission text | Inputs screen › **Authorize** (not in show mode); screen recording needs Engine › Restart Engine after the grant |
@@ -199,6 +200,14 @@ Play mode 112 to 127 is Freeze on the layer; Master Control 64 to 127 is
 Freeze all; Output Control 128 to 191 is Freeze. A frozen output shows a
 test pattern live over the held frame. A still image, or a live input that
 lost its signal, holds its last frame by design.
+
+A movie holds its last good frame where its frames do not decode. One bad
+frame is skipped: the frame before it stays up a moment longer and the
+log says `decode failed, frame skipped` once, with the frame number. When
+frame after frame fails for half a second, the Layers row shows the
+decoder error (see above), the log says `decode failing` once and
+`decode still failing` with a count at most every 10 seconds, and
+`decode recovered` when a frame decodes again.
 
 ## Outputs stay black although the layers play
 

@@ -725,6 +725,10 @@ public final class MediaLoader: @unchecked Sendable {
                     mixer.ensureRunning()
                 }
             }
+            // B342: a file whose frames fail shows it like a failed open; a dissolve's outgoing movie leaves the new one's alone
+            decoder.failing = { [renderLayer = layers[layer]] error in
+                renderLayer.mediaStatus.withLock { if $0.folder == key.folder, $0.file == key.file, $0.error != error { $0.error = error } }
+            }
             decoder.start(name: "org.fanous.decode.\(layer + 1)")
             decoder.request(frame: 0, direction: 1)
             logger.info("layer \(layer + 1) media \(key)", metadata: ["file": "\(url.lastPathComponent)", "codec": "\(source.info.codecName)", "size": "\(source.info.width)x\(source.info.height)@\(source.info.frameRate)"])

@@ -121,6 +121,10 @@ public final class MovieSource: @unchecked Sendable {
     public private(set) var kind: SourcePixelKind
 
     private let device: MTLDevice
+    /// The track's format description, for a session made again (B278).
+    private let description: CMFormatDescription
+    /// ProRes sessions made again after one went invalid (B278); decode thread, tests.
+    private(set) var sessionRebuilds = 0
     private let asset: AVAsset
     private let track: AVAssetTrack
     private let generator: AVSampleBufferGenerator
@@ -147,6 +151,7 @@ public final class MovieSource: @unchecked Sendable {
     init(url: URL, device: MTLDevice, poolSize: Int, asset: AVAsset, track: AVAssetTrack, description: CMFormatDescription, frameRate: Double, duration: Double) throws {
         self.url = url
         self.device = device
+        self.description = description
         self.asset = asset
         self.track = track
         let codec = CMFormatDescriptionGetMediaSubType(description)
@@ -172,31 +177,7 @@ public final class MovieSource: @unchecked Sendable {
             }
         } else if Self.proResCodecs.contains(codec) {
             kind = .planarYCbCr  // refined after the first decoded frame
-            var session: VTDecompressionSession?
-            let specification: [CFString: Any] = [kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder: true]
-            var attributes: [CFString: Any] = [
-                kCVPixelBufferMetalCompatibilityKey: true,
-                kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
-            ]
-            // 4444 (XQ): the decoder's default (&sv4, bi-planar 4:4:4) drops alpha; ask for 4:4:4:4.
-            if codec == makeFourCC("ap4h") || codec == makeFourCC("ap4x") {
-                attributes[kCVPixelBufferPixelFormatTypeKey] = kCVPixelFormatType_4444AYpCbCr16
-            }
-            var status = VTDecompressionSessionCreate(
-                allocator: nil, formatDescription: description, decoderSpecification: specification as CFDictionary,
-                imageBufferAttributes: attributes as CFDictionary, outputCallback: nil, decompressionSessionOut: &session)
-            // B5: the hardware decoder refuses some small frames at creation (−12910: 64×48, 128×96, 160×64, 256×64, 320×16;
-            // 144×96, 320×48 and 1280×64 are fine, so no size rule to reject on); the software decoder takes them all, as
-            // v216/y416, which decodeProRes reads. Only on that refusal: "busy now" (−12913) or no decoder (−12906) stay
-            // errors, so a big file never lands on the CPU for its whole playback.
-            if status == kVTVideoDecoderUnsupportedDataFormatErr {
-                status = VTDecompressionSessionCreate(
-                    allocator: nil, formatDescription: description, decoderSpecification: nil,
-                    imageBufferAttributes: attributes as CFDictionary, outputCallback: nil, decompressionSessionOut: &session)
-                softwareDecoder = status == noErr
-            }
-            guard status == noErr, let session else { throw MovieError.decoder(status) }
-            self.session = session
+            (session, softwareDecoder) = try Self.makeSession(description, codec: codec)
             CVMetalTextureCacheCreate(nil, nil, device, nil, &textureCache)
         } else {
             throw MovieError.unsupportedCodec(codec)
@@ -205,6 +186,37 @@ public final class MovieSource: @unchecked Sendable {
 
     deinit {
         if let session { VTDecompressionSessionInvalidate(session) }
+    }
+
+    /// A ProRes decompression session for `description` (at open, and again when one went invalid, B278): the hardware
+    /// decoder, or the software one when the hardware one refuses the frame size (B5); true = software.
+    static func makeSession(_ description: CMFormatDescription, codec: FourCharCode) throws -> (VTDecompressionSession, Bool) {
+        var session: VTDecompressionSession?
+        var software = false
+        let specification: [CFString: Any] = [kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder: true]
+        var attributes: [CFString: Any] = [
+            kCVPixelBufferMetalCompatibilityKey: true,
+            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
+        ]
+        // 4444 (XQ): the decoder's default (&sv4, bi-planar 4:4:4) drops alpha; ask for 4:4:4:4.
+        if codec == makeFourCC("ap4h") || codec == makeFourCC("ap4x") {
+            attributes[kCVPixelBufferPixelFormatTypeKey] = kCVPixelFormatType_4444AYpCbCr16
+        }
+        var status = VTDecompressionSessionCreate(
+            allocator: nil, formatDescription: description, decoderSpecification: specification as CFDictionary,
+            imageBufferAttributes: attributes as CFDictionary, outputCallback: nil, decompressionSessionOut: &session)
+        // B5: the hardware decoder refuses some small frames at creation (−12910: 64×48, 128×96, 160×64, 256×64, 320×16;
+        // 144×96, 320×48 and 1280×64 are fine, so no size rule to reject on); the software decoder takes them all, as
+        // v216/y416, which decodeProRes reads. Only on that refusal: "busy now" (−12913) or no decoder (−12906) stay
+        // errors, so a big file never lands on the CPU for its whole playback.
+        if status == kVTVideoDecoderUnsupportedDataFormatErr {
+            status = VTDecompressionSessionCreate(
+                allocator: nil, formatDescription: description, decoderSpecification: nil,
+                imageBufferAttributes: attributes as CFDictionary, outputCallback: nil, decompressionSessionOut: &session)
+            software = status == noErr
+        }
+        guard status == noErr, let session else { throw MovieError.decoder(status) }
+        return (session, software)
     }
 
     static func makeTexture(_ device: MTLDevice, _ format: MTLPixelFormat, _ width: Int, _ height: Int) throws -> MTLTexture {
@@ -252,13 +264,25 @@ public final class MovieSource: @unchecked Sendable {
     private func decodeProRes(_ sample: CMSampleBuffer, into slot: DecodedFrame) throws {
         guard let session else { throw MovieError.decoder(-1) }
         nonisolated(unsafe) let output = Output()  // filled by the callback, which runs before a synchronous decode returns
-        let status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { status, _, buffer, _, _ in
-            output.status = status
-            output.buffer = buffer
+        func decode(_ session: VTDecompressionSession) -> OSStatus {
+            let status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { status, _, buffer, _, _ in
+                output.status = status
+                output.buffer = buffer
+            }
+            return status != noErr ? status : output.status
         }
-        guard status == noErr, output.status == noErr, let buffer = output.buffer else {
-            throw MovieError.decoder(status != noErr ? status : output.status)
+        var status = decode(session)
+        // B278: a session that went invalid (sleep and wake, a GPU reset) is made again once, as at open, and the frame
+        // tried again; when it cannot be made the old one stays and the error goes to the decode thread
+        if status == kVTInvalidSessionErr, let fresh = try? Self.makeSession(description, codec: info.codec) {
+            VTDecompressionSessionInvalidate(session)
+            self.session = fresh.0
+            softwareDecoder = fresh.1
+            surfaceTextures.removeAll()  // the old session's surfaces: their ids may come back for new ones
+            sessionRebuilds += 1
+            status = decode(fresh.0)
         }
+        guard status == noErr, let buffer = output.buffer else { throw MovieError.decoder(status) }
         let format = CVPixelBufferGetPixelFormatType(buffer)
         let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
         slot.pixelBuffer = buffer
