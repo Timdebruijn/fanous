@@ -10,7 +10,8 @@ import Testing
 
 @testable import FanousEngine
 
-/// The decode thread sleeps on a full ring and is only woken by a changed request or a freed slot.
+/// The decode thread sleeps on a full ring and is only woken by a changed request or a freed slot; it fills the ring
+/// ahead of the requested frame in play direction (B364).
 @Suite(.serialized, .cleansTempFiles) struct LayerDecoderTests {
     @Test func aFullRingSleepsUntilTheRequestChanges() async throws {
         let directory = try tempDir("fanous-ingest-tests")
@@ -46,5 +47,68 @@ import Testing
         // and a direction change is a request of its own
         decoder.request(frame: 1, direction: -1)
         #expect(decoder.wakeups.load(ordering: .relaxed) == wakeups + 2)
+    }
+
+    /// Plays `steps` frames from `start` in `direction` with a clock the test controls: each tick asks for the next frame
+    /// once the decode thread has filled the ring, as a decoder faster than the clip's rate does. Returns the frame
+    /// shown on each tick and the ring's frame numbers just before it.
+    private func play(
+        _ playback: LayerPlayback, _ decoder: LayerDecoder, from start: Int, steps: Int, direction: Int, count: Int
+    ) async -> (shown: [Int], rings: [[Int]]) {
+        var shown: [Int] = []
+        var rings: [[Int]] = []
+        for step in 0..<steps {
+            let frame = ((start + direction * step) % count + count) % count
+            decoder.request(frame: frame, direction: direction)
+            await waitUntil(.seconds(2)) { decoder.ring.count == decoder.ring.capacity }
+            rings.append((0..<decoder.ring.count).compactMap { decoder.ring.peek($0)?.frameIndex })
+            shown.append(playback.frame(at: frame, direction: direction)?.frameIndex ?? -1)
+        }
+        return (shown, rings)
+    }
+
+    private func layer(frames: Int, capacity: Int) async throws -> (LayerPlayback, LayerDecoder) {
+        let url = try tempDir("fanous-ingest-tests").appending(path: "clip.mov")
+        try await writePatternMovie(to: url, size: (128, 64), fps: 25, frames: frames)
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let source = try await MovieSource.open(url: url, device: device, poolSize: capacity)
+        let ring = FrameRing(capacity: capacity)
+        let decoder = LayerDecoder(source: source, ring: ring, logger: testLogger)
+        decoder.start(name: "test.decode")
+        return (LayerPlayback(key: MediaKey(packed: 1), movie: source, decoder: decoder, ring: ring), decoder)
+    }
+
+    /// The ring holds consecutive frames in play direction, each once.
+    private func consecutive(_ ring: [Int], direction: Int, count: Int) -> Bool {
+        zip(ring, ring.dropFirst()).allSatisfy { ($0.1 - $0.0 - direction) % count == 0 }
+    }
+
+    @Test func playingForwardShowsEveryFrameAcrossTheLoop() async throws {
+        let (playback, decoder) = try await layer(frames: 20, capacity: 8)
+        defer { decoder.stop() }
+        let (shown, rings) = await play(playback, decoder, from: 0, steps: 30, direction: 1, count: 20)
+        // the old fill alternated the requested frame and the next one, and the layer held the second for 10 frames
+        #expect(shown == (0..<30).map { $0 % 20 }, "the shown frame follows the clock, also past the loop")
+        #expect(rings.allSatisfy { $0.count == 8 && consecutive($0, direction: 1, count: 20) }, "\(rings)")
+    }
+
+    @Test func playingInReverseShowsEveryFrameAcrossTheLoop() async throws {
+        let (playback, decoder) = try await layer(frames: 20, capacity: 8)
+        defer { decoder.stop() }
+        let (shown, rings) = await play(playback, decoder, from: 19, steps: 30, direction: -1, count: 20)
+        #expect(shown == (0..<30).map { (19 - $0 + 20) % 20 }, "the shown frame follows the clock backwards")
+        #expect(rings.allSatisfy { $0.count == 8 && consecutive($0, direction: -1, count: 20) }, "\(rings)")
+    }
+
+    @Test func aSeekLandsOnTheRequestedFrame() async throws {
+        let (playback, decoder) = try await layer(frames: 40, capacity: 8)
+        defer { decoder.stop() }
+        _ = await play(playback, decoder, from: 0, steps: 5, direction: 1, count: 40)
+        // a jump past the ring: what is buffered is on the wrong side, the ring drains and the thread restarts there
+        decoder.request(frame: 30, direction: 1)
+        _ = playback.frame(at: 30, direction: 1)
+        let (shown, rings) = await play(playback, decoder, from: 30, steps: 3, direction: 1, count: 40)
+        #expect(shown == [30, 31, 32])
+        #expect(rings.last == Array(30...37), "filled ahead from the requested frame")
     }
 }

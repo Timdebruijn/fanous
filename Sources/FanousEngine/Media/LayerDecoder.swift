@@ -80,7 +80,9 @@ public final class LayerDecoder: @unchecked Sendable {
             let dir = direction.load(ordering: .relaxed)
             var next = want
             if lastProduced >= 0, !ring.isEmpty {
-                let ahead = dir > 0 ? (want - lastProduced + count) % count : (lastProduced - want + count) % count
+                // how far the last decoded frame runs ahead of the request in play direction; behind it (a seek, a slow
+                // decode) this wraps to count − k and the thread restarts at the request
+                let ahead = dir > 0 ? (lastProduced - want + count) % count : (want - lastProduced + count) % count
                 next = ahead <= ring.capacity ? (lastProduced + dir + count) % count : want
             }
             do {
