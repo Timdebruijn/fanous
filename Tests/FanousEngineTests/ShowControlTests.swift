@@ -1515,8 +1515,8 @@ struct ShowControlTests {
         #expect(a.held?[list.cues[1].id.uuidString]?.values.first == ChannelMap.spec(.layer(.playMode)).clamped(65535), "the raw clamped")
     }
 
-    /// B284: a running fade is ticked at 50 Hz but changes no target: it reports once, at the GO, not per tick or at its
-    /// end.
+    /// B284: a running fade is ticked at 50 Hz but changes no target: it reports at the GO (after the report of the list), not per tick or at
+    /// its end.
     @Test func aRunningFadeReportsNothing() async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let runner = CueRunner(dmx: store)
@@ -1526,9 +1526,11 @@ struct ShowControlTests {
         let full = CueValue(fixture: .layer(1), parameter: .layer(.intensity), raw: 65535)
         runner.replace(list: CueList(cues: [Cue(number: 1, fadeTime: 0.3, values: [full])]))
         #expect(await waitUntil { runner.status.withLock { $0.count } == 1 })
+        let fired = ContinuousClock.now
         runner.go()
         // only the end state: a poll that is held up for the 0.3 s of the fade never sees `fading` (seen on CI, B350)
         #expect(await waitUntil { runner.status.withLock { $0.current == 1 && !$0.fading } }, "the fade ends")
+        #expect(ContinuousClock.now - fired >= .milliseconds(290), "a fade ran: the end state did not come at once")
         runner.stop()
         #expect(reported.withLock { $0 } == 2, "the list and the GO, nothing for the fade's ticks or its end")
     }
