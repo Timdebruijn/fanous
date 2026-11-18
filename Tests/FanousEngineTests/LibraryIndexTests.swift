@@ -68,7 +68,7 @@ struct LibraryIndexTests {
     }
 
     /// 10 000 files scan in well under a second and the probe queue stays bounded by the file count.
-    @Test func tenThousandFiles() throws {
+    @Test(.offPool) func tenThousandFiles() throws {
         let root = try tempDir("fanous-library")
         for folder in 1...40 {
             let dir = root.appending(path: String(format: "%03d_Folder", folder))

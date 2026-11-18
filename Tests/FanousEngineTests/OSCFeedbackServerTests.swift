@@ -104,7 +104,7 @@ import Testing
     }
 
     /// A value set over OSC is read back with `/get`, as a bundle to the sender's own port, in the units it was set in.
-    @Test func queryAnswersTheSender() async throws {
+    @Test(.offPool) func queryAnswersTheSender() async throws {
         let store = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: testLogger)
         for n in 1...2 { store.setPolicy(.internal, for: .layer(n)) }  // OSC values win, as with a project set to internal
         let (receiver, feedback, port) = try await Self.start(store: store, fixtures: { store.resolvedRaw() })
@@ -156,7 +156,7 @@ import Testing
     }
 
     /// Subscribe: a full sync, then only changes, coalesced to one message per address per 50 ms tick; unsubscribe stops it.
-    @Test func subscribersGetCoalescedChanges() async throws {
+    @Test(.offPool) func subscribersGetCoalescedChanges() async throws {
         let box = StateBox()
         box.state.withLock {
             $0 = [
@@ -210,7 +210,7 @@ import Testing
     }
 
     /// Feedback never goes to a third party: a subscribe naming another host is refused with an error to the sender.
-    @Test func subscribeForAnotherHostIsRefused() async throws {
+    @Test(.offPool) func subscribeForAnotherHostIsRefused() async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let (receiver, feedback, port) = try await Self.start(store: store) { ["/fanous/show/mode": [.int32(1)]] }
         defer {
@@ -226,7 +226,7 @@ import Testing
 
     /// The fixed target from settings.json gets notifications without subscribing; once it sends from that port,
     /// its own flow carries them and a query is answered once, not twice.
-    @Test func fixedTargetIsNotifiedWithoutSubscribing() async throws {
+    @Test(.offPool) func fixedTargetIsNotifiedWithoutSubscribing() async throws {
         let box = StateBox()
         box.state.withLock { $0 = ["/fanous/show/mode": [.int32(0)]] }
         let client = try Client()
@@ -250,7 +250,7 @@ import Testing
 
     /// Companion style: commands from one port, feedback to another. The cookie goes to the feedback port; the ack
     /// comes from the same host; only then does that port get values, and a `get` naming it is answered there.
-    @Test func subscriptionToAnotherPortNeedsTheAck() async throws {
+    @Test(.offPool) func subscriptionToAnotherPortNeedsTheAck() async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let (receiver, feedback, port) = try await Self.start(store: store) { ["/fanous/show/mode": [.int32(1)]] }
         defer {

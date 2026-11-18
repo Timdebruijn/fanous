@@ -24,6 +24,25 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Engine (B364): a playing movie layer no longer sits on 2 frames of every 11 (with the 8-frame ring): the decode
   thread went back to the requested frame whenever it was ahead of it, so the ring held two frames in turn; it now
+  fills the ring with the frames ahead in play direction. The layer advances at most one frame per tick, so after a
+  skipped or unseen tick it stays that many frames late until it is retriggered or the ring drains, and at two or
+  more frames per tick it stalls and jumps (B372) (PR #413).
+- Engine (B272): an Art-Net, OSC, HTTPS or CITP listener that fails (a port another program holds, the network gone)
+  is made again on its port 1, 2 and 4 s later and then every 5 s until it listens, logged once per change; the
+  failed UDP listener's flows go with it, and readiness shows the live state of Art-Net and, in a new item "OSC port
+  8000 available", of OSC (PR #408)
+- Engine (B277): a movie or still file opens on a thread of its own, normally 4 at a time and never more than 8
+  threads, so a file on a slow or gone volume no longer holds up every layer's media change; after 2 s its layer
+  keeps its picture and that picture's status, adds "… is not answering", and takes the next selection, and
+  playbacks a layer let go of are stopped meanwhile (PR #409).
+- Engine (B273): the output set of a secondary display and of an output preview, the timecode offsets, the timecode
+  freewheel and the timecode input the live feed reads are no longer swapped under a reading render or feed thread;
+  the render side takes them without waiting, so a mapping drag or a timecode change mid-show can no longer free a
+  reference a thread is reading (PR #410).
+- Engine (B269): HTTPS takes at most 64 connections per IP address (this Mac not counted) and CITP 8, refusals are
+  counted in `/metrics` `refusedConnections`, and both close a connection whose client stopped making progress for
+  30 s; a WebSocket must say `hello` within 10 s, is pinged every 15 s and is closed after 45 s without a word or a
+  pong (PR #412).
   fills the ring with the frames ahead in play direction. Until B372 the layer advanced at most one frame per tick, so
   after a skipped or unseen tick it stayed that many frames late until it was retriggered or the ring drained, and at
   two or more frames per tick it stalled and jumped (PR #413).
@@ -91,6 +110,14 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   before (PR #396).
 - Tests (B350): `aRunningFadeReportsNothing` no longer waits to see a 0.3 s fade in flight, which a held-up poll misses (red once on CI) (PR #404).
 - Tests (B351): the swift CI job also runs `DMXStateBoundsTests`, `HAPFrameBoundsTests`, `HTTPSPipeliningTests` and `MetricsMicrosTests`, which were added today and ran locally only (PR #405).
+- Tests (B354): `cueRunnerResumesTheStateAndReportsChanges` waits for the runner's report and lets the DMX queue run before it reads the report list and the snapshot (red once on CI) (PR #407).
+- Tests (B353): the swift CI job (`scripts/test.sh --hosted`) runs the tests one at a time, tests that block or compute for long run off the cooperative pool (`@Test(.offPool)`), the heaviest hosted tests are cheaper, a `waitUntil` that comes close to its deadline says so in the log, and `scripts/test.sh` ends with the ten slowest tests; three CI runs showed no test near its deadline (one was red on the unrelated race fixed in PR #407), where parallel runs had one hold after 9.96 s of 10 (PR #406).
+- Engine (B278, B342): a movie frame that does not decode is skipped at once and the decode thread pauses 15 ms, instead
+  of the same frame being tried for ever every 50 ms with a log line each time; half a second without a decoded frame
+  shows the decoder error on the layer (Layers screen, readiness) until a frame decodes again or the clip changes; the
+  skip lines, and the failing, still-failing and recovered lines, each come at most once every 10 s with a count of what
+  was held back (a recovered line always follows the failing line it pairs with); a VideoToolbox session that went
+  invalid is made again, at most once a second (PR #411).
 
 ## 1.0.0-rc.14 — 2026-11-17
 

@@ -45,6 +45,8 @@ public final class CITPServer: @unchecked Sendable {
         public var streams: Int
         /// PLoc datagrams dropped because the socket could not take them at once (B123).
         public var beaconsDropped = 0
+        /// Connections refused at the cap per address since start (B269).
+        public var refused = 0
     }
 
     public static let productName = "Fanous"
@@ -58,7 +60,8 @@ public final class CITPServer: @unchecked Sendable {
     private let providers: Providers
     private let logger: Logger
     private let queue = DispatchQueue(label: "org.fanous.citp", qos: .utility)
-    private var listener: NWListener?
+    /// Made again when it fails (B272), on a port of its own again: the beacon announces the new one.
+    private var listener: RecoveringListener?
     private var multicastSocket: Int32 = -1
     private var beaconReported = false
     private var lastDropLog = -Double.infinity
@@ -68,6 +71,15 @@ public final class CITPServer: @unchecked Sendable {
     private var statusTimer: DispatchSourceTimer?
     private var frameTimer: DispatchSourceTimer?
     private var connections: [ObjectIdentifier: Session] = [:]
+    /// Sessions one address holds at once; the next connection is closed at accept and logged (B269). Set before `start()`.
+    var perAddress = 8
+    /// The longest a session may hold half a message, or wait for its console to take what was sent to it (B269).
+    var stallLimit = 30.0
+    private var refused = 0
+    private var lastRefusalLog = -Double.infinity
+    private var lastStallCheck = 0.0
+    /// Layer status at 4 Hz; the stall check runs with it.
+    static let statusInterval = 0.25
     public let status = Mutex(Status(port: 0, clients: [], streams: 0))
     /// Set while any client streams the canvas, so the preview encoder produces JPEGs.
     public let wantsFrames = Atomic<Bool>(false)
@@ -88,29 +100,33 @@ public final class CITPServer: @unchecked Sendable {
     // MARK: Lifecycle
 
     public func start() throws {
-        let parameters = NWParameters.tcp
-        parameters.allowLocalEndpointReuse = true
-        let listener = try NWListener(using: parameters, on: .any)
-        listener.stateUpdateHandler = { [weak self] state in
+        let listener = RecoveringListener(name: "CITP listener", queue: queue, logger: logger) { [weak self] in
+            let parameters = NWParameters.tcp
+            parameters.allowLocalEndpointReuse = true
+            let listener = try NWListener(using: parameters, on: .any)
+            listener.newConnectionHandler = { [weak self] connection in
+                guard let self else { return connection.cancel() }
+                let host = HTTPSServer.peer(connection.endpoint).host
+                guard connections.values.count(where: { $0.host == host }) < perAddress else { return refuse(connection, from: host) }
+                let session = Session(connection: connection, host: host, server: self)
+                connections[ObjectIdentifier(session)] = session
+                session.start()
+                publishStatus()
+            }
+            return listener
+        } onState: { [weak self] state, listener in
             guard let self else { return }
             switch state {
             case .ready:
                 let port = listener.port?.rawValue ?? 0
                 status.withLock { $0.port = port }
                 logger.info("CITP listening", metadata: ["tcp": "\(port)"])
-                startMulticast()
-            case .failed(let error): logger.error("CITP listener failed", metadata: ["error": "\(error)"])
+                if multicastSocket < 0 { startMulticast() }
+            case .failed: status.withLock { $0.port = 0 }  // no beacon for a dead port; System › Network reads "not running"
             default: break
             }
         }
-        listener.newConnectionHandler = { [weak self] connection in
-            guard let self else { return connection.cancel() }
-            let session = Session(connection: connection, server: self)
-            connections[ObjectIdentifier(session)] = session
-            session.start()
-            publishStatus()
-        }
-        listener.start(queue: queue)
+        try listener.start()
         self.listener = listener
     }
 
@@ -127,7 +143,11 @@ public final class CITPServer: @unchecked Sendable {
                 timer = nil
             }
         }
-        sync(&statusTimer, wanted: negotiated, interval: 0.25) { $0.sendLayerStatus() }
+        // the stall check rides on the layer status: every session has a version (and is sent status) 2 s after it connects
+        sync(&statusTimer, wanted: negotiated, interval: Self.statusInterval) {
+            $0.sendLayerStatus()
+            $0.closeStalledSessions()
+        }
         sync(&frameTimer, wanted: streaming, interval: 0.1) { $0.sendFrames() }
     }
 
@@ -141,7 +161,7 @@ public final class CITPServer: @unchecked Sendable {
             frameTimer?.cancel()
             statusTimer = nil
             frameTimer = nil
-            listener?.cancel()
+            listener?.stop()
             if multicastSocket >= 0 { close(multicastSocket) }
             multicastSocket = -1
             for (_, session) in connections { session.connection.cancel() }
@@ -197,6 +217,37 @@ public final class CITPServer: @unchecked Sendable {
                     logger.warning("CITP PLoc beacon failed (firewall?)", metadata: ["to": "\(group):\(CITPMulticast.port)", "errno": "\(error)", "error": "\(String(cString: strerror(error)))"])
                 }
             }
+        }
+    }
+
+    /// Closes a connection from an address at `perAddress`; one log line a minute at most, with the count since the last.
+    private func refuse(_ connection: NWConnection, from host: String) {
+        connection.cancel()
+        refused += 1
+        status.withLock { $0.refused += 1 }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastRefusalLog >= 60 else { return }
+        // `peer` is the address refused as the line is written; `refused` counts every address since the last line
+        logger.warning(
+            "CITP connection refused: too many open from one address (one line a minute, refused counts every address)",
+            metadata: ["peer": "\(host)", "limit": "\(perAddress)", "refused": "\(refused)"])
+        lastRefusalLog = now
+        refused = 0
+    }
+
+    /// Ends a session that held half a message, or had sends the console did not take, for `stallLimit`: a console that
+    /// died without closing (its sends stop being taken once the kernel's buffer for it is full) or stopped reading.
+    /// A console that is merely quiet takes the layer status and stays.
+    private func closeStalledSessions() {
+        let now = ProcessInfo.processInfo.systemUptime
+        // a tick that comes four status intervals late found this queue busy (a slow provider): the receives and send
+        // completions that queued behind it have not run yet, so judge nothing this round. The check runs on the status
+        // timer: were that ever to run at a period of 4 intervals or more, this rule would never judge at all
+        defer { lastStallCheck = now }
+        guard now - lastStallCheck < 4 * Self.statusInterval else { return }
+        for session in connections.values where session.stalled(now: now, limit: stallLimit) {
+            logger.info("CITP client closed: stalled", metadata: ["peer": "\(session.label)"])
+            session.connection.cancel()
         }
     }
 
@@ -348,6 +399,8 @@ public final class CITPServer: @unchecked Sendable {
         let connection: NWConnection
         /// The peer as shown in the status, built once.
         let label: String
+        /// The peer's address, as the cap per address counts it.
+        let host: String
         private unowned let server: CITPServer
         var version: MSEXVersion?
         var streams: [Stream] = []
@@ -355,11 +408,21 @@ public final class CITPServer: @unchecked Sendable {
         /// How long a console has to send CInf before it is taken for MSEX 1.0 (B78).
         static let fallbackDelay = 2.0
         private var fallback: DispatchWorkItem?
+        /// Uptime of the last time a receive was armed; sends the transport has not taken yet, and the uptime of the last one it
+        /// took (or of the first send while none was pending).
+        private var lastReceived = 0.0
+        private var pendingSends = 0
+        private var sendProgress = 0.0
 
-        init(connection: NWConnection, server: CITPServer) {
+        init(connection: NWConnection, host: String, server: CITPServer) {
             self.connection = connection
             label = "\(connection.endpoint)"
+            self.host = host
             self.server = server
+        }
+
+        func stalled(now: Double, limit: Double) -> Bool {
+            (!buffer.isEmpty && now - lastReceived > limit) || (pendingSends > 0 && now - sendProgress > limit)
         }
 
         func start() {
@@ -379,6 +442,7 @@ public final class CITPServer: @unchecked Sendable {
         }
 
         private func receive() {
+            lastReceived = ProcessInfo.processInfo.systemUptime  // armed: the stall counts only time the server waits to read
             connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [self] data, _, isComplete, error in
                 if let data { buffer.append(contentsOf: data) }
                 process()
@@ -413,7 +477,14 @@ public final class CITPServer: @unchecked Sendable {
 
         func send(_ packet: CITPPacket, requestIndex: UInt16 = 0) {
             let bytes = packet.encoded(version: version ?? .v1_0, requestIndex: requestIndex)
-            connection.send(content: Data(bytes), completion: .contentProcessed { _ in })
+            if pendingSends == 0 { sendProgress = ProcessInfo.processInfo.systemUptime }
+            pendingSends += 1
+            connection.send(
+                content: Data(bytes),
+                completion: .contentProcessed { [self] _ in
+                    pendingSends -= 1
+                    sendProgress = ProcessInfo.processInfo.systemUptime
+                })
         }
     }
 }

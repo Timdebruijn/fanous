@@ -69,7 +69,7 @@ flowchart TD
   start["Engine menu, first line"] --> line{"The two halves read?"}
   line -- "running · service installed" --> conn["The engine is fine: the connection (below)"]
   line -- "not running · service installed" --> log["Engine › Open Logs: the newest lines"]
-  log -- "HTTPS listener failed" --> port["Another program holds port 8443: the engine runs without its UI.<br>Quit that program and Restart Engine"]
+  log -- "HTTPS listener failed; trying again" --> port["Another program holds port 8443: the engine runs without its UI.<br>Quit that program: the UI is back within 5 s"]
   log -- "a crash report, or nothing recent" --> startit["Start Engine; after a crash macOS restarts it by itself (10 s after a quick crash)"]
   line -- "service needs approval in Login Items" --> approve["System Settings › General › Login Items & Extensions › Allow in the Background: Fanous on, then Start Engine"]
   line -- "service not installed" --> install["Start Engine registers and starts it"]
@@ -89,9 +89,55 @@ engine runs but does not answer within 10 seconds (port 8443 held by
 another program, or hung), Start Engine restarts it, and the outputs go
 black for a moment. Read the log first. A port held by another program
 (8443, Art-Net 6454, OSC 8000) does not stop the engine; the log says
-"HTTPS listener failed", "Art-Net listener failed" or "OSC UDP failed" and
-the engine runs without that listener; for Art-Net the readiness item
-**Art-Net port 6454 available** warns too ([known limitations](reference/known-limitations.md#show-mode-and-the-machine)).
+"HTTPS listener failed; trying again", "Art-Net listener failed; trying
+again" or "OSC UDP failed; trying again", the engine runs without that
+listener and tries again every 5 s at most, so it listens again within 5 s
+of that program quitting; the readiness items **Art-Net port 6454
+available** and **OSC port 8000 available** warn meanwhile ([known limitations](reference/known-limitations.md#show-mode-and-the-machine)).
+The OSC item covers TCP 8000 too: a program that holds only TCP 8000 (a
+development web server, say) keeps it on a warning while OSC over UDP
+works; "OSC TCP listening" in the log says when TCP is back.
+
+## An iPad or browser is refused or dropped
+
+The engine limits what one device holds and closes connections that went
+silent ([the limits](reference/files-and-ports.md)). What the log says:
+
+- "HTTPS connection refused: too many open from one address": an address
+  already holds 64 connections to the engine, and the next one is closed at
+  once. At most one such line a minute: `peer` is the address refused as the
+  line was written, `refused` counts the connections closed since the last
+  line from every address; `/metrics` has the total under
+  `refusedConnections`. On the refused device a page that is not open yet
+  shows the browser's own error page ("can't connect" or similar). A UI that
+  had loaded its data and loses its connection shows the red "Connection
+  lost · … · values shown are stale" (the middle part is the browser's
+  reason, such as "code 1006") while it retries; one that never got its first
+  data shows the yellow "Engine unreachable: …; retrying". Either comes back
+  by itself, usually within about 30 s, as idle connections close. All devices behind one
+  address count together: a travel router doing NAT, a VPN, or a reverse
+  proxy on another computer that every user reaches the engine through.
+  Otherwise it is a browser with very many tabs of the UI, or a script: close
+  tabs. The app window on the Mac is never refused.
+- "WebSocket closed: client silent": a device sent nothing, not even the
+  answer to the engine's ping, for 45 s: it went to sleep, out of Wi-Fi
+  range, or its battery died. Its UI shows "Connection lost" when it wakes
+  and reconnects by itself. "WebSocket closed: no hello" is a client that
+  connected and did not log in within 10 s.
+- "CITP connection refused: too many open from one address": a console
+  holds 8 CITP connections already. "CITP client closed: stalled": a console
+  stopped reading what the engine sends, or left half a message, for 30 s;
+  it connects again by itself when it is back. A console that died without
+  closing is found this way only once the engine's sends to it stop being
+  taken, after the network's buffers have filled with the 4 Hz layer status:
+  98 s in a loopback test (32 layers), many minutes with one or two layers;
+  not measured on a real network.
+- "upload cut: no data from the client; partial file removed" (a warning,
+  with `seconds` and how much was `received`): an upload sent nothing for
+  30 s while the engine was ready to read, so the engine closed it and
+  removed the partial copy from `_incoming/`. In the Media screen's upload
+  list the file reads "failed", with the browser's error ("Failed to fetch"
+  in Chrome, "Load failed" in Safari). Upload it again over a better link.
 
 ## The iPad warns about the certificate
 
@@ -150,6 +196,21 @@ The fixtures hold their last values meanwhile, unless the universe's
    firewall allowing UDP 6454 (Art-Net) and 5568 (sACN).
 5. Two sources on one universe: Art-Net takes the latest packet, sACN the
    highest priority. Send each universe from one console.
+6. The console lost the engine after the network dropped (a cable pulled,
+   a switch restarted, the Mac woke from sleep): the [log](#logs) says
+   "Art-Net listener failed; trying again" (or "OSC UDP failed; trying
+   again") with the error once, and "Art-Net listening" when it listens
+   again. The engine makes the listener again 1, 2 and 4 s after the
+   failure and then every 5 s, so Art-Net and OSC come back by themselves
+   within 5 s of the network; no restart is needed. Meanwhile readiness
+   reads "not listening: …" on **Art-Net port 6454 available** or **OSC
+   port 8000 available**. "… waiting for a usable network" means macOS
+   holds the listener until a network is up; it goes on by itself.
+   OSC feedback: a subscribed controller gets feedback again once it sends
+   anything (at the latest its renewal within 60 s); the fixed feedback
+   target (`oscFeedback` in `settings.json`) gets it again only when it sends something itself,
+   so a target that only listens may need Engine › Restart Engine until
+   that is fixed (B352).
 
 Done when the pill turns green.
 
@@ -160,9 +221,11 @@ The Layers screen shows the problem in the row's Media column.
 | The row reads | Do |
 |---|---|
 | "no file N in folder M" | The number does not exist or the file is not playable: Media screen, that folder: invalid name, needs transcode, unreadable ("AVFoundation cannot open .webm files": a `.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`, `.f4v`, `.divx`, convert it on another machine) ([Media library](media-library.md)) |
-| A decoder error ("unsupported codec", "VideoToolbox error", "no video track") | Transcode the file again or replace it, then send Control 24–31 (Clear error) on layer channel 50 from the console and back to 0 |
+| A decoder error ("unsupported codec", "VideoToolbox error", "no video track") | Transcode the file again or replace it, then select another clip on the layer and this one again: the file is opened anew |
+| A decoder error on a movie that was playing ("HapDecode failed", "VideoToolbox error") | For half a second or more no frame of the file decoded. The layer shows the last frame that did. When not one frame of a newly selected file decodes from its start frame, the layer goes on playing the clip it showed before. The error goes by itself when a frame decodes again, or when another clip is selected. Transcode the file again or replace it |
 | "no capture device / display / Syphon server numbered N" | Nothing has that number in folder 0: Inputs screen, **Number** ([Live inputs](live-inputs.md)) |
 | "not running", "in use by another app", "no signal" | The live input: plugged in, not open in another app, a signal on the card |
+| "M/N <file> is not answering: the volume is slow or gone" | The file selected as M/N did not open within 2 seconds: its disk is asleep, unplugged or a network share that went away, or a cloud copy not downloaded. The layer keeps its picture, and the row still describes that picture with this error added (today the row's chip reads a red "Decoder error" for a movie or still that keeps playing, and the whole text for a live picture); the clip plays if it opens while it is still selected; other layers change as usual meanwhile. If the file then fails to open, the error becomes "M/N <file>: <why>" and the layer still keeps its picture until another selection. Select another clip or bring the volume back; keep show media on the Mac's own disk |
 | A permission text | Inputs screen › **Authorize** (not in show mode); screen recording needs Engine › Restart Engine after the grant |
 
 The row is green and the picture black, in this order, done when the
@@ -199,6 +262,19 @@ Play mode 112 to 127 is Freeze on the layer; Master Control 64 to 127 is
 Freeze all; Output Control 128 to 191 is Freeze. A frozen output shows a
 test pattern live over the held frame. A still image, or a live input that
 lost its signal, holds its last frame by design.
+
+A movie whose frames do not decode holds the last good frame. A bad frame
+in the middle of a clip is skipped: the frame before it stays up a moment
+longer. The log says `decode failed, frame skipped` with the frame number
+and a count, at most once every 10 seconds. A bad frame where playback
+starts (the start of the file, a seek, a retrigger, a cue jump) is not
+skipped: the layer keeps what it showed before, the frame before the seek
+or the previous clip, until a frame decodes. When no frame decodes for half
+a second, the Layers row shows the decoder error (see above) and the log
+says `decode failing`, then `decode still failing` with a count, and
+`decode recovered` when a frame decodes again. These lines too come at most
+once every 10 seconds, each with the number of lines held back, so a
+damaged clip that loops does not fill the log.
 
 ## Outputs stay black although the layers play
 
@@ -298,8 +374,11 @@ enable a network MIDI session, then choose it under Device or All sources.
 ## A CITP console does not see Fanous
 
 - System › Network, CITP line: "not running" means the CITP server did not
-  start (the log says "CITP start failed"); otherwise it shows the TCP port,
-  the consoles and the open streams.
+  start (the log says "CITP start failed"), or its listener is down for the
+  moment ("CITP listener failed; trying again"): then consoles already
+  connected stay connected and may keep streaming, although the line hides
+  them until "CITP listening". Otherwise it shows the TCP port, the
+  consoles and the open streams.
 - Same subnet as the console, and multicast must pass the network (managed
   switches: check multicast settings); not with `--no-network`.
 - Firewall: `fanousd` needs outgoing UDP to 224.0.0.180 and 239.224.0.180
@@ -386,12 +465,14 @@ log show --predicate 'subsystem == "org.fanous"' --last 1h
 
 | Line | Means |
 |---|---|
-| "HTTPS listener failed", "Art-Net listener failed", "OSC UDP failed", "OSC TCP failed" | That listener could not open, usually a port another program holds; the engine runs without it |
-| "CITP listener failed" | The CITP server could not open its port; the console will not list Fanous |
+| "HTTPS listener failed; trying again", "Art-Net listener failed; trying again", "OSC UDP failed; trying again", "OSC TCP failed; trying again" | That listener could not open or stopped working (a port another program holds, the network gone); the engine runs without it and makes it again every 5 s at most, logging the next line only when the outcome changes: "HTTPS listening", "Art-Net listening", "OSC listening" (UDP), "OSC TCP listening" when it is back |
+| "… waiting for a usable network" | macOS holds that listener until a network is up; it listens by itself then |
+| "CITP listener failed; trying again" | The CITP server's port stopped working; the console does not list Fanous until "CITP listening" (a new port, announced by the next beacon) |
 | "sACN port in use; running without sACN" | The readiness item warns too |
 | "sync port in use; not receiving sync packets" | System › Sync: apply a free port |
 | "CITP start failed", "CITP PLoc beacon failed (firewall?)" | The console will not list Fanous |
 | "media not found", "media open failed" | The layer's row says the same |
+| "media open not answering" | A file did not open within 2 seconds (`file`, `layer`): the section [above](#a-layer-shows-an-error-or-the-picture-is-black). "media open answered after a newer selection, dropped" means an open finished (opened or failed) after its layer had moved on: something else was selected, or the newer selection was still waiting for an open slot or for this open; nothing is shown from it. "media open failed" after a "not answering" is that file failing late: the layer keeps its picture |
 | "project file not readable" | The section above |
 | "stale show state ignored" | The engine or the Mac was down for more than 2 hours since show mode was last written: a normal start |
 | "show mode resumed after an unclean stop", "show mode kept across a restart" | Show mode came back; the second is a deliberate Restart Engine |

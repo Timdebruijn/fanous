@@ -728,7 +728,7 @@ struct ShowControlTests {
     /// B197: a library volume that stops answering (a stalled network mount) holds the checks for the volume timeout
     /// only: disk and library fail, Spotlight is manual, and a second check joins the hung read instead of starting
     /// another thread. Once the read returns, the next check reads the volume again.
-    @Test func aHungLibraryVolumeReadTimesOut() throws {
+    @Test(.offPool) func aHungLibraryVolumeReadTimesOut() throws {
         let gate = Hold()
         defer { gate.done() }
         let reads = Atomic<Int>(0)
@@ -1285,7 +1285,7 @@ struct ShowControlTests {
         context.libraryRoot = NSHomeDirectory()
         let items = Readiness.check(context, acknowledged: ["dmx"])
         let ids = items.map(\.id)
-        #expect(ids == ["project", "power", "thermal", "disk", "memory", "dmx", "interfaces", "artnetport", "sacnport", "outputs", "modes", "syncmaster", "syncpackets", "camera", "screen", "microphone", "decoders", "maskimages", "library", "spotlight", "updates", "timemachine", "focus", "displaysleep", "hardware"])
+        #expect(ids == ["project", "power", "thermal", "disk", "memory", "dmx", "interfaces", "artnetport", "sacnport", "oscport", "outputs", "modes", "syncmaster", "syncpackets", "camera", "screen", "microphone", "decoders", "maskimages", "library", "spotlight", "updates", "timemachine", "focus", "displaysleep", "hardware"])
         let dmx = items.first { $0.id == "dmx" }!
         #expect(dmx.state == .fail && dmx.acknowledged && !dmx.blocks)
         let outputs = items.first { $0.id == "outputs" }!
@@ -1462,8 +1462,13 @@ struct ShowControlTests {
         let half = CueValue(fixture: .layer(1), parameter: .layer(.intensity), raw: 32768)
         let list = CueList(cues: [Cue(number: 1, fadeTime: 5, values: [half]), Cue(number: 2, fadeTime: 5), Cue(number: 3, fadeTime: 0)])
         runner.replace(list: list, resuming: (list.cues[1].id, 2, [list.cues[0].id: [half]]))
-        #expect(await waitUntil { runner.status.withLock { $0.current } == 2 })
+        // B354: the runner writes its status first, then calls onStateChange, and the values reach the snapshot later, on
+        // the DMX queue: wait for the report, the last of the runner's steps, then let the DMX queue run what it was sent
+        #expect(await waitUntil { !reported.withLock { $0 }.isEmpty })
         #expect(reported.withLock { $0 } == [list.cues[1].id], "only the resumed state is reported at start")
+        #expect(runner.status.withLock { $0.current } == 2)
+        try await offPool { store.queue.sync {} }
+        // one read: a resume starts no tick timer, so a value that faded in from 0 would still be near 0 here
         #expect(abs(store.snapshots.withLatest { $0.layers[0].intensity } - 0.5) < 0.01, "the held value at once, not fading from 0")
         #expect(!runner.status.withLock { $0.fading })
         runner.go()

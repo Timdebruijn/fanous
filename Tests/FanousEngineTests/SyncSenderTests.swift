@@ -64,7 +64,7 @@ struct SyncSenderTests {
             "the send buffer was not reallocated")
     }
 
-    @Test func theThreadSendsWhatTheSlotHolds() throws {
+    @Test(.offPool) func theThreadSendsWhatTheSlotHolds() throws {
         let catcher = try UDPCatcher(timeout: 2)
         let sender = Self.sender(port: catcher.port)
         sender.start()
@@ -87,7 +87,7 @@ struct SyncSenderTests {
         #expect(sender.packetsOut.load(ordering: .relaxed) >= 1)
     }
 
-    @Test func withoutMastersOnlyAKeepaliveOnceASecond() throws {
+    @Test(.offPool) func withoutMastersOnlyAKeepaliveOnceASecond() throws {
         let catcher = try UDPCatcher(timeout: 0.5)
         let sender = Self.sender(port: catcher.port)
         sender.start()
@@ -102,7 +102,7 @@ struct SyncSenderTests {
         #expect(packets.allSatisfy { $0.layers.isEmpty && $0.machineID == Self.machine })
     }
 
-    @Test func noNetworkSendsOnlyToLoopback() throws {
+    @Test(.offPool) func noNetworkSendsOnlyToLoopback() throws {
         var settings = SyncSettings()
         #expect(settings.port == 8002 && settings.target == "broadcast" && settings.interface == "any")
         let catcher = try UDPCatcher(timeout: 1.5)

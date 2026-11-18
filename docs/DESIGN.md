@@ -332,6 +332,28 @@ display link's `targetTimestamp`:
   and restarts; the compositor shows the previous frame (or black, per layer
   setting) until the first new frame is ready, then starts the dissolve if
   dissolve > 0.
+- File opens (B277): the media loader thread resolves every selection; a
+  movie or still file is opened on a thread of its own
+  (`org.fanous.media.open`), normally 4 at a time (a layer that leaves its
+  open for a clear or a live input frees its slot while that thread may still
+  run) and never more than 8 threads, so a file on a slow or gone volume holds
+  up only its layer. A selection that is not a file (clear, a generator, a
+  live input) is handed over at once, also while a file opens; a further file
+  selection waits for the layer's open in flight. Until a file's playback is
+  handed over, the loader's books (the live input a layer shows, its status)
+  stay on what the layer shows, and a catalog or library change reopens a
+  live input or a missing number only on a layer whose selection is what it
+  shows; a live input that comes back while the layer's file has not come
+  keeps its last frame and "not running". A layer stops waiting after 2 s: its status
+  keeps describing the picture and gains "M/N file is not answering", and it
+  takes its next selection; the stuck thread cannot be stopped and still
+  counts. An answer is played only when it is the layer's newest open and the
+  layer still wants its key; otherwise it is dropped before a decoder is made.
+  A given-up open that later fails replaces that error with its own and
+  keeps the picture; one that fails within the 2 s cuts to black (B299).
+  Capture, screen, Syphon and generator opens, and stopping retired
+  playbacks, stay on the loader thread. The layers of one cue each switch
+  when their own first frame is ready; there is no barrier across layers.
 - Frame selection: the clock's frame is `⌊position + 11/24⌋`, so frame k
   shows from position k − 11/24 to k + 13/24; a looping position is kept in
   `[in − 11/24, out + 13/24)`, the window of the frame on screen. Rounding down would put the clock on a frame boundary
@@ -3574,6 +3596,25 @@ groundwork and small engine pieces first):
   `[OPEN-18]` decided in Phase 5: roles are open or protected independently,
   and a client is granted the highest role up to the one it requested that it
   is entitled to (cookie, shell token or open role).
+- Connection limits (B269): at most 64 HTTPS connections per client address
+  (loopback not counted: the shell's `/healthz` is never refused; NAT, VPNs
+  and reverse proxies put many users behind one address; the global bound is
+  the descriptor limit) and 8 CITP sessions; the next one is closed at accept
+  with one log line a minute, counted in `/metrics` `refusedConnections`. A
+  connection is closed when its client makes no progress for 30 s: no byte of
+  a request (head or body chunk), no 256 KB slice of a response taken, or idle
+  between requests. The clock counts from the moment a receive is armed, so
+  time the engine spends on a request (a slow upload write, a command) is not
+  the client's silence. A WebSocket must be authenticated by `hello` within 10 s,
+  is pinged every 15 s and is closed after 45 s without receiving anything:
+  liveness by the client's pongs, not by its messages, so a quiet UI stays.
+  A CITP session is closed when it holds half a message, or has sends its
+  console does not take, for 30 s; its clock too starts when a receive is
+  armed, and the check (on the 4 Hz status timer) judges nothing in a round
+  that comes four intervals late, when the queue was busy and the console's
+  bytes and send completions still wait behind it. The TLS handshake has its
+  own 30 s from accept; the request deadline starts when it is done. No TCP keepalive: the pings and the send
+  progress find a dead peer without it.
 - Rate limiting on login (5/min per IP), CSRF not needed (cookie SameSite
   Strict + same-origin WebSocket check), all REST mutations go through
   WebSocket commands anyway.

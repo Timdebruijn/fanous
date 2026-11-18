@@ -260,7 +260,7 @@ struct UniverseSettingsEngineTests {
         #expect(Readiness.check(context, acknowledged: []).first { $0.id == "artnetport" }.map { $0.state == .ok && $0.detail == "listening" } == true)
         context.artnetError = failure
         let item = try #require(Readiness.check(context, acknowledged: []).first { $0.id == "artnetport" })
-        #expect(item.title == "Art-Net port 6454 available" && item.state == .warn && !item.blocks && item.detail == "in use, running without Art-Net: \(failure)")
+        #expect(item.title == "Art-Net port 6454 available" && item.state == .warn && !item.blocks && item.detail == "not listening: \(failure)")
     }
 
     /// A listener that gets its port keeps no failure: the item stays green while the engine itself holds 6454.

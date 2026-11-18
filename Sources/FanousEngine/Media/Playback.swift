@@ -382,7 +382,9 @@ public struct MediaEntry: Codable, Sendable, Equatable {
 
 /// Control-side thread that opens media the compositor asks for and releases
 /// what it has dropped (DESIGN.md §4.2: file changes never touch the
-/// compositor thread). One per render service.
+/// compositor thread). One per render service. Movie and still files are
+/// opened on threads of their own, a few at a time, so a slow volume holds up
+/// only its own layer (B277).
 public final class MediaLoader: @unchecked Sendable {
     public let wake = DispatchSemaphore(value: 0)
     private let layers: [RenderLayer]
@@ -415,6 +417,48 @@ public final class MediaLoader: @unchecked Sendable {
     public var resolver: (@Sendable (MediaKey) -> URL?)?
     private var parity: [Int]
 
+    /// A movie's or a still's file as an open thread hands it to the loader thread (B277): no decoder made yet.
+    enum OpenedFile: @unchecked Sendable {
+        case still(DecodedFrame)
+        case movie(MovieSource, audio: AudioTrackReader?)
+    }
+    /// Opens a library or scene file on an open thread of its own (B277), the audio track too when `audio`; tests stand
+    /// in one that blocks.
+    var openFile: @Sendable (_ url: URL, _ audio: Bool) throws -> OpenedFile
+    /// B277: a layer stops waiting for an open that has not answered within this. It says "not answering" and takes the
+    /// next selection; the open's thread runs on (one blocked in `open(2)` on a gone volume cannot be stopped) and its
+    /// media still plays when it answers and nothing newer was selected on the layer.
+    var openDeadline: Duration = .seconds(2)
+    /// B277: file opens that normally run at once within their deadline (measured: 4 at a time opens 8 ProRes files about
+    /// twice as fast as one at a time, 8 at a time no faster; a layer that leaves its open for a clear or a live input
+    /// frees its slot while that thread may still run), and open threads alive at most, given-up ones included: never
+    /// more, and with that many on volumes that do not answer, further file opens wait until one does.
+    var maxOpens = 4
+    var maxOpenThreads = 8
+    /// Loader thread: the open each layer waits for; nil when none, or given up.
+    private var opening: [(id: Int, key: MediaKey, url: URL, deadline: ContinuousClock.Instant)?]
+    /// Loader thread: the id of each layer's newest open (file or not). An answer is played only when its id is the
+    /// newest and the layer still wants its key, so neither an older open nor one the layer has moved away from (a
+    /// selection still waiting for a slot) replaces the last selection.
+    private var newest: [Int]
+    private var lastID = 0
+    /// Loader thread: open threads started whose answer has not been taken.
+    private var openThreads = 0
+    /// Loader thread: the packed key of the playback last handed to each layer (what it shows), which the live-input
+    /// checks follow while a file selection is still opening, was given up or failed late.
+    private var shown: [UInt32]
+    /// Loader thread: why the layer's selection did not come (given up, or failed after the give-up); shown with the
+    /// picture's own status until the next hand-over, so the capture poll does not clear it.
+    private var notCome: [String?]
+    typealias Answer = (layer: Int, id: Int, key: MediaKey, url: URL, result: Result<OpenedFile, Error>)
+    /// What the open threads hand back. They hold this box, not the loader, so a thread stuck on a gone volume keeps no
+    /// stopped loader alive; after the stop it hands nothing back.
+    private final class Answers: Sendable {
+        let list = Mutex<[Answer]>([])
+        let stopped = Atomic<Bool>(false)
+    }
+    private let answers = Answers()
+
     public init(layers: [RenderLayer], media: [MediaEntry], device: MTLDevice, ringCapacity: Int, logger: Logger) {
         self.layers = layers
         // an entry without a source (an old scene file's `syphon` entry, whose key is no longer decoded) would hide a
@@ -432,6 +476,15 @@ public final class MediaLoader: @unchecked Sendable {
         parity = Array(repeating: 0, count: layers.count)
         syphonOpen = Array(repeating: nil, count: layers.count)
         captureOpen = Array(repeating: nil, count: layers.count)
+        opening = Array(repeating: nil, count: layers.count)
+        newest = Array(repeating: 0, count: layers.count)
+        shown = Array(repeating: 0, count: layers.count)
+        notCome = Array(repeating: nil, count: layers.count)
+        openFile = { url, audio in
+            if StillSource.extensions.contains(url.pathExtension.lowercased()) { return .still(try StillSource.load(url: url, device: device)) }
+            let source = try blockingAwait(priority: .userInitiated) { try await MovieSource.open(url: url, device: device, poolSize: ringCapacity) }
+            return .movie(source, audio: audio ? try blockingAwait(priority: .userInitiated) { try await AudioTrackReader.open(url: url) } : nil)
+        }
     }
 
     public func start() {
@@ -499,8 +552,8 @@ public final class MediaLoader: @unchecked Sendable {
     private func liveSourcesChanged(_ kind: LiveCatalog.Kind) {
         let catalog = kind == .screens ? screensCatalog : captureCatalog
         let runningElsewhere = Set((catalog?.entries ?? []).filter(\.running).map(\.source))
-        for i in loaded.indices where isNumbered(MediaKey(packed: loaded[i]), kind) {
-            let source = catalog?.entry(file: MediaKey(packed: loaded[i]).file)
+        for i in shown.indices where isNumbered(MediaKey(packed: shown[i]), kind) {
+            let source = catalog?.entry(file: MediaKey(packed: shown[i]).file)
             let open = captureOpen[i]
             if let source, source.running, let open, open.uid == source.source, open.input.alive {
                 layers[i].mediaStatus.withLock { $0.name = Self.liveName(kind, source.name) }  // a rename; in use by another app too
@@ -509,7 +562,9 @@ public final class MediaLoader: @unchecked Sendable {
             // gone, back under another uid, or a failed session: never shared again
             if let open, captureShared[kind]?[open.uid]?.input === open.input { captureShared[kind]?[open.uid] = nil }
             if source?.running == true || open.map({ runningElsewhere.contains($0.uid) }) == true {
-                loaded[i] = .max  // came back, no longer in use elsewhere, or moved to another number: opened again below
+                // came back, no longer in use elsewhere, or moved to another number: opened again below, unless the
+                // layer's selection is a file that has not come (B277: it keeps the last frame)
+                if loaded[i] == shown[i] { loaded[i] = .max }
             } else {
                 if kind == .screens { open?.input.halt("not running") }
                 captureOpen[i] = nil  // the input stays on the layer: the last frame
@@ -532,14 +587,15 @@ public final class MediaLoader: @unchecked Sendable {
                 for i in loaded.indices {
                     let key = MediaKey(packed: loaded[i])
                     guard !key.isNone, key.folder != 0, media[key] == nil else { continue }
-                    if all || (layers[i].mediaStatus.withLock { $0.kind == "missing" } && resolver?(key) != nil) {
+                    // a missing number is retried only where it is what the layer shows (B277: not a file that has not come)
+                    if all || (loaded[i] == shown[i] && layers[i].mediaStatus.withLock { $0.kind == "missing" } && resolver?(key) != nil) {
                         loaded[i] = .max  // never a packed key: opened again below
                     }
                 }
             }
             if changes.contains(.syphonServers) {
-                for i in loaded.indices where isNumbered(MediaKey(packed: loaded[i]), .syphon) {
-                    let server = syphonCatalog?.entry(file: MediaKey(packed: loaded[i]).file)
+                for i in shown.indices where isNumbered(MediaKey(packed: shown[i]), .syphon) {
+                    let server = syphonCatalog?.entry(file: MediaKey(packed: shown[i]).file)
                     if server?.runtimeID == syphonOpen[i] {
                         // same connection (or still gone): only a rename (SyphonServerUpdate) can have changed
                         if let server { layers[i].mediaStatus.withLock { $0.name = "Syphon: \(server.label)" } }
@@ -547,8 +603,9 @@ public final class MediaLoader: @unchecked Sendable {
                         syphonOpen[i] = nil
                         layers[i].mediaStatus.withLock { $0.error = "not running" }
                     } else {
-                        // back, or its server moved to another number (a renumber, B137): the number shows what is on it now
-                        loaded[i] = .max  // never a packed key: opened again below
+                        // back, or its server moved to another number (a renumber, B137): the number shows what is on it now;
+                        // not while the layer's selection is a file that has not come (B277)
+                        if loaded[i] == shown[i] { loaded[i] = .max }  // never a packed key: opened again below
                     }
                 }
             }
@@ -572,13 +629,15 @@ public final class MediaLoader: @unchecked Sendable {
                     }
                 let format = input.format, counters = input.counters
                 layers[i].mediaStatus.withLock { status in
-                    if status.error != error { status.error = error }
+                    if status.error != notCome[i] ?? error { status.error = notCome[i] ?? error }
                     if status.fps != fps { status.fps = fps }
                     if status.codec != format.subtype { status.codec = format.subtype }
                     (status.width, status.height) = (format.width, format.height)  // a card follows its input
                     status.capture = counters
                 }
             }
+            takeAnswers()
+            giveUpLateOpens()
             for (i, layer) in layers.enumerated() {
                 let retired = layer.retired.withLock { list -> [LayerPlayback] in
                     let copy = list
@@ -597,14 +656,28 @@ public final class MediaLoader: @unchecked Sendable {
                 }
                 let want = layer.wanted.load(ordering: .relaxed)
                 guard want != loaded[i] else { continue }
-                loaded[i] = want
-                let playback = autoreleasepool { open(MediaKey(packed: want), layer: i) }
-                layer.pending.withLock { box in
-                    box.playback?.stop()  // replaced before the compositor took it
-                    box.set = true
-                    box.playback = playback
+                var file: URL?
+                let playback = autoreleasepool { open(MediaKey(packed: want), layer: i, file: &file) }
+                if let file {
+                    // B277: the layer's open in flight answers or is given up first, and with all open slots taken the
+                    // layer keeps its picture and asks again on the next pass
+                    guard opening[i] == nil, opening.count(where: { $0 != nil }) < maxOpens, openThreads < maxOpenThreads else { continue }
+                    loaded[i] = want
+                    startOpen(MediaKey(packed: want), url: file, layer: i)
+                } else {
+                    // not a file: at once, also with an open in flight (its answer is no longer the newest, and it is
+                    // not given up over this selection's status)
+                    loaded[i] = want
+                    opening[i] = nil
+                    lastID += 1
+                    newest[i] = lastID
+                    hand(playback, of: want, to: i)
                 }
             }
+        }
+        answers.list.withLock { list in
+            answers.stopped.store(true, ordering: .relaxed)  // under the lock: no thread appends after this
+            list.removeAll()
         }
         for layer in layers {
             layer.pending.withLock { box in
@@ -615,11 +688,110 @@ public final class MediaLoader: @unchecked Sendable {
         }
     }
 
-    private func open(_ key: MediaKey, layer: Int) -> LayerPlayback? {
+    /// Loader thread: hands `playback` (nil: no media) of selection `key` to the compositor through the layer's lock; the
+    /// live-input checks follow `key` from now on.
+    private func hand(_ playback: LayerPlayback?, of key: UInt32, to layer: Int) {
+        shown[layer] = key
+        notCome[layer] = nil
+        layers[layer].pending.withLock { box in
+            box.playback?.stop()  // replaced before the compositor took it
+            box.set = true
+            box.playback = playback
+        }
+    }
+
+    /// Loader thread (B277): opens `url` for `layer` on a thread of its own; `takeAnswers` finishes it.
+    private func startOpen(_ key: MediaKey, url: URL, layer: Int) {
+        lastID += 1
+        let id = lastID
+        newest[layer] = id
+        opening[layer] = (id, key, url, .now + openDeadline)
+        openThreads += 1
+        let audio = mixer.map { layer * 2 + 1 < $0.channels.count } ?? false
+        let openFile = openFile, answers = answers, wake = wake
+        let thread = Thread {
+            let signpost = Signposts.id(Thread.current)
+            Signposts.begin("open", id: signpost)
+            let result = Result { try autoreleasepool { try openFile(url, audio) } }
+            Signposts.end("open", id: signpost)
+            answers.list.withLock { list in
+                if !answers.stopped.load(ordering: .relaxed) { list.append((layer, id, key, url, result)) }
+            }
+            wake.signal()
+        }
+        thread.name = "org.fanous.media.open"
+        thread.qualityOfService = .userInitiated
+        thread.start()
+    }
+
+    /// Loader thread (B277): the opens that answered. One that is its layer's newest and whose key the layer still wants
+    /// is finished and handed over, even one that was given up; any other (the layer moved on, or its newer selection
+    /// waits for a slot) is dropped before a decoder is made for it. A given-up open that fails writes the layer's status
+    /// and logs but hands nothing: the layer keeps its picture, as it did at the give-up (a decision; a failure within
+    /// the deadline still cuts to black, B299).
+    private func takeAnswers() {
+        let taken = answers.list.withLock { list -> [Answer] in
+            guard !list.isEmpty else { return [] }  // no allocation on a pass without answers
+            defer { list.removeAll(keepingCapacity: true) }
+            return list
+        }
+        for answer in taken {
+            let i = answer.layer
+            openThreads -= 1
+            let givenUp = opening[i]?.id != answer.id
+            if !givenUp { opening[i] = nil }
+            guard answer.id == newest[i], layers[i].wanted.load(ordering: .relaxed) == answer.key.packed else {
+                if answer.id == newest[i] {
+                    loaded[i] = .max  // never a packed key: what the layer wants now is opened below
+                    if notCome[i] != nil {  // its error is about a selection the layer has left
+                        notCome[i] = nil
+                        layers[i].mediaStatus.withLock { $0.error = nil }
+                    }
+                }
+                logger.info("media open answered after a newer selection, dropped", metadata: ["layer": "\(i + 1)", "media": "\(answer.key)"])
+                continue
+            }
+            if givenUp, case .failure(let error) = answer.result {  // the picture and its status stay, with the error
+                logger.error("media open failed", metadata: ["layer": "\(i + 1)", "media": "\(answer.key)", "error": "\(error)"])
+                notCome(i, answer.key, "\(answer.url.lastPathComponent): \(error.clientText)")
+                continue
+            }
+            let playback = autoreleasepool { finish(answer.key, layer: i, url: answer.url, answer.result) }
+            (syphonOpen[i], captureOpen[i]) = (nil, nil)
+            hand(playback, of: answer.key.packed, to: i)
+        }
+    }
+
+    /// Loader thread (B277): a layer whose open has not answered within `openDeadline` stops waiting for it. It keeps
+    /// its picture and that picture's status (a failed open cuts to black; this is not worse), adds why the selection did
+    /// not come, and takes the next selection.
+    private func giveUpLateOpens() {
+        let now = ContinuousClock.now
+        for i in opening.indices {
+            guard let open = opening[i], now >= open.deadline else { continue }
+            opening[i] = nil
+            logger.warning("media open not answering: the layer keeps its picture; the file plays if it answers before another is selected", metadata: [
+                "layer": "\(i + 1)", "media": "\(open.key)", "file": "\(open.url.lastPathComponent)", "after": "\(openDeadline)",
+            ])
+            notCome(i, open.key, "\(open.url.lastPathComponent) is not answering: the volume is slow or gone")
+        }
+    }
+
+    /// Loader thread (B277): the layer's status keeps describing its picture and gains why `key` did not come.
+    private func notCome(_ layer: Int, _ key: MediaKey, _ text: String) {
+        notCome[layer] = "\(key) \(text)"
+        layers[layer].mediaStatus.withLock { $0.error = notCome[layer] }
+    }
+
+    /// Loader thread: the playback of `key` on `layer`, or nil (status says why). A movie or a still file is not opened
+    /// here: `file` is set to it and the caller opens it on a thread of its own (B277), which a slow volume can hold up.
+    private func open(_ key: MediaKey, layer: Int, file: inout URL?) -> LayerPlayback? {
         var status = LayerMediaStatus()
         status.folder = key.folder
         status.file = key.file
-        defer { layers[layer].mediaStatus.withLock { $0 = status } }
+        // a file leaves the books on what the layer shows until its playback is handed over (takeAnswers)
+        let books = (syphonOpen[layer], captureOpen[layer])
+        defer { if file == nil { layers[layer].mediaStatus.withLock { $0 = status } } else { (syphonOpen[layer], captureOpen[layer]) = books } }
         syphonOpen[layer] = nil
         captureOpen[layer] = nil
         guard !key.isNone else { return nil }
@@ -706,26 +878,44 @@ public final class MediaLoader: @unchecked Sendable {
                 return LayerPlayback(key: key, live: input)
             }
             guard let path = entry.path else { throw RenderError.pipeline("media \(key) has no path") }
-            let url = URL(fileURLWithPath: path)
-            status.name = url.lastPathComponent
-            if StillSource.extensions.contains(url.pathExtension.lowercased()) {
-                let playback = LayerPlayback(key: key, still: try StillSource.load(url: url, device: device))
+            file = URL(fileURLWithPath: path)
+            return nil
+        } catch {
+            logger.error("media open failed", metadata: ["layer": "\(layer + 1)", "media": "\(key)", "error": "\(error)"])
+            status.error = error.clientText  // no file path for the monitor role (B25)
+            return nil
+        }
+    }
+
+    /// Loader thread: the playback of a file an open thread opened (or failed to) for `layer`; writes the layer's status.
+    private func finish(_ key: MediaKey, layer: Int, url: URL, _ opened: Result<OpenedFile, Error>) -> LayerPlayback? {
+        var status = LayerMediaStatus()
+        status.folder = key.folder
+        status.file = key.file
+        status.name = url.lastPathComponent
+        defer { layers[layer].mediaStatus.withLock { $0 = status } }
+        do {
+            let (source, reader): (MovieSource, AudioTrackReader?)
+            switch try opened.get() {
+            case .still(let still):
+                let playback = LayerPlayback(key: key, still: still)
                 status.kind = "still"
                 status.codec = url.pathExtension.lowercased()
                 status.width = playback.width
                 status.height = playback.height
                 return playback
+            case .movie(let movie, let audio): (source, reader) = (movie, audio)
             }
-            let source = try blockingAwait(priority: .userInitiated) { try await MovieSource.open(url: url, device: self.device, poolSize: self.ringCapacity) }
             let ring = FrameRing(capacity: ringCapacity)
             let decoder = LayerDecoder(source: source, ring: ring, logger: logger)
-            if let mixer, layer * 2 + 1 < mixer.channels.count {
-                let reader = try blockingAwait(priority: .userInitiated) { try await AudioTrackReader.open(url: url) }
-                if reader.hasAudio {
-                    parity[layer] ^= 1
-                    decoder.audio = (reader, mixer.channels[layer * 2 + parity[layer]])
-                    mixer.ensureRunning()
-                }
+            if let mixer, let reader, reader.hasAudio, layer * 2 + 1 < mixer.channels.count {
+                parity[layer] ^= 1
+                decoder.audio = (reader, mixer.channels[layer * 2 + parity[layer]])
+                mixer.ensureRunning()
+            }
+            // B342: a file whose frames fail shows it like a failed open; a dissolve's outgoing movie leaves the new one's alone
+            decoder.failing = { [renderLayer = layers[layer]] error in
+                renderLayer.mediaStatus.withLock { if $0.folder == key.folder, $0.file == key.file, $0.error != error { $0.error = error } }
             }
             decoder.start(name: "org.fanous.decode.\(layer + 1)")
             decoder.request(frame: 0, direction: 1)

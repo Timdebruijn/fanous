@@ -86,8 +86,16 @@ public final class Engine: @unchecked Sendable {
     private var canvasSwitch: CanvasSwitch?
     // Phase 7: show control
     private let timecodeClock = TimecodeClock()
-    private var ltc: LTCInput?
-    private var mtc: MTCInput?
+    /// Swapped by `applyTimecodeSettings` on Control while the feed queue reads them for `live.timecode` (B273).
+    private var ltc: LTCInput? {
+        get { timecodeInputs.withLock { $0.ltc } }
+        set { timecodeInputs.withLock { $0.ltc = newValue } }
+    }
+    private var mtc: MTCInput? {
+        get { timecodeInputs.withLock { $0.mtc } }
+        set { timecodeInputs.withLock { $0.mtc = newValue } }
+    }
+    private let timecodeInputs = Mutex<(ltc: LTCInput?, mtc: MTCInput?)>((nil, nil))
     private var lastTimecodeSettings = ShowCommands.TimecodeSettings()
     /// Timecode set to LTC (the switch aside), for readiness off the control queue (B137).
     private let ltcInUse = Atomic<Bool>(false)
@@ -681,6 +689,11 @@ public final class Engine: @unchecked Sendable {
                 // descriptors in use, to see growth in a soak (B268); the limit is in the log at start. Left out when
                 // /dev/fd cannot be listed, which is what happens at the limit: never a 0 that reads as "none open"
                 if let entries = try? FileManager.default.contentsOfDirectory(atPath: "/dev/fd") { m["openFiles"] = .number(Double(entries.count - 1)) }
+                // connections closed at the cap per address since start (B269)
+                // (no `citp` key without a CITP server, as with `--no-network`)
+                var refused: [String: JSONValue] = ["https": .number(Double(self.server?.refusedConnections ?? 0))]
+                if let citp = self.citp { refused["citp"] = .number(Double(citp.status.withLock { $0.refused })) }
+                m["refusedConnections"] = .object(refused)
                 // ticks that blocked on the GPU with the ring of 8 committed buffers full, since start (B105)
                 if let render = self.render {
                     m["completionWaits"] = .number(Double(render.compositor.completionWaits.load(ordering: .relaxed)))
@@ -1111,8 +1124,9 @@ public final class Engine: @unchecked Sendable {
         return ["port": .number(Double(s.port)), "clients": .array(s.clients.map { .string($0) }), "streams": .number(Double(s.streams)), "beaconsDropped": .number(Double(s.beaconsDropped)), "multicast": .array([.string(CITPMulticast.address), .string(CITPMulticast.addressSince2014)])]
     }
 
-    private func timecodeLive() -> JSONValue {
+    func timecodeLive() -> JSONValue {  // internal for the B273 test
         let s = timecodeClock.current()
+        let (ltc, mtc) = timecodeInputs.withLock { $0 }
         let mtcStatus = mtc?.status.withLock { $0 }
         return [
             "state": .string(s.state.rawValue), "source": .string(s.source), "value": .string(s.state == .off ? "--:--:--:--" : s.timecode.description),
@@ -1245,6 +1259,7 @@ public final class Engine: @unchecked Sendable {
             }
         }
         context.artnetError = artnet?.failure
+        context.oscError = osc?.failure
         context.sacnError = sacnError.withLock { $0 }
         context.projectProblem = projectProblem.withLock { $0 }
         let statuses = outputStatus.withLock { $0 }

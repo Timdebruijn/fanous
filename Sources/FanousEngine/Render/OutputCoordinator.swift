@@ -60,19 +60,27 @@ public enum OutputBinding {
 /// Presents another display from the latest completed canvas (DESIGN.md §4.5), paced like the drawable loop.
 final class SecondaryDriver: @unchecked Sendable {
     private var thread: PacedThread?
-    nonisolated(unsafe) var set: OutputSet
+    /// Swapped on the main actor at every mapping edit while the thread presents (B273): the writer locks, the thread
+    /// only tries and on a busy lock presents the set it took last, so it never waits and holds its own reference.
+    var set: OutputSet {
+        get { setBox.withLock { $0 } }
+        set { _ = setBox.withLock { old in defer { old = newValue }; return old } }  // the old set is freed after the unlock, not under it
+    }
+    private let setBox: Mutex<OutputSet>
 
     /// `uniforms`: one per frame in flight, which the layer's three drawables bound; each frame takes the next, as a
     /// preset morph changes them every frame while the previous frame may still read its own.
     init(layer: CAMetalLayer, hz: Double, compositor: Compositor, set: OutputSet, uniforms: [MTLBuffer]) {
-        self.set = set
+        setBox = Mutex(set)
         layer.maximumDrawableCount = 3  // see DrawableLoopDriver: two drawables block periodically against the display's clock
         layer.displaySyncEnabled = true
         let scratch = PresentParameters()  // this thread's only
         var next = 0  // this thread's only
+        var current = set  // this thread's only: the set it presents, taken from `setBox` when the lock is free
         thread = PacedThread(name: "org.fanous.output.secondary", hz: max(1, hz)) { [self] target in
             guard let drawable = layer.nextDrawable() else { return }
-            compositor.present(self.set, to: drawable, uniforms: uniforms[next], scratch: scratch, at: target)
+            self.setBox.withLockIfAvailable { current = $0 }
+            compositor.present(current, to: drawable, uniforms: uniforms[next], scratch: scratch, at: target)
             next = (next + 1) % uniforms.count
         }
     }
