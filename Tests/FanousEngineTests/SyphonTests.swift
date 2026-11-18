@@ -77,11 +77,6 @@ import Testing
         #expect(bytes != pattern)
         #expect(input.latestFrame?.bottomUp == true && input.latestFrame?.kind == .rgba)
 
-        // The directory learns about servers through distributed notifications, which need the main run loop. In a full
-        // parallel run other suites hold the main thread for seconds: AVFoundation parks it until the process's first
-        // capture-device lookup is done (2.6–6.7 s measured there, under 0.3 s alone), so this polls like any other wait.
-        #expect(await waitUntil { SyphonInput.directoryServers.contains { $0.serverName == name } })
-
         input.disconnect()
         #expect(input.latestFrame == nil)
     }
@@ -161,22 +156,39 @@ import Testing
         LiveCatalog.Entry(kind: .syphon, file: 0, source: app, name: server, runtimeID: uuid)
     }
 
-    /// The directory's servers reach the catalog as entries: app → source, server name → name, directory id → runtimeID.
-    @Test func catalogReadsTheDirectoryAsEntries() async throws {
+    /// A server description reaches the catalog as an entry: app → source, server name → name, id → runtimeID. B340: from a
+    /// private server's description, the same dictionary the directory hands out: an announced server would take a number
+    /// for good in every engine on the Mac, so no test announces one. What stays untested here is the vendored directory
+    /// and a real server's announce, which the B340 measurement between two engines covers.
+    @Test func catalogReadsAServerDescriptionAsAnEntry() throws {
         guard let device = MTLCreateSystemDefaultDevice() else { return }  // no GPU: skip
-        let name = "FanousTest-\(UUID().uuidString)"
-        let output = try SyphonOutput(name: name, device: device)
-        let input = SyphonInput(device: device)  // keeps the directory listening
+        let output = try SyphonOutput(name: "FanousTest", device: device)
+        defer { output.stop() }
+        let info = SyphonInput.ServerInfo(description: output.serverDescription)
+        let entry = LiveCatalog.syphonEntry(info)
+        #expect(info.serverName == "FanousTest" && !info.appName.isEmpty)
+        #expect(entry.kind == .syphon && entry.source == info.appName && entry.name == "FanousTest")
+        #expect(entry.runtimeID == output.uuid && output.uuid != nil)
+    }
+
+    /// B340: a server made without asking, and a render service's canvas, do not broadcast, so they never reach the
+    /// Syphon directory. `broadcasts` is the vendored server's own switch (`SyphonServerBase.m`, `_broadcasts`, set from
+    /// `SyphonServerOptionIsPrivate`); read through KVC, it is the framework's state, not a copy of our flag.
+    @Test @MainActor func serversOfTestsAndRenderServicesAreNotAnnounced() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { return }  // no GPU: skip
+        let plain = try SyphonOutput(name: "FanousTest", device: device)
+        var scene = SceneConfig()
+        (scene.canvasWidth, scene.canvasHeight, scene.audio, scene.syphonOutput) = (16, 9, false, true)
+        let service = try RenderService(
+            scene: scene, context: try MetalContext(), parameters: TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }, metrics: MetricsRing(capacity: 64),
+            logger: testLogger)
         defer {
-            input.disconnect()
-            output.stop()
+            plain.stop()
+            service.stop()
         }
-        // The main run loop again, held for seconds in a parallel run (see publishedTextureArrivesBottomUp…).
-        #expect(await waitUntil { LiveCatalog.syphonDirectory.contains { $0.name == name } })
-        let info = try #require(SyphonInput.directoryServers.first { $0.serverName == name })
-        let entry = try #require(LiveCatalog.syphonDirectory.first { $0.name == name })
-        #expect(entry.kind == .syphon && entry.source == info.appName && !entry.source.isEmpty)
-        #expect(entry.runtimeID == output.uuid && entry.runtimeID == info.uuid)
+        func broadcasts(_ output: SyphonOutput) -> Bool? { output.server.value(forKey: "broadcasts") as? Bool }
+        #expect(broadcasts(plain) == false, "a SyphonOutput not asked to announce broadcasts to the Syphon directory")
+        #expect(broadcasts(try #require(service.syphon)) == false, "a render service not asked to announce broadcasts its canvas")
     }
 
     @Test func catalogNumbersServersInAnnounceOrderAndKeepsNumbersWhenTheyGo() {

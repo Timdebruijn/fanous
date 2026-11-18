@@ -86,6 +86,7 @@ A restored Mac makes a new certificate, so every iPad warns once again.
 | out | UDP 4809 to 224.0.0.180 and 239.224.0.180 | CITP announcements every 5 s, TTL 1 (same subnet) | `--no-network` |
 | in | TCP, a port the system picks | CITP/MSEX for consoles; shown on the CITP line of System › Network | `--no-network` |
 | out | Bonjour | `_fanous._tcp` and `_https._tcp` with the port | `--no-network` |
+| out | Syphon directory | "Fanous – Canvas" announced to the Syphon apps on this Mac | `--no-network` |
 
 A firewall on the Mac (Little Snitch, the macOS firewall) must allow `fanousd`
 on the rows you use. The Mac and the console must be on the same subnet for
@@ -113,7 +114,7 @@ fanousd ingest DIR OUT.mov [--fps N] [--codec prores4444|prores422hq|prores422|h
 | `--port N` | HTTPS port, default 8443 |
 | `--web-root PATH` | The built web UI; otherwise `FANOUS_WEB_ROOT`, then the app bundle's copy, then a `web/dist` next to the source |
 | `--foreground` | Accepted for scripts; the engine runs attached to the terminal either way when started by hand |
-| `--no-network` | No Art-Net, sACN, OSC, CITP or Bonjour; HTTPS on 127.0.0.1 only; sync only on a port other than 8002 named in `settings.json`, on 127.0.0.1 (one that differs from the installed engine's port, if that was changed, is up to you). For tests and a second engine on one Mac |
+| `--no-network` | No Art-Net, sACN, OSC, CITP or Bonjour; HTTPS on 127.0.0.1 only; sync only on a port other than 8002 named in `settings.json`, on 127.0.0.1 (one that differs from the installed engine's port, if that was changed, is up to you); the Syphon canvas is not announced, so no other app (and no other engine) can list it. For tests and a second engine on one Mac |
 | `--scene FILE` | A JSON scene whose canvas size, frame rate, layer count, media, Who controls and library win over the project for this run (developers; see `docs/DEVELOPMENT.md`) |
 | `FANOUS_HOME=DIR` | Every path above under `DIR` instead of `~` (absolute path, else ignored with a warning) |
 | `FANOUS_LOG=debug` | Debug logging |

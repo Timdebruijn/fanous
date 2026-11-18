@@ -42,8 +42,10 @@ real install's key. `--no-network` leaves out Art-Net (6454), sACN (5568),
 OSC (8000), CITP and Bonjour, binds HTTPS to 127.0.0.1 only and keeps off the
 default sync port 8002, which the installed engine owns: no socket on it and no
 packet to it (B337). The rule knows 8002, not the port the installed engine was
-set to: a sync port you name in `settings.json` is yours to keep clear of it. A
-fresh home has every role open:
+set to: a sync port you name in `settings.json` is yours to keep clear of it. It
+also keeps the "Fanous – Canvas" Syphon server out of the Mac-wide Syphon
+directory, so the installed engine gives it no number in folder 0, 150–169
+(B340). A fresh home has every role open:
 
 ```bash
 FANOUS_HOME=$(mktemp -d) .build/debug/fanousd --foreground --no-network --port 18443
@@ -140,7 +142,13 @@ scene to override): folders `NNN_name/` and files `NNN_name.ext`, numbered
 transcode"; FSEvents keep the index current, metadata and thumbnails are
 cached under `~/Library/Application Support/Fanous/cache/`. Explicit scene
 `media` entries (test files) take precedence over the library.
-The canvas is published as the Syphon server "Fanous – Canvas".
+The canvas is published as the Syphon server "Fanous – Canvas" (announced in
+the Syphon directory only with the network on; under `--no-network` other apps
+cannot list it, B340). No test announces a Syphon server: `SyphonOutput` and
+`RenderService` announce only when asked, and every engine on the Mac would give
+an announced test server a number for good. A Syphon test never asks: it hands a
+client the server's `serverDescription` (`SyphonInput.connect(description:)`,
+`SyphonInput.ServerInfo(description:)`).
 
 Ingest: `fanousd ingest DIR out.mov` converts an image sequence from the
 command line; the engine's ingest queue (`/api/ingest`) transcodes uploads and

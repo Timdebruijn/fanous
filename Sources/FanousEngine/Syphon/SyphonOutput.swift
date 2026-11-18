@@ -25,10 +25,14 @@ public enum SyphonError: Error, CustomStringConvertible {
 /// flip draw shares one render pass descriptor across frames (`Sources/Syphon/VENDORED.md` local change 6) and swaps its
 /// surface texture on a size change. The other members are safe from any thread (Syphon locks internally).
 public final class SyphonOutput: @unchecked Sendable {
-    private let server: SyphonMetalServer
+    let server: SyphonMetalServer  // internal: a test asks it whether it broadcasts (B340)
 
-    public init(name: String, device: MTLDevice) throws {
-        guard let server = SyphonMetalServer(name: name, device: device, options: nil) else { throw SyphonError.serverFailed(name) }
+    /// `announced`: listed in the Mac-wide Syphon directory, where every Syphon app sees it and every other engine's
+    /// catalog gives it a number for good (B61, B69). Not announced (`SyphonServerOptionIsPrivate`), it answers no
+    /// directory request and a client reaches it only with `serverDescription` (B340: tests and test instances).
+    public init(name: String, device: MTLDevice, announced: Bool = false) throws {
+        let options: [String: Any]? = announced ? nil : [SyphonServerOptionIsPrivate: true]
+        guard let server = SyphonMetalServer(name: name, device: device, options: options) else { throw SyphonError.serverFailed(name) }
         self.server = server
     }
 

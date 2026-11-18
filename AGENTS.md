@@ -35,7 +35,8 @@ the rules for humans and `docs/DEVELOPMENT.md` the build details.
   `--no-network` keeps off the constant 8002 by itself, not off another port the installed engine was set to, so a
   port you name is yours to check; two instances that sync each name their own `sync.port` and the other's port as
   `sync.target` (`127.0.0.1:<port>`) in `settings.json`, since with the default target `broadcast` `--no-network`
-  sends nothing).
+  sends nothing). Such an instance announces no Syphon server, and no test announces one: an announced server takes
+  a permanent number in every engine on the Mac (B340).
 - Web: `cd web && npm run check && npm test && npm run build`; the Playwright e2e suite runs on CI.
 - A bug fix comes with a test that fails on the old code, and the PR says how the bug was reproduced.
 - Claims about performance or behaviour are measured, not assumed; the PR body says what was measured and how.

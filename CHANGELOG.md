@@ -39,6 +39,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   binds no sync socket and sends no sync packet there, at start or after `sync.set`; a port other than 8002 named in
   `settings.json` still syncs two engines on one Mac over 127.0.0.1, and an engine with the network on is unchanged
   (PR #395).
+- Fix (B340): test runs and test instances (`--no-network`) no longer take the installed engine's Syphon numbers
+  (folder 0, 150–169): their Syphon servers stay out of the Mac-wide Syphon directory (no test announces a server, and a
+  `--no-network` engine's "Fanous – Canvas" is found by no Syphon app); an engine with the network on announces it as
+  before (PR #396).
 
 ## 1.0.0-rc.14 — 2026-11-17
 

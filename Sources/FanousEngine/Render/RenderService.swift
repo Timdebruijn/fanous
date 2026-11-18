@@ -87,10 +87,12 @@ public final class RenderService {
     private var headlessDriver: HeadlessDriver?
 
     /// `syphonNumbers`: the project's Syphon numbering (B69), held for the servers before the first announce;
-    /// `captureNumbers` the capture devices' (B73), `screenNumbers` the displays'.
+    /// `captureNumbers` the capture devices' (B73), `screenNumbers` the displays'. `announceSyphon`: the canvas server is
+    /// listed in the Mac-wide Syphon directory; only the engine with the network on asks for it (B340).
     public init(
         scene: SceneConfig, context: MetalContext, parameters: TripleBuffer<ParameterSnapshotSlot>, metrics: MetricsRing, logger: Logger,
-        syphonNumbers: [LiveCatalog.Entry] = [], captureNumbers: [LiveCatalog.Entry] = [], screenNumbers: [LiveCatalog.Entry] = []
+        syphonNumbers: [LiveCatalog.Entry] = [], captureNumbers: [LiveCatalog.Entry] = [], screenNumbers: [LiveCatalog.Entry] = [],
+        announceSyphon: Bool = false
     ) throws {
         self.scene = scene
         self.context = context
@@ -119,7 +121,7 @@ public final class RenderService {
             return input
         }
         if scene.syphonOutput {
-            let output = try SyphonOutput(name: "Fanous – Canvas", device: device)
+            let output = try SyphonOutput(name: "Fanous – Canvas", device: device, announced: announceSyphon)
             syphon = output
             compositor.canvasPublishedWanted = { output.hasClients }
             compositor.canvasPublished = { texture, commandBuffer in

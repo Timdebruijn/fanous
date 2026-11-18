@@ -21,7 +21,8 @@ func usage() -> String {
       --foreground     run attached to the terminal (default when started by hand)
       --scene FILE     render a scene (JSON: canvasWidth, canvasHeight, fps, layerCount, media[{folder,file,path|syphon}], display);
                        its canvas size and fps override the project's for this run
-      --no-network     no Art-Net, sACN, OSC, CITP or Bonjour, HTTPS on 127.0.0.1 only (tests; next to another engine)
+      --no-network     no Art-Net, sACN, OSC, CITP or Bonjour, HTTPS on 127.0.0.1 only, Syphon canvas not in the Syphon
+                       directory (tests; next to another engine)
       --version        print the version and exit
     environment:
       FANOUS_HOME=DIR  use DIR (absolute) instead of the home directory for Application Support, logs, cache, TLS
