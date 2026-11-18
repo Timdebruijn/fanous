@@ -750,14 +750,20 @@ three existing modes and their footprints alone.
   source with a full set replaces the lowest-priority source that is not the
   winner (the oldest on a tie) when its priority is strictly higher, and is
   refused otherwise; the winner is never replaced, so "highest priority wins"
-  holds. HTP merges the same as without the cap while fewer than 16 sources sit
-  at the top priority; a 17th at that priority is refused and not merged.
-  Art-Net checks sequence numbers for at most 16 senders per universe; a new one
-  replaces the sender seen longest ago. "DMX receiving" logs each (universe,
-  source, priority) once while it holds, at most 32 new lines per tick; a pair
-  is forgotten when its universe or source goes. One "DMX limits reached"
-  warning says what the caps refused or replaced, again only after 10 s
-  without a refusal.
+  holds. The merge equals the uncapped one except when 16 sources already sit
+  at the top priority: a 17th at that priority is refused, so it neither joins
+  an HTP merge nor wins `highest` by arriving last. Art-Net checks sequence
+  numbers for at most 16 senders per universe; a new one replaces the sender
+  seen longest ago. With 17 or more live senders every packet replaces one, so
+  each sender comes back with a fresh gate: no packet is dropped, but reordered
+  packets are no longer filtered (the last-wins flicker of B306 anyway).
+  "DMX receiving" logs each (universe, source) once, not again for a new
+  priority, out of one budget for the engine: 512 lines that refill one per
+  15 s, then one "held back" line until it is full again. A pair whose source
+  went is forgotten and may be logged again only from that budget. While the
+  caps refuse, replace or evict anything, "DMX limits reached in the last
+  minute" comes once a minute with that minute's counts, and one line when a
+  minute passes with nothing.
 - `interface` filters by sender: a packet is accepted when its source address
   is in a subnet of that interface (getifaddrs, re-read on the 0.5 s tick
   while a universe names one, so adapters may come and go). sACN is one BSD

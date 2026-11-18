@@ -218,14 +218,16 @@ import Testing
         #expect(merger.slots(.htp)?[0] == 1 && merger.sourceName(.htp) == "late (p199)")
     }
 
-    /// HTP: the merge equals the uncapped one while fewer than 16 sources sit at the top priority. With 16 there, a 17th
-    /// at that priority is refused (not strictly higher) and does not join the merge, where without the cap it would.
-    @Test func htpWithSixteenSourcesAtTheTopRefusesASeventeenth() {
+    /// The one case where the cap changes the merge, in both modes: with 16 sources at the top priority a 17th at that
+    /// priority is refused (not strictly higher). Without the cap it would join the HTP merge, and win `highest` by
+    /// arriving last.
+    @Test func sixteenSourcesAtTheTopRefuseASeventeenthInBothModes() {
         var merger = SACNUniverseMerger()
         for n in 1...16 { _ = merger.apply(SACNData(cid: Self.cid(n), sourceName: "n\(n)", priority: 100, universe: 1, slots: [UInt8(n)]), at: Double(n)) }
-        #expect(merger.slots(.htp)?[0] == 16)
+        #expect(merger.slots(.htp)?[0] == 16 && merger.slots(.highest)?[0] == 16)
         do { let outcome = !merger.apply(SACNData(cid: Self.cid(17), sourceName: "n17", priority: 100, universe: 1, slots: [200]), at: 17); #expect(outcome) }
-        #expect(merger.slots(.htp)?[0] == 16)
+        #expect(merger.slots(.htp)?[0] == 16 && merger.slots(.highest)?[0] == 16)
+        #expect(merger.winner?.cid == Self.cid(16))
     }
 
     /// Art-Net: a 17th sender replaces the gate of the sender seen longest ago, not every gate, so the live senders'
@@ -237,6 +239,21 @@ import Testing
         #expect(!state.tracks("10.0.0.0") && state.tracks("10.0.0.1") && state.tracks("10.0.0.99"))
         do { let outcome = !state.apply(ArtDmx(sequence: 9, portAddress: 0, data: [2]), from: "10.0.0.5", at: 21); #expect(outcome, "a live sender's old sequence is still refused") }
         do { let outcome = state.apply(ArtDmx(sequence: 9, portAddress: 0, data: [2]), from: "10.0.0.0", at: 21); #expect(outcome, "the replaced one starts over") }
+    }
+
+    /// 17 live Art-Net senders in rotation: every packet replaces the oldest gate, so each sender re-enters with a fresh
+    /// one; no packet is dropped (the sequence check is in effect off for them), and the state stays at 16 senders.
+    @Test func seventeenLiveArtNetSendersDropNothingAndStayBounded() {
+        var state = ArtNetUniverseState()
+        var accepted = 0
+        for round in 0..<100 {
+            for n in 0..<17 where state.apply(ArtDmx(sequence: UInt8(round % 255 + 1), portAddress: 0, data: [1]), from: "10.0.0.\(n)", at: Double(round * 17 + n)) {
+                accepted += 1
+            }
+        }
+        #expect(accepted == 1700)
+        #expect((0..<17).filter { state.tracks("10.0.0.\($0)") }.count == ArtNetUniverseState.maxSenders)
+        #expect(state.replaced == 1700 - 16)
     }
 
     /// A wire universe that feeds a configured one (its pair) is held while the table is full.

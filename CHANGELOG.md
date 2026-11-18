@@ -12,7 +12,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Engine (B271): DMX state is bounded: sACN universes outside 1–63999 are refused; universes nobody patched or
   configured are capped at 256 held in all, sACN sources at 16 per universe (a higher priority replaces the lowest,
-  never the winner), and a flood logs one "DMX limits reached" warning and no line twice (PR #400).
+  never the winner), Art-Net sequence state at 16 senders; "DMX receiving" lines come from a budget of 512 that refills
+  one per 15 s, and the caps warn once a minute with counts (PR #400).
 - Engine (B265): decoding a corrupt HAP frame returns an error instead of reading outside the sample (a crash in
   the thumbnailer or on a layer); the vendored `hap.c` checks chunk offsets, sizes and section lengths (PR #392).
 - Release: 1.0.0-rc.14 is on GitHub as a pre-release with the signed, notarized dmg, built from main bcdb5f3

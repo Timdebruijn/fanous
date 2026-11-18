@@ -128,6 +128,8 @@ public struct ArtNetUniverseState: Sendable, Equatable {
         }
     }
     private var senders: [String: Sender] = [:]
+    /// Senders replaced by `maxSenders`; `UniverseTable` collects them.
+    var replaced = 0
     public private(set) var slots: [UInt8]?
     public private(set) var lastSeen: TimeInterval = 0
     public private(set) var lastSource = ""
@@ -139,6 +141,7 @@ public struct ArtNetUniverseState: Sendable, Equatable {
             let oldest = senders.min(by: { $0.value.lastSeen < $1.value.lastSeen })?.key
         {
             senders[oldest] = nil
+            replaced += 1
         }
         guard senders[source, default: Sender()].take(packet.sequence, at: time) else { return false }
         slots = packet.data + [UInt8](repeating: 0, count: 512 - packet.data.count)
@@ -186,9 +189,14 @@ public struct UniverseTable: Sendable {
     /// What the caps did since the last `takeRefused()`.
     public struct Refusals: Equatable, Sendable {
         /// Packets of universes refused by `maxEntries`, of new sACN sources refused by `SACNUniverseMerger.maxSources`,
-        /// and sACN sources replaced by a higher-priority newcomer.
-        public var universes = 0, sources = 0, replaced = 0
+        /// sACN sources replaced by a higher-priority newcomer, and Art-Net senders replaced past
+        /// `ArtNetUniverseState.maxSenders`.
+        public var universes = 0, sources = 0, replaced = 0, senders = 0
+        public init() {}
         public var isEmpty: Bool { self == Refusals() }
+        public mutating func add(_ other: Refusals) {
+            (universes, sources, replaced, senders) = (universes + other.universes, sources + other.sources, replaced + other.replaced, senders + other.senders)
+        }
     }
     private var refused = Refusals()
 
@@ -202,12 +210,10 @@ public struct UniverseTable: Sendable {
         return refused
     }
 
-    /// Whether the universe is held and `source` still feeds it: an sACN source by name at that priority, an Art-Net
-    /// sender (priority nil) by address.
-    public func has(_ id: UniverseID, source: String, priority: UInt8?) -> Bool {
+    /// Whether the universe is held and `source` still feeds it: an sACN source by name, an Art-Net sender by address.
+    public func has(_ id: UniverseID, source: String, sacn: Bool) -> Bool {
         guard let entry = entries[id] else { return false }
-        guard let priority else { return entry.artnet.tracks(source) }
-        return entry.sacn.sources.values.contains { $0.name == source && $0.priority == priority }
+        return sacn ? entry.sacn.sources.values.contains { $0.name == source } : entry.artnet.tracks(source)
     }
 
     public func settings(for id: UniverseID) -> UniverseSettings { settings[id] ?? UniverseSettings(for: id) }
@@ -313,14 +319,16 @@ public struct UniverseTable: Sendable {
     public mutating func expire(at time: TimeInterval) {
         let full = entries.count >= Self.maxEntries
         for id in entries.keys {
+            refused.sources += entries[id]?.sacn.refused ?? 0
+            refused.replaced += entries[id]?.sacn.replaced ?? 0
+            refused.senders += entries[id]?.artnet.replaced ?? 0
+            entries[id]?.sacn.refused = 0
+            entries[id]?.sacn.replaced = 0
+            entries[id]?.artnet.replaced = 0
             if full, !isKept(id), let seen = entries[id]?.lastSeen, time - seen > settings(for: id).lossTimeout {
                 entries[id] = nil
                 continue
             }
-            refused.sources += entries[id]?.sacn.refused ?? 0
-            refused.replaced += entries[id]?.sacn.replaced ?? 0
-            entries[id]?.sacn.refused = 0
-            entries[id]?.sacn.replaced = 0
             entries[id]?.sacn.expire(at: time)
             refresh(id, at: time)
         }

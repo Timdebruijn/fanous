@@ -59,23 +59,31 @@ public final class DMXStore: @unchecked Sendable {
     /// the cue engine pushes values only while a fade runs. Stamped with that time, as the resolvers that existed got
     /// it, so a console fed to the new resolver now wins under latest wins.
     private var cue: (outputs: [CueValue], at: TimeInterval) = ([], 0)
+    /// A source on a universe, as "DMX receiving" names it: sACN by source name, Art-Net by sender address.
     struct Announced: Hashable {
         var universe: UniverseID
         var source: String
-        var priority: UInt8?
+        var sacn: Bool
     }
-    /// The pairs "DMX receiving" has logged (B271). The tick drops a pair once it is no longer true (its universe
-    /// forgotten, its sACN source timed out, replaced or at another priority, its Art-Net sender replaced), so the set
-    /// is bounded by what the table holds, and a source that comes back is announced again.
+    /// The pairs "DMX receiving" has logged (B271), once per (universe, source): a new priority of a known source is
+    /// not announced again. The tick drops a pair once its source is gone (universe forgotten, sACN source timed out or
+    /// replaced, Art-Net sender replaced), so the set is bounded by what the table holds; such a pair may be announced
+    /// again, but only out of `lines`.
     private var announced: Set<Announced> = []
     private var lastAnnounced: Announced?
-    /// New pairs logged since the last tick, at most `announcementsPerTick`: a flood that keeps bringing new sources
-    /// cannot write a line per packet. A pair over the budget is logged at one of its packets after a later tick.
-    private var announcements = 0
-    static let announcementsPerTick = 32
-    /// When the caps last refused or replaced something: one warning, then none until they were quiet for `limitsQuiet`.
-    private var lastLimited: TimeInterval?
-    static let limitsQuiet: TimeInterval = 10
+    /// One budget for every "DMX receiving" line: a bucket of `linesBurst` that refills one line per `linesRefill`
+    /// seconds, so a flood of any shape logs at most the bucket once and then 240 lines an hour. Large enough that a
+    /// main and a backup console on all 256 universes the table holds unpatched are announced at once.
+    private var lines = Double(DMXStore.linesBurst)
+    private var linesRefilledAt: TimeInterval?
+    private var heldBack = false
+    static let linesBurst = 512
+    static let linesRefill: TimeInterval = 15
+    /// What the caps refused, replaced or evicted since the last warning, and when it was written: one warning a minute
+    /// while anything is, with the counts of that minute, and one line when a minute passed with nothing.
+    private var limits = UniverseTable.Refusals()
+    private var lastWarned: TimeInterval?
+    static let limitsEvery: TimeInterval = 60
     private var timer: DispatchSourceTimer?
     /// Render-side parameters, one write per resolved DMX packet (ADR-0002 hand-off): the compositor reads them,
     /// every other thread takes the copy (`withLatest`, B71).
@@ -307,13 +315,17 @@ public final class DMXStore: @unchecked Sendable {
         if uiClock[fixture] != nil { uiClock[fixture] = (0, now) }
     }
 
-    /// Logs a universe/source pair once while it is true (see `announced`); the text is only built for a new pair.
+    /// Logs a universe/source pair once (see `announced`) while `lines` has a line left; the text is only built then.
     private func announce(_ universe: UniverseID, source: String, priority: UInt8? = nil) {
-        let pair = Announced(universe: universe, source: source, priority: priority)
+        let pair = Announced(universe: universe, source: source, sacn: priority != nil)
         if pair == lastAnnounced { return }
         if !announced.contains(pair) {
-            guard announcements < Self.announcementsPerTick else { return }
-            announcements += 1
+            guard lines >= 1 else {
+                if !heldBack { logger.info("Further DMX receiving lines held back (log budget spent; refills one line per \(Int(Self.linesRefill)) s)") }
+                heldBack = true
+                return
+            }
+            lines -= 1
             announced.insert(pair)
             let what = priority.map { "\(universe) from \(source) (priority \($0))" } ?? "\(universe) from \(source)"
             logger.info("DMX receiving", metadata: ["universe": "\(what)"])
@@ -321,21 +333,27 @@ public final class DMXStore: @unchecked Sendable {
         lastAnnounced = pair
     }
 
-    /// On the tick: forgets the announced pairs that are no longer true, and warns once when the table's caps refused or
-    /// replaced something (B271), not per packet; again only after they were quiet for `limitsQuiet`.
+    /// On the tick: refills the line budget, forgets the announced pairs whose source is gone, and warns about the caps
+    /// (B271) once a minute while they refuse, replace or evict anything.
     private func noteLimits(at now: TimeInterval) {
-        announcements = 0
-        if announced.contains(where: { !table.has($0.universe, source: $0.source, priority: $0.priority) }) {
-            announced = announced.filter { table.has($0.universe, source: $0.source, priority: $0.priority) }
+        lines = min(Double(Self.linesBurst), lines + (now - (linesRefilledAt ?? now)) / Self.linesRefill)
+        linesRefilledAt = now
+        if lines >= Double(Self.linesBurst) { heldBack = false }  // the held-back line again only after a full refill
+        if announced.contains(where: { !table.has($0.universe, source: $0.source, sacn: $0.sacn) }) {
+            announced = announced.filter { table.has($0.universe, source: $0.source, sacn: $0.sacn) }
             lastAnnounced = nil
         }
-        let refused = table.takeRefused()
-        guard !refused.isEmpty else { return }
-        if lastLimited.map({ now - $0 >= Self.limitsQuiet }) ?? true {
-            logger.warning(
-                "DMX limits reached: \(refused.universes) packets of universes past \(UniverseTable.maxEntries) held refused; \(refused.sources) packets of new sACN sources refused and \(refused.replaced) sources replaced by a higher priority (\(SACNUniverseMerger.maxSources) per universe)")
+        limits.add(table.takeRefused())
+        guard lastWarned.map({ now - $0 >= Self.limitsEvery }) ?? !limits.isEmpty else { return }
+        if limits.isEmpty {
+            logger.info("DMX limits: nothing refused for a minute")
+            lastWarned = nil
+            return
         }
-        lastLimited = now
+        logger.warning(
+            "DMX limits reached in the last minute: \(limits.universes) packets of universes past \(UniverseTable.maxEntries) held refused; \(limits.sources) packets of new sACN sources refused, \(limits.replaced) sACN sources replaced by a higher priority (\(SACNUniverseMerger.maxSources) per universe); \(limits.senders) Art-Net senders replaced (\(ArtNetUniverseState.maxSenders) per universe)")
+        limits = UniverseTable.Refusals()
+        lastWarned = now
     }
 
     private func resolve(universe: UniverseID, at time: TimeInterval) {
