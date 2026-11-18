@@ -29,6 +29,7 @@ public enum MovieError: Error, CustomStringConvertible {
     case decoder(OSStatus)
     case unexpectedPixelFormat(OSType)
     case noSample
+    case unknownDuration
 
     public var description: String {
         switch self {
@@ -37,6 +38,7 @@ public enum MovieError: Error, CustomStringConvertible {
         case .decoder(let s): "VideoToolbox error \(s)"
         case .unexpectedPixelFormat(let f): "unexpected pixel format \(fourCCString(f))"
         case .noSample: "no sample"
+        case .unknownDuration: "unknown duration"
         }
     }
 }
@@ -149,9 +151,11 @@ public final class MovieSource: @unchecked Sendable {
         self.track = track
         let codec = CMFormatDescriptionGetMediaSubType(description)
         let dimensions = CMVideoFormatDescriptionGetDimensions(description)
+        // B264: a header timescale of 0 reads as a NaN duration; `Int(_:)` would trap on it (or on an absurd product)
+        guard let frameCount = Int(exactly: (duration * frameRate).rounded()) else { throw MovieError.unknownDuration }
         info = MovieInfo(
             width: Int(dimensions.width), height: Int(dimensions.height), pixelAspect: Self.pixelAspect(of: description), frameRate: frameRate,
-            frameCount: max(1, Int((duration * frameRate).rounded())), codec: codec)
+            frameCount: max(1, frameCount), codec: codec)
         guard let cursor = track.makeSampleCursorAtFirstSampleInDecodeOrder() else { throw MovieError.noSample }
         self.cursor = cursor
         generator = AVSampleBufferGenerator(asset: asset, timebase: nil)

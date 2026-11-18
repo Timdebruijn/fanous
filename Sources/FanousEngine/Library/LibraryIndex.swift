@@ -421,7 +421,9 @@ public final class LibraryIndex: @unchecked Sendable {
                 metadata.width = Int(upright.width.rounded())
                 metadata.height = Int(upright.height.rounded())
                 metadata.frameRate = Double(frameRate)
-                metadata.frameCount = Int((duration * Double(frameRate)).rounded())
+                // B264: a header timescale of 0 reads as a NaN duration; `Int(_:)` would trap on it at every start
+                guard let frameCount = Int(exactly: (duration * Double(frameRate)).rounded()) else { throw MovieError.unknownDuration }
+                metadata.frameCount = frameCount
                 if let description = descriptions.first {
                     let codec = CMFormatDescriptionGetMediaSubType(description)
                     metadata.codec = fourCCString(codec)
