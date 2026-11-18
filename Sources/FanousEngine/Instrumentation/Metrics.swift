@@ -14,7 +14,8 @@ public struct FrameRecord: Sendable {
     public var late = false
     public var missed: UInt16 = 0  // display-link ticks skipped before this one
     public var textureMisses: UInt16 = 0  // layers that had no decoded frame ready
-    /// Movie pictures drawn with a frame other than the one their clock asked for (B371): one per playback per tick.
+    /// Movie pictures queued with a frame other than the one their clock asked for (B371): one per playback per tick,
+    /// also on an idle tick and for a layer without a canvas.
     public var staleFrames: UInt16 = 0
     public var dmxToPhotonMicros: UInt32 = 0  // 0 = no new DMX this tick
     public var complete = false

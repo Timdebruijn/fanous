@@ -685,7 +685,7 @@ public final class Engine: @unchecked Sendable {
                     "showMode": .bool(self.showMode.isOn), "uptimeSeconds": .number(Date().timeIntervalSince(startedAt).rounded()),
                     "totalFrames": .number(Double(metrics.totalFrames.load(ordering: .relaxed))), "totalMissed": .number(Double(metrics.totalMissed.load(ordering: .relaxed))),
                     "totalLate": .number(Double(metrics.totalLate.load(ordering: .relaxed))), "pid": .number(Double(getpid())),
-                    // movie pictures drawn with a frame other than their clock's (B371): the second, since start, and per
+                    // movie pictures queued with a frame other than their clock's (B371): the second, since start, and per
                     // project layer since start (index 0 = layer 1)
                     "staleFrames": .number(Double(s.staleFrames)), "totalStaleFrames": .number(Double(metrics.totalStaleFrames.load(ordering: .relaxed))),
                     "layerStaleFrames": .array(self.projectLayers.map { .number(Double($0.staleFrames.load(ordering: .relaxed))) }),

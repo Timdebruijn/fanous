@@ -290,7 +290,8 @@ application firewall; in the run above that happened only after the delay.
 
 `/api/metrics` reports frame timing, the DMX-to-photon estimate and audio
 drift; `fanous-bench run` ramps layers until a frame drops or a layer shows a stale
-frame (`--effects
+frame (with `--dmx` stale frames are reported, not judged: the generator
+bounces and reverses, each a hold by design) (`--effects
 blur,edge`, `--dissolve 2`, `--ingest FILE` for the Phase 3/4 variants) and
 `scripts/bench.sh sweep|phase3|drift` runs the matrices.
 

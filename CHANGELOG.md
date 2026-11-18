@@ -10,7 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Engine: a movie layer drawn with a frame other than its clock's is counted: `/metrics` has `staleFrames`,
+- Engine: a movie layer queued with a frame other than its clock's is counted: `/metrics` has `staleFrames`,
   `totalStaleFrames` and `layerStaleFrames`, and `fanous-bench` reports stale frames and fails a step on any (B371)
   (PR #419).
 - Docs: the hardware table has the M6 (tier 1 Base; three external displays on the Mac mini and 153 or 170 GB/s

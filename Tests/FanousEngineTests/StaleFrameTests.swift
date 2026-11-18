@@ -11,7 +11,7 @@ import Testing
 
 /// B371: a movie picture drawn with a frame other than the one its clock asked for is counted (per tick in the metrics
 /// record, since start per layer). The real decoder, ring and playback on a compositor the test ticks, one frame per
-/// tick; nobody watches, so no GPU work. Metal: local only, not on the `--hosted` list.
+/// tick; nobody watches, so no GPU work unless a test asks for the drawn path. Metal: local only, not on `--hosted`.
 @Suite(.serialized, .cleansTempFiles)
 struct StaleFrameTests {
     static let capacity = 8
@@ -26,7 +26,8 @@ struct StaleFrameTests {
         private var sequence: UInt64 = 0
 
         /// A 20-frame 25 fps movie on a 25 fps compositor, playing in `mode`; the decode thread is not started yet.
-        init(mode: PlayMode, frames: Int = 20) async throws {
+        /// `drawn`: every tick encodes and commits a command buffer (the record written after the encode), else idle ticks.
+        init(mode: PlayMode, frames: Int = 20, drawn: Bool = false) async throws {
             let url = try tempDir("fanous-ingest-tests").appending(path: "clip.mov")
             try await writePatternMovie(to: url, size: (128, 64), fps: 25, frames: frames)
             let context = try MetalContext()
@@ -35,7 +36,7 @@ struct StaleFrameTests {
             playback = LayerPlayback(
                 key: MediaKey(folder: 1, file: 1), movie: source, decoder: LayerDecoder(source: source, ring: ring, logger: testLogger), ring: ring)
             (compositor, parameters) = try makeCompositor(context, size: (64, 36), fps: 25, metrics: metrics)
-            compositor.skipsIdleWork = true
+            compositor.skipsIdleWork = !drawn
             layer = .playing(playback)
             compositor.setLayers([layer])
             sequence += 1
@@ -55,7 +56,9 @@ struct StaleFrameTests {
 
         /// One tick; with `fed`, first waits until the decode thread has filled the ring (a decoder faster than the clock).
         func tick(fed: Bool = true) async {
-            if fed { await waitUntil(.seconds(2)) { self.ring.count == self.ring.capacity } }
+            if fed {
+                #expect(await waitUntil(.seconds(2)) { self.ring.count == self.ring.capacity }, "the decode thread filled the ring before tick \(ticks)")
+            }
             compositor.tick(target: 3600 + Double(ticks) / 25, drawable: nil)
             ticks += 1
         }
@@ -82,9 +85,10 @@ struct StaleFrameTests {
     }
 
     // a decoder that stops delivering: the frames already in the ring are shown on time, every tick after that holds the
-    // last one and is stale (the tick record, the total and the layer's count agree)
+    // last one and is stale (the tick record, the total and the layer's count agree). On the drawn path: the record
+    // written after the encode carries the count
     @Test func aDecoderThatFallsBehindCountsEveryHeldTick() async throws {
-        let rig = try await Rig(mode: .loopForward)
+        let rig = try await Rig(mode: .loopForward, drawn: true)
         rig.decoder.start(name: "test.decode")
         for _ in 0..<10 { await rig.tick() }
         #expect(rig.stale == 0)
@@ -96,11 +100,14 @@ struct StaleFrameTests {
             await rig.tick(fed: false)
             if rig.shown != rig.clockFrame { held += 1 }
         }
-        #expect(held == 20 - (StaleFrameTests.capacity - 3), "the 5 frames ahead were on time, the rest held")
+        // the 5 frames ahead are on time, the rest held; one more on time when the decode thread read `running` just
+        // before `stop()` and found the slot the first tick freed (it decodes at most that one frame, then exits)
+        #expect([15, 14].contains(held), "\(held)")
         #expect(rig.stale == held)
         #expect(rig.layer.staleFrames.load(ordering: .relaxed) == held)
         #expect(rig.metrics.summary(seconds: 1e6, now: 3600 + 1e5).staleFrames == held)
         #expect(rig.misses == 0, "a held frame is not a miss")
+        #expect(rig.metrics.summary(seconds: 1e6, now: 3600 + 1e5).idle == 0, "every tick took the drawn path")
     }
 
     // row B293: at a bounce turn the ring is full of frames on the old side and the decode thread sleeps on it; the layer
