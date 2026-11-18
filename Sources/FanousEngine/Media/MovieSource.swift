@@ -345,19 +345,26 @@ public final class MovieSource: @unchecked Sendable {
                 HapDecode(input, UInt(length), UInt32(index), Self.decodeCallback, nil, output.baseAddress!, UInt(output.count), &used, &format)
             }
             guard result == HapResult_No_Error.rawValue else { throw HAPError.decode(result) }
-            let blockBytes: Int
-            switch format {
-            case UInt32(HapTextureFormat_RGB_DXT1.rawValue), UInt32(HapTextureFormat_A_RGTC1.rawValue): blockBytes = 8
-            case UInt32(HapTextureFormat_RGBA_DXT5.rawValue), UInt32(HapTextureFormat_YCoCg_DXT5.rawValue), UInt32(HapTextureFormat_RGBA_BPTC_UNORM.rawValue): blockBytes = 16
-            default: throw HAPError.unsupportedTexture(format)
-            }
             let pool = index == 0 ? hapTextures0 : hapTextures1
             guard slot.poolIndex < pool.count else { throw HAPError.unsupportedTexture(format) }
             let texture = pool[slot.poolIndex]
+            // the texture the track promised: another block size would make Metal read a different number of bytes
+            let blockBytes: Int
+            switch (format, texture.pixelFormat) {
+            case (UInt32(HapTextureFormat_RGB_DXT1.rawValue), .bc1_rgba), (UInt32(HapTextureFormat_A_RGTC1.rawValue), .bc4_rUnorm): blockBytes = 8
+            case (UInt32(HapTextureFormat_RGBA_DXT5.rawValue), .bc3_rgba), (UInt32(HapTextureFormat_YCoCg_DXT5.rawValue), .bc3_rgba),
+                (UInt32(HapTextureFormat_RGBA_BPTC_UNORM.rawValue), .bc7_rgbaUnorm):
+                blockBytes = 16
+            default: throw HAPError.unsupportedTexture(format)
+            }
+            // B295: a w x h texture is ceil(w/4) x ceil(h/4) blocks, and Metal reads all of them; a frame that decoded fewer
+            // (encoded smaller than its track says) is refused rather than read past what HapDecode wrote
+            let bytesPerRow = (info.width + 3) / 4 * blockBytes
+            let needed = bytesPerRow * ((info.height + 3) / 4)
+            guard Int(used) >= needed else { throw HAPError.shortTexture(Int(used), needed) }
             hapOutput.withUnsafeBytes {
                 texture.replace(
-                    region: MTLRegionMake2D(0, 0, info.width, info.height), mipmapLevel: 0, withBytes: $0.baseAddress!,
-                    bytesPerRow: info.width / 4 * blockBytes)
+                    region: MTLRegionMake2D(0, 0, info.width, info.height), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: bytesPerRow)
             }
             if index == 0 { slot.texture0 = texture } else { slot.texture1 = texture }
         }

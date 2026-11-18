@@ -15,8 +15,9 @@ enum DXTCompressor {
         var bytesPerBlock: Int { self == .bc1 || self == .bc4 ? 8 : 16 }
     }
 
+    /// Whole blocks: a width or height that is no multiple of 4 still takes a full block at the edge (B295).
     static func compressedSize(width: Int, height: Int, format: Format) -> Int {
-        (width / 4) * (height / 4) * format.bytesPerBlock
+        ((width + 3) / 4) * ((height + 3) / 4) * format.bytesPerBlock
     }
 
     /// `bgra` is 8-bit BGRA, `width`/`height` multiples of 4. `output` must hold `compressedSize` bytes.

@@ -18,6 +18,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   old "Cannot Open" no longer stays; playable files keep their cache hit and thumbnail (PR #385).
 - Tests (B260): `scripts/test.sh` runs the suite in a fresh temporary `FANOUS_HOME`, so no test engine can write the real install's files (PR #386).
 - Docs: the stability review of 2026-11-18 is recorded as backlog rows B261 to B334 (74 rows; read in the code, nothing reproduced yet) (PR #387).
+- Fix (B295): a HAP file whose width or height is not a multiple of 4 (1366 × 768, 1920 × 1082) plays and gets a
+  thumbnail; the decode buffer and the upload count whole 4 × 4 blocks, and a frame that decodes to fewer bytes than its
+  track size needs is refused instead of read past its end (PR #N).
 
 ## 1.0.0-rc.14 — 2026-11-17
 

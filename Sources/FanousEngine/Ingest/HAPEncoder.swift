@@ -86,12 +86,15 @@ public enum HAPError: Error, CustomStringConvertible {
     case encode(UInt32)
     case decode(UInt32)
     case unsupportedTexture(UInt32)
+    /// The frame decoded to fewer bytes than the track's size needs (used, needed).
+    case shortTexture(Int, Int)
 
     public var description: String {
         switch self {
         case .encode(let code): "HapEncode failed (\(code))"
         case .decode(let code): "HapDecode failed (\(code))"
         case .unsupportedTexture(let format): "unsupported HAP texture format 0x\(String(format, radix: 16))"
+        case .shortTexture(let used, let needed): "HAP texture is \(used) bytes, the track's size needs \(needed)"
         }
     }
 }
