@@ -17,6 +17,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fix (B220): a file the library cached as not playable is probed once again after an update that rewords the reasons, so an
   old "Cannot Open" no longer stays; playable files keep their cache hit and thumbnail (PR #385).
 - Tests (B260): `scripts/test.sh` runs the suite in a fresh temporary `FANOUS_HOME`, so no test engine can write the real install's files (PR #386).
+- Fix (B261): a WebSocket `unsub` with an id that is negative or above 2^32 − 1 is ignored like an unknown id instead of stopping the engine; any client could send it after `hello` (PR #N).
 
 ## 1.0.0-rc.14 — 2026-11-17
 
