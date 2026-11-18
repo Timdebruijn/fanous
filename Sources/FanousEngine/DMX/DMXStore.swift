@@ -59,7 +59,13 @@ public final class DMXStore: @unchecked Sendable {
     /// the cue engine pushes values only while a fade runs. Stamped with that time, as the resolvers that existed got
     /// it, so a console fed to the new resolver now wins under latest wins.
     private var cue: (outputs: [CueValue], at: TimeInterval) = ([], 0)
+    /// The "DMX receiving" pairs logged, at most `UniverseTable.maxEntries` (B271); emptied when a burst the caps cut ends.
     private var announced: Set<String> = []
+    /// Pairs not logged because `announced` was full, since the last tick; whether the last tick dropped anything, and
+    /// whether the table refused anything then.
+    private var unannounced = 0
+    private var limited = false
+    private var refusing = false
     private var lastAnnounced: (universe: UniverseID, source: String, priority: UInt8?)?
     private var timer: DispatchSourceTimer?
     /// Render-side parameters, one write per resolved DMX packet (ADR-0002 hand-off): the compositor reads them,
@@ -96,6 +102,7 @@ public final class DMXStore: @unchecked Sendable {
     public init(patch: Patch, fixtures: Set<FixtureRef>? = nil, logger: Logger) {
         self.logger = logger
         self.patch = patch
+        table.patched = Set(patch.universes)
         for fixture in fixtures ?? Set(patch.entries.map(\.fixture)) { resolvers[fixture] = FixtureResolver(mode: fixture.mode) }
     }
 
@@ -121,6 +128,7 @@ public final class DMXStore: @unchecked Sendable {
     /// expiry clock.
     func tick(at now: TimeInterval) {
         table.expire(at: now)
+        noteLimits()
         var expired = false
         for i in shows.indices where shows[i].preset != 0 && now >= shows[i].until { (shows[i], expired) = ((0, 0), true) }
         if applyLoss(at: now, settingsChanged: false) || expired { publish(receivedAt: 0, at: now) }
@@ -295,8 +303,28 @@ public final class DMXStore: @unchecked Sendable {
         if let last = lastAnnounced, last.universe == universe, last.source == source, last.priority == priority { return }
         lastAnnounced = (universe, source, priority)
         let what = priority.map { "\(universe) from \(source) (priority \($0))" } ?? "\(universe) from \(source)"
-        guard announced.insert(what).inserted else { return }
+        guard !announced.contains(what) else { return }
+        guard announced.count < UniverseTable.maxEntries else {
+            unannounced += 1
+            return
+        }
+        announced.insert(what)
         logger.info("DMX receiving", metadata: ["universe": "\(what)"])
+    }
+
+    /// One warning when the caps start dropping (B271), not one per packet. When the table refuses nothing again the
+    /// burst is over, and the pairs logged are forgotten, so a console that comes later is announced.
+    private func noteLimits() {
+        let refused = table.takeRefused()
+        let dropped = refused + unannounced
+        unannounced = 0
+        if dropped > 0, !limited {
+            logger.warning(
+                "DMX limits reached: packets of new universes or sources ignored",
+                metadata: ["dropped": "\(dropped)", "limits": "\(UniverseTable.maxEntries) universes, \(SACNUniverseMerger.maxSources) sACN sources per universe"])
+        }
+        if refused == 0, refusing { announced.removeAll() }
+        (limited, refusing) = (dropped > 0, refused > 0)
     }
 
     private func resolve(universe: UniverseID, at time: TimeInterval) {
@@ -447,6 +475,7 @@ public final class DMXStore: @unchecked Sendable {
     func applyPatch(_ patch: Patch, fixtures: Set<FixtureRef>, at now: TimeInterval) {
         let previous = self.patch
         self.patch = patch
+        table.patched = Set(patch.universes)
         var kept: [FixtureRef: FixtureResolver] = [:]
         for fixture in fixtures {
             let was = previous.entry(for: fixture), entry = patch.entry(for: fixture), isNew = resolvers[fixture] == nil

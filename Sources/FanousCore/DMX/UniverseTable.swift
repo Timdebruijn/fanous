@@ -29,30 +29,41 @@ public struct SACNUniverseMerger: Sendable {
         public var lastSeen: TimeInterval
         public var slots: [UInt8]
         var gate = SequenceGate()
+
+        mutating func take(_ packet: SACNData, at time: TimeInterval) -> Bool {
+            guard gate.accept(packet.sequence) else { return false }
+            name = packet.sourceName
+            priority = packet.priority
+            lastSeen = time
+            slots = packet.slots + [UInt8](repeating: 0, count: 512 - packet.slots.count)
+            return true
+        }
     }
 
     public static let timeout: TimeInterval = 2.5
+    /// Sources tracked per universe (B271): enough for any rig's main, backup and a few nodes; a new one beyond it is
+    /// refused, so the cap never evicts the winner, and a place frees up when a source times out.
+    public static let maxSources = 16
     public private(set) var sources: [[UInt8]: Source] = [:]
+    /// Packets of new sources refused by `maxSources`; `UniverseTable` collects them.
+    var refused = 0
 
     public init() {}
 
-    /// Returns false when the packet was rejected (preview, non-DMX start code, out of sequence).
+    /// Returns false when the packet was rejected (preview, non-DMX start code, out of sequence, too many sources).
     public mutating func apply(_ packet: SACNData, at time: TimeInterval) -> Bool {
         guard packet.startCode == 0, !packet.isPreview else { return false }
         if packet.isTerminated {
             sources[packet.cid] = nil
             return true
         }
-        var source = sources[packet.cid] ?? Source(cid: packet.cid, name: packet.sourceName, priority: packet.priority, lastSeen: time, slots: [])
-        let accepted = source.gate.accept(packet.sequence)
-        if accepted {
-            source.name = packet.sourceName
-            source.priority = packet.priority
-            source.lastSeen = time
-            source.slots = packet.slots + [UInt8](repeating: 0, count: 512 - packet.slots.count)
+        guard sources.index(forKey: packet.cid) != nil || sources.count < Self.maxSources else {
+            refused += 1
+            return false
         }
-        sources[packet.cid] = source
-        return accepted
+        // in place: a copy taken out and stored back would copy the dictionary on every packet
+        return sources[packet.cid, default: Source(cid: packet.cid, name: packet.sourceName, priority: packet.priority, lastSeen: time, slots: [])]
+            .take(packet, at: time)
     }
 
     public mutating func expire(at time: TimeInterval) {
@@ -95,9 +106,9 @@ public struct ArtNetUniverseState: Sendable, Equatable {
     public init() {}
 
     public mutating func apply(_ packet: ArtDmx, from source: String, at time: TimeInterval) -> Bool {
-        var gate = gates[source] ?? SequenceGate()
-        let accepted = packet.sequence == 0 || gate.accept(packet.sequence)
-        gates[source] = gate
+        // the gates only remember sequence numbers: past 16 senders they start over rather than grow (B271)
+        if gates.index(forKey: source) == nil, gates.count >= SACNUniverseMerger.maxSources { gates.removeAll(keepingCapacity: true) }
+        let accepted = packet.sequence == 0 || gates[source, default: SequenceGate()].accept(packet.sequence)
         guard accepted else { return false }
         slots = packet.data + [UInt8](repeating: 0, count: 512 - packet.data.count)
         lastSeen = time
@@ -117,7 +128,11 @@ public struct UniverseStatus: Equatable, Sendable {
 /// All received universes, both transports, routed by the per-universe settings (B28): a wire packet feeds its own
 /// universe (unless that one listens only to the other transport) and every universe that has it as its `pair`.
 /// Used on the DMX queue; copies are cheap enough for the UI's 20 Hz snapshots.
+/// At most `maxEntries` universes hold state (B271): one the patch or the settings use always gets in; any other (heard,
+/// nothing patched: the Patch screen's warning, the DMX monitor) only while fewer are held, and such a universe is
+/// forgotten once it has been silent for its loss timeout while the table is full.
 public struct UniverseTable: Sendable {
+    public static let maxEntries = 256
     private struct Entry: Sendable {
         var artnet = ArtNetUniverseState()
         var sacn = SACNUniverseMerger()
@@ -132,8 +147,21 @@ public struct UniverseTable: Sendable {
     private var routes: [UniverseID: [UniverseID]] = [:]
     /// Senders a universe accepts (its `interface`); no entry = every sender.
     private var filters: [UniverseID: [IPv4Subnet]] = [:]
+    /// The universes the patch uses: always held, never forgotten.
+    public var patched: Set<UniverseID> = []
+    /// Packets refused by the caps since the last `takeRefused()`.
+    private var refused = 0
 
     public init() {}
+
+    private func isKept(_ id: UniverseID) -> Bool { patched.contains(id) || settings[id] != nil || routes[id] != nil }
+
+    /// Packets refused by `maxEntries` and `SACNUniverseMerger.maxSources` since the last call (sources: up to the last
+    /// `expire`).
+    public mutating func takeRefused() -> Int {
+        defer { refused = 0 }
+        return refused
+    }
 
     public func settings(for id: UniverseID) -> UniverseSettings { settings[id] ?? UniverseSettings(for: id) }
 
@@ -183,9 +211,11 @@ public struct UniverseTable: Sendable {
     ) -> [UniverseID] {
         var fed: [UniverseID] = []
         for id in targets(of: wire) where accepts(id, from: sender) {
-            var entry = entries[id] ?? Entry()
-            if accept(&entry) { fed.append(id) }
-            entries[id] = entry
+            guard entries.index(forKey: id) != nil || entries.count < Self.maxEntries || isKept(id) else {
+                refused += 1
+                continue
+            }
+            if accept(&entries[id, default: Entry()]) { fed.append(id) }
         }
         for id in fed { count(id, at: time) }
         return fed
@@ -232,8 +262,16 @@ public struct UniverseTable: Sendable {
 
     /// sACN sources silent for 2.5 s are dropped (the E1.31 source timeout, so a backup console takes over on time);
     /// a universe's `lossTimeout` decides only when the universe counts as lost.
+    /// A full table also forgets the universes nobody uses that have been silent for their loss timeout (B271).
     public mutating func expire(at time: TimeInterval) {
+        let full = entries.count >= Self.maxEntries
         for id in entries.keys {
+            if full, !isKept(id), let seen = entries[id]?.lastSeen, time - seen > settings(for: id).lossTimeout {
+                entries[id] = nil
+                continue
+            }
+            refused += entries[id]?.sacn.refused ?? 0
+            entries[id]?.sacn.refused = 0
             entries[id]?.sacn.expire(at: time)
             refresh(id, at: time)
         }

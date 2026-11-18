@@ -741,6 +741,14 @@ three existing modes and their footprints alone.
   source (and, with `both`, Art-Net) silent that long leaves the merge, so a
   lower-priority backup takes over on time. `lossTimeout` only decides when
   the universe counts as lost (status, readiness, hold on signal loss).
+- Bounds (B271): the parser refuses sACN universes outside 1–63999. The table
+  holds at most 256 universes: a patched or configured one (or a wire universe
+  that feeds one) always gets in, any other only while fewer are held, and a
+  full table forgets the unused ones silent for their loss timeout. A universe
+  tracks at most 16 sACN sources: a new one beyond is refused, never the winner
+  evicted, and a place frees at the source timeout; Art-Net sequence gates start
+  over past 16 senders. "DMX receiving" logs at most 256 pairs; a cap that drops
+  something logs one "DMX limits reached" warning per burst.
 - `interface` filters by sender: a packet is accepted when its source address
   is in a subnet of that interface (getifaddrs, re-read on the 0.5 s tick
   while a universe names one, so adapters may come and go). sACN is one BSD

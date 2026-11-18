@@ -147,4 +147,66 @@ import Testing
         table.expire(at: 10)
         #expect(table.slots(for: UniverseID(.sacn, 5)) == nil)
     }
+
+    // MARK: B271, bounded DMX state
+
+    static func cid(_ n: Int) -> [UInt8] { [UInt8](repeating: 0, count: 12) + withUnsafeBytes(of: UInt32(n).bigEndian, Array.init) }
+
+    /// E1.31 universes run 1–63999; 0 and 64000–65535 are reserved and refused at parse.
+    @Test func outOfRangeUniverseIsRefusedAtParse() throws {
+        for universe in [UInt16(0), 64000, 65535] {
+            let bytes = SACNData(cid: Self.cidA, sourceName: "x", universe: universe, slots: [1]).encoded()
+            #expect(throws: SACN.ParseError.self, "universe \(universe)") { try SACN.parse(bytes) }
+        }
+        for universe in [UInt16(1), 63999] {
+            let packet = SACNData(cid: Self.cidA, sourceName: "x", universe: universe, slots: [1])
+            #expect(try SACN.parse(packet.encoded()) == .data(packet))
+        }
+    }
+
+    /// A burst naming every universe leaves at most 256 universes held; one the settings use always gets in, and once the
+    /// burst has been silent for its loss timeout a newly heard universe takes a freed place.
+    @Test func aBurstOfUniversesLeavesABoundedTable() {
+        var table = UniverseTable()
+        let kept = UniverseID(.sacn, 63999)
+        var settings = UniverseSettings(for: kept)
+        settings.lossTimeout = 10
+        table.configure([kept: settings], at: 0)
+        for universe in 1...63998 { _ = table.apply(sacn: SACNData(cid: Self.cidA, sourceName: "burst", universe: UInt16(universe), slots: [1]), at: 0) }
+        for port in 0...32767 { _ = table.apply(artnet: ArtDmx(portAddress: UInt16(port), data: [1]), from: "10.0.0.9", at: 0) }
+        #expect(table.knownUniverses.count <= 256, "\(table.knownUniverses.count) universes held")
+        #expect(table.apply(sacn: SACNData(cid: Self.cidB, sourceName: "desk", universe: 63999, slots: [7]), at: 1) == [kept])
+        #expect(table.apply(sacn: SACNData(cid: Self.cidB, sourceName: "desk", universe: 7000, slots: [7]), at: 1).isEmpty, "the table is full")
+        table.expire(at: 3)  // the burst has been silent for 3 s, more than its 2.5 s loss timeout
+        #expect(table.apply(sacn: SACNData(cid: Self.cidB, sourceName: "desk", universe: 7000, slots: [7]), at: 3) == [UniverseID(.sacn, 7000)])
+        #expect(table.status(for: kept, at: 3).active, "the universe with settings is not forgotten")
+        #expect(table.knownUniverses.count <= 256)
+    }
+
+    /// Rotating CIDs on one universe: at most 16 sources are tracked, a new one beyond that is refused (never the winner
+    /// evicted), and a source silent for the 2.5 s source timeout frees its place.
+    @Test func rotatingSourcesLeaveABoundedSetAndTheWinner() {
+        var merger = SACNUniverseMerger()
+        _ = merger.apply(SACNData(cid: Self.cidA, sourceName: "desk", priority: 120, universe: 1, slots: [50]), at: 0)
+        for n in 1...1000 { _ = merger.apply(SACNData(cid: Self.cid(n), sourceName: "rogue \(n)", priority: 200, universe: 1, slots: [9]), at: 1) }
+        #expect(merger.sources.count <= 16, "\(merger.sources.count) sources")
+        #expect(merger.sources[Self.cidA] != nil)
+        // the first 15 rogues got in at priority 200 and win, as before; when they fall silent the desk wins again
+        _ = merger.apply(SACNData(cid: Self.cidA, sourceName: "desk", priority: 120, sequence: 1, universe: 1, slots: [51]), at: 3)
+        merger.expire(at: 3.6)
+        #expect(merger.winner?.cid == Self.cidA && merger.slots?[0] == 51)
+        #expect(merger.sources.count == 1)
+        do { let outcome = merger.apply(SACNData(cid: Self.cidB, sourceName: "backup", priority: 100, universe: 1, slots: [3]), at: 3.7); #expect(outcome) }
+        #expect(merger.sources.count == 2 && merger.winner?.cid == Self.cidA)
+    }
+
+    /// A full source set never evicts the current winner: a 17th source, even at a higher priority, is refused.
+    @Test func aFullSourceSetKeepsTheWinner() {
+        var merger = SACNUniverseMerger()
+        _ = merger.apply(SACNData(cid: Self.cidA, sourceName: "desk", priority: 150, universe: 1, slots: [50]), at: 0)
+        for n in 1...15 { _ = merger.apply(SACNData(cid: Self.cid(n), sourceName: "node \(n)", priority: 100, universe: 1, slots: [9]), at: 0) }
+        #expect(merger.sources.count == 16)
+        do { let outcome = !merger.apply(SACNData(cid: Self.cidB, sourceName: "late", priority: 199, universe: 1, slots: [1]), at: 0.1); #expect(outcome) }
+        #expect(merger.winner?.cid == Self.cidA && merger.slots?[0] == 50)
+    }
 }
