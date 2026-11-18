@@ -742,13 +742,22 @@ three existing modes and their footprints alone.
   lower-priority backup takes over on time. `lossTimeout` only decides when
   the universe counts as lost (status, readiness, hold on signal loss).
 - Bounds (B271): the parser refuses sACN universes outside 1–63999. The table
-  holds at most 256 universes: a patched or configured one (or a wire universe
-  that feeds one) always gets in, any other only while fewer are held, and a
-  full table forgets the unused ones silent for their loss timeout. A universe
-  tracks at most 16 sACN sources: a new one beyond is refused, never the winner
-  evicted, and a place frees at the source timeout; Art-Net sequence gates start
-  over past 16 senders. "DMX receiving" logs at most 256 pairs; a cap that drops
-  something logs one "DMX limits reached" warning per burst.
+  holds at most 256 universes, counting all of them, but a patched or configured
+  universe (or a wire universe that feeds a configured one) always gets in, so
+  only the unused ones are capped: heard, nothing patched, no settings. While
+  the table is full, each 0.5 s tick forgets every unused universe silent past
+  its loss timeout at once. A universe tracks at most 16 sACN sources. A new
+  source with a full set replaces the lowest-priority source that is not the
+  winner (the oldest on a tie) when its priority is strictly higher, and is
+  refused otherwise; the winner is never replaced, so "highest priority wins"
+  holds. HTP merges the same as without the cap while fewer than 16 sources sit
+  at the top priority; a 17th at that priority is refused and not merged.
+  Art-Net checks sequence numbers for at most 16 senders per universe; a new one
+  replaces the sender seen longest ago. "DMX receiving" logs each (universe,
+  source, priority) once while it holds, at most 32 new lines per tick; a pair
+  is forgotten when its universe or source goes. One "DMX limits reached"
+  warning says what the caps refused or replaced, again only after 10 s
+  without a refusal.
 - `interface` filters by sender: a packet is accepted when its source address
   is in a subnet of that interface (getifaddrs, re-read on the 0.5 s tick
   while a universe names one, so adapters may come and go). sACN is one BSD

@@ -100,6 +100,76 @@ struct DMXStateBoundsTests {
         #expect(receiving <= 16, "\(receiving) receiving lines")
     }
 
+    /// The review's rig: a desk at priority 100 drives the patched S 1, junk at priority 50 holds the other 15 places,
+    /// the desk restarts under a new CID while its old one is still tracked: it is in control on its first packet.
+    @Test func aDeskReturningUnderANewCIDBeatsAFullJunkSet() {
+        let lines = HTTPSServerLogTests.Lines()
+        let store = Self.store(.standard(layers: 1, outputs: 1, transport: .sacn), lines)
+        store.queue.sync {
+            store.receive(sacn: SACNData(cid: Self.desk, sourceName: "desk", priority: 100, universe: 1, slots: [77, 0]), at: 0)
+            for n in 1...15 { store.receive(sacn: SACNData(cid: Self.cid(n), sourceName: "junk", priority: 50, universe: 1, slots: [1]), at: 0.5) }
+            store.receive(sacn: SACNData(cid: Self.cid(9999), sourceName: "desk", priority: 100, universe: 1, slots: [33, 0]), at: 1)
+        }
+        #expect(Self.intensity(store, at: 1) == 33 << 8)
+        store.queue.sync { store.tick(at: 1.2) }
+        #expect(Self.count(lines, "DMX limits reached") == 1)
+        #expect(lines.all.withLock { $0.contains { $0.hasPrefix("DMX limits reached") && $0.contains("1 sources replaced") } })
+    }
+
+    /// A main and a backup console on 130 universes are 260 pairs and no flood: every pair is logged (over a few ticks,
+    /// 32 new lines per tick), nothing warns, and a console that comes afterwards is announced.
+    @Test func manyLegitimatePairsWarnNothingAndALateConsoleIsAnnounced() {
+        let lines = HTTPSServerLogTests.Lines()
+        let store = Self.store(.standard(layers: 1, outputs: 1), lines)
+        store.queue.sync {
+            var t = 0.0
+            for round in 0..<12 {
+                for universe in 1...130 {
+                    for (cid, name) in [(Self.cid(1), "main"), (Self.cid(2), "backup")] {
+                        store.receive(sacn: SACNData(cid: cid, sourceName: name, sequence: UInt8(round), universe: UInt16(universe), slots: [1]), at: t)
+                    }
+                }
+                t += 0.5
+                store.tick(at: t)
+            }
+            store.receive(sacn: SACNData(cid: Self.desk, sourceName: "late", universe: 4000, slots: [1]), at: t)
+        }
+        #expect(Self.count(lines, "DMX receiving") == 261)
+        #expect(Self.count(lines, "DMX limits reached") == 0)
+        #expect(lines.all.withLock { $0.contains { $0.contains("sacn:4000 from late") } })
+    }
+
+    /// A flood in bursts with a quiet half second between them: the second burst writes no line twice, and the warning
+    /// comes once.
+    @Test func aBurstyFloodLogsNoLineTwice() {
+        let lines = HTTPSServerLogTests.Lines()
+        let store = Self.store(.standard(layers: 1, outputs: 1), lines)
+        store.queue.sync {
+            for (burst, at) in [(1, 0.1), (2, 1.1), (3, 2.1)] {
+                for universe in 1...2000 {
+                    store.receive(sacn: SACNData(cid: Self.cid(universe), sourceName: "burst", sequence: UInt8(burst), universe: UInt16(universe), slots: [1]), at: at)
+                }
+                store.tick(at: at + 0.4)
+                store.tick(at: at + 0.9)
+            }
+        }
+        let receiving = lines.all.withLock { $0.filter { $0.hasPrefix("DMX receiving") } }
+        #expect(Set(receiving).count == receiving.count, "a line written twice")
+        #expect(receiving.count <= 3 * 32)
+        #expect(Self.count(lines, "DMX limits reached") == 1)
+    }
+
+    /// A universe patched later (`applyPatch`, not only `init`) gets in while the table is full.
+    @Test func aUniversePatchedLaterGetsInWhileTheTableIsFull() {
+        let store = Self.store(.standard(layers: 1, outputs: 1), HTTPSServerLogTests.Lines())
+        store.queue.sync {
+            for universe in 1...1000 { store.receive(sacn: SACNData(cid: Self.cid(universe), sourceName: "burst", universe: UInt16(universe), slots: [1]), at: 0) }
+        }
+        store.setPatch(Patch(entries: store.currentPatch.entries + [PatchEntry(fixture: .layer(2), universe: UniverseID(.sacn, 5000), address: 1)]))
+        store.queue.sync { store.receive(sacn: SACNData(cid: Self.desk, sourceName: "desk", universe: 5000, slots: [1]), at: 0.1) }
+        #expect(store.snapshot(at: 0.1).universes.contains { $0.id == "sacn:5000" && $0.active })
+    }
+
     /// Allocations of 100 packets from a known source on a patched universe, with 1 and with 16 sources tracked there.
     /// Printed, not asserted: the padded slots, the routing arrays and the source name still allocate per packet (B307).
     @Test(.mallocCounter) func printKnownSourcePacketMallocs() throws {

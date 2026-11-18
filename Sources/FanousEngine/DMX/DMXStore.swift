@@ -59,14 +59,23 @@ public final class DMXStore: @unchecked Sendable {
     /// the cue engine pushes values only while a fade runs. Stamped with that time, as the resolvers that existed got
     /// it, so a console fed to the new resolver now wins under latest wins.
     private var cue: (outputs: [CueValue], at: TimeInterval) = ([], 0)
-    /// The "DMX receiving" pairs logged, at most `UniverseTable.maxEntries` (B271); emptied when a burst the caps cut ends.
-    private var announced: Set<String> = []
-    /// Pairs not logged because `announced` was full, since the last tick; whether the last tick dropped anything, and
-    /// whether the table refused anything then.
-    private var unannounced = 0
-    private var limited = false
-    private var refusing = false
-    private var lastAnnounced: (universe: UniverseID, source: String, priority: UInt8?)?
+    struct Announced: Hashable {
+        var universe: UniverseID
+        var source: String
+        var priority: UInt8?
+    }
+    /// The pairs "DMX receiving" has logged (B271). The tick drops a pair once it is no longer true (its universe
+    /// forgotten, its sACN source timed out, replaced or at another priority, its Art-Net sender replaced), so the set
+    /// is bounded by what the table holds, and a source that comes back is announced again.
+    private var announced: Set<Announced> = []
+    private var lastAnnounced: Announced?
+    /// New pairs logged since the last tick, at most `announcementsPerTick`: a flood that keeps bringing new sources
+    /// cannot write a line per packet. A pair over the budget is logged at one of its packets after a later tick.
+    private var announcements = 0
+    static let announcementsPerTick = 32
+    /// When the caps last refused or replaced something: one warning, then none until they were quiet for `limitsQuiet`.
+    private var lastLimited: TimeInterval?
+    static let limitsQuiet: TimeInterval = 10
     private var timer: DispatchSourceTimer?
     /// Render-side parameters, one write per resolved DMX packet (ADR-0002 hand-off): the compositor reads them,
     /// every other thread takes the copy (`withLatest`, B71).
@@ -128,7 +137,7 @@ public final class DMXStore: @unchecked Sendable {
     /// expiry clock.
     func tick(at now: TimeInterval) {
         table.expire(at: now)
-        noteLimits()
+        noteLimits(at: now)
         var expired = false
         for i in shows.indices where shows[i].preset != 0 && now >= shows[i].until { (shows[i], expired) = ((0, 0), true) }
         if applyLoss(at: now, settingsChanged: false) || expired { publish(receivedAt: 0, at: now) }
@@ -298,33 +307,35 @@ public final class DMXStore: @unchecked Sendable {
         if uiClock[fixture] != nil { uiClock[fixture] = (0, now) }
     }
 
-    /// Logs a universe/source pair once; the string is only built when the pair differs from the previous packet's.
+    /// Logs a universe/source pair once while it is true (see `announced`); the text is only built for a new pair.
     private func announce(_ universe: UniverseID, source: String, priority: UInt8? = nil) {
-        if let last = lastAnnounced, last.universe == universe, last.source == source, last.priority == priority { return }
-        lastAnnounced = (universe, source, priority)
-        let what = priority.map { "\(universe) from \(source) (priority \($0))" } ?? "\(universe) from \(source)"
-        guard !announced.contains(what) else { return }
-        guard announced.count < UniverseTable.maxEntries else {
-            unannounced += 1
-            return
+        let pair = Announced(universe: universe, source: source, priority: priority)
+        if pair == lastAnnounced { return }
+        if !announced.contains(pair) {
+            guard announcements < Self.announcementsPerTick else { return }
+            announcements += 1
+            announced.insert(pair)
+            let what = priority.map { "\(universe) from \(source) (priority \($0))" } ?? "\(universe) from \(source)"
+            logger.info("DMX receiving", metadata: ["universe": "\(what)"])
         }
-        announced.insert(what)
-        logger.info("DMX receiving", metadata: ["universe": "\(what)"])
+        lastAnnounced = pair
     }
 
-    /// One warning when the caps start dropping (B271), not one per packet. When the table refuses nothing again the
-    /// burst is over, and the pairs logged are forgotten, so a console that comes later is announced.
-    private func noteLimits() {
-        let refused = table.takeRefused()
-        let dropped = refused + unannounced
-        unannounced = 0
-        if dropped > 0, !limited {
-            logger.warning(
-                "DMX limits reached: packets of new universes or sources ignored",
-                metadata: ["dropped": "\(dropped)", "limits": "\(UniverseTable.maxEntries) universes, \(SACNUniverseMerger.maxSources) sACN sources per universe"])
+    /// On the tick: forgets the announced pairs that are no longer true, and warns once when the table's caps refused or
+    /// replaced something (B271), not per packet; again only after they were quiet for `limitsQuiet`.
+    private func noteLimits(at now: TimeInterval) {
+        announcements = 0
+        if announced.contains(where: { !table.has($0.universe, source: $0.source, priority: $0.priority) }) {
+            announced = announced.filter { table.has($0.universe, source: $0.source, priority: $0.priority) }
+            lastAnnounced = nil
         }
-        if refused == 0, refusing { announced.removeAll() }
-        (limited, refusing) = (dropped > 0, refused > 0)
+        let refused = table.takeRefused()
+        guard !refused.isEmpty else { return }
+        if lastLimited.map({ now - $0 >= Self.limitsQuiet }) ?? true {
+            logger.warning(
+                "DMX limits reached: \(refused.universes) packets of universes past \(UniverseTable.maxEntries) held refused; \(refused.sources) packets of new sACN sources refused and \(refused.replaced) sources replaced by a higher priority (\(SACNUniverseMerger.maxSources) per universe)")
+        }
+        lastLimited = now
     }
 
     private func resolve(universe: UniverseID, at time: TimeInterval) {

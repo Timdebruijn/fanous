@@ -183,15 +183,15 @@ import Testing
         #expect(table.knownUniverses.count <= 256)
     }
 
-    /// Rotating CIDs on one universe: at most 16 sources are tracked, a new one beyond that is refused (never the winner
-    /// evicted), and a source silent for the 2.5 s source timeout frees its place.
+    /// Rotating CIDs on one universe: at most 16 sources are tracked, a new one beyond that at no higher priority than
+    /// the lowest tracked is refused (the winner never goes), and a source silent for the 2.5 s timeout frees its place.
     @Test func rotatingSourcesLeaveABoundedSetAndTheWinner() {
         var merger = SACNUniverseMerger()
         _ = merger.apply(SACNData(cid: Self.cidA, sourceName: "desk", priority: 120, universe: 1, slots: [50]), at: 0)
-        for n in 1...1000 { _ = merger.apply(SACNData(cid: Self.cid(n), sourceName: "rogue \(n)", priority: 200, universe: 1, slots: [9]), at: 1) }
+        for n in 1...1000 { _ = merger.apply(SACNData(cid: Self.cid(n), sourceName: "rogue \(n)", priority: 100, universe: 1, slots: [9]), at: 1) }
         #expect(merger.sources.count <= 16, "\(merger.sources.count) sources")
-        #expect(merger.sources[Self.cidA] != nil)
-        // the first 15 rogues got in at priority 200 and win, as before; when they fall silent the desk wins again
+        #expect(merger.sources[Self.cidA] != nil && merger.winner?.cid == Self.cidA)
+        // when the 15 rogues that got in fall silent, the desk is alone again
         _ = merger.apply(SACNData(cid: Self.cidA, sourceName: "desk", priority: 120, sequence: 1, universe: 1, slots: [51]), at: 3)
         merger.expire(at: 3.6)
         #expect(merger.winner?.cid == Self.cidA && merger.slots?[0] == 51)
@@ -200,13 +200,55 @@ import Testing
         #expect(merger.sources.count == 2 && merger.winner?.cid == Self.cidA)
     }
 
-    /// A full source set never evicts the current winner: a 17th source, even at a higher priority, is refused.
-    @Test func aFullSourceSetKeepsTheWinner() {
+    /// A full set: a newcomer at a priority strictly above the lowest non-winner replaces it (the oldest on a tie) and,
+    /// above the winner, wins; at or below it, it is refused. The winner is never replaced, and the set stays at 16.
+    @Test func aFullSourceSetTakesAHigherPriorityAndKeepsTheWinner() {
         var merger = SACNUniverseMerger()
         _ = merger.apply(SACNData(cid: Self.cidA, sourceName: "desk", priority: 150, universe: 1, slots: [50]), at: 0)
-        for n in 1...15 { _ = merger.apply(SACNData(cid: Self.cid(n), sourceName: "node \(n)", priority: 100, universe: 1, slots: [9]), at: 0) }
+        for n in 1...15 { _ = merger.apply(SACNData(cid: Self.cid(n), sourceName: "node \(n)", priority: 100, universe: 1, slots: [9]), at: Double(n) / 100) }
         #expect(merger.sources.count == 16)
-        do { let outcome = !merger.apply(SACNData(cid: Self.cidB, sourceName: "late", priority: 199, universe: 1, slots: [1]), at: 0.1); #expect(outcome) }
-        #expect(merger.winner?.cid == Self.cidA && merger.slots?[0] == 50)
+        do { let outcome = !merger.apply(SACNData(cid: Self.cid(99), sourceName: "equal", priority: 100, universe: 1, slots: [1]), at: 0.5); #expect(outcome) }
+        do { let outcome = merger.apply(SACNData(cid: Self.cidB, sourceName: "late", priority: 199, universe: 1, slots: [1]), at: 0.6); #expect(outcome) }
+        #expect(merger.sources.count == 16 && merger.sources[Self.cid(1)] == nil, "the oldest of the lowest went")
+        #expect(merger.winner?.cid == Self.cidB && merger.slots?[0] == 1)
+        // every newcomer at 150 replaces a node at 100, never the desk at 150 nor the winner at 199
+        for n in 100...130 { _ = merger.apply(SACNData(cid: Self.cid(n), sourceName: "x", priority: 150, universe: 1, slots: [2]), at: 0.7) }
+        #expect(merger.sources.count == 16 && merger.sources[Self.cidB] != nil && merger.sources[Self.cidA] != nil)
+        #expect(merger.sources.values.allSatisfy { $0.priority >= 150 })
+        #expect(merger.slots(.htp)?[0] == 1 && merger.sourceName(.htp) == "late (p199)")
+    }
+
+    /// HTP: the merge equals the uncapped one while fewer than 16 sources sit at the top priority. With 16 there, a 17th
+    /// at that priority is refused (not strictly higher) and does not join the merge, where without the cap it would.
+    @Test func htpWithSixteenSourcesAtTheTopRefusesASeventeenth() {
+        var merger = SACNUniverseMerger()
+        for n in 1...16 { _ = merger.apply(SACNData(cid: Self.cid(n), sourceName: "n\(n)", priority: 100, universe: 1, slots: [UInt8(n)]), at: Double(n)) }
+        #expect(merger.slots(.htp)?[0] == 16)
+        do { let outcome = !merger.apply(SACNData(cid: Self.cid(17), sourceName: "n17", priority: 100, universe: 1, slots: [200]), at: 17); #expect(outcome) }
+        #expect(merger.slots(.htp)?[0] == 16)
+    }
+
+    /// Art-Net: a 17th sender replaces the gate of the sender seen longest ago, not every gate, so the live senders'
+    /// sequence numbers are still checked.
+    @Test func artNetSendersPastTheCapReplaceTheOldest() {
+        var state = ArtNetUniverseState()
+        for n in 0..<16 { _ = state.apply(ArtDmx(sequence: 10, portAddress: 0, data: [1]), from: "10.0.0.\(n)", at: Double(n)) }
+        _ = state.apply(ArtDmx(sequence: 10, portAddress: 0, data: [1]), from: "10.0.0.99", at: 20)
+        #expect(!state.tracks("10.0.0.0") && state.tracks("10.0.0.1") && state.tracks("10.0.0.99"))
+        do { let outcome = !state.apply(ArtDmx(sequence: 9, portAddress: 0, data: [2]), from: "10.0.0.5", at: 21); #expect(outcome, "a live sender's old sequence is still refused") }
+        do { let outcome = state.apply(ArtDmx(sequence: 9, portAddress: 0, data: [2]), from: "10.0.0.0", at: 21); #expect(outcome, "the replaced one starts over") }
+    }
+
+    /// A wire universe that feeds a configured one (its pair) is held while the table is full.
+    @Test func aRoutedWireUniverseIsKeptWhileTheTableIsFull() {
+        var table = UniverseTable()
+        let a0 = UniverseID(.artnet, 0)
+        var settings = UniverseSettings(for: a0)
+        settings.protocols = .sacn
+        settings.pair = UniverseID(.sacn, 7000)
+        table.configure([a0: settings], at: 0)
+        for universe in 1...6000 { _ = table.apply(sacn: SACNData(cid: Self.cidA, sourceName: "burst", universe: UInt16(universe), slots: [1]), at: 0) }
+        #expect(table.knownUniverses.count == 256)
+        #expect(table.apply(sacn: SACNData(cid: Self.cidB, sourceName: "desk", universe: 7000, slots: [7]), at: 0.1).sorted() == [a0, UniverseID(.sacn, 7000)])
     }
 }
