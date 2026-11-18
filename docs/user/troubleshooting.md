@@ -221,7 +221,8 @@ The Layers screen shows the problem in the row's Media column.
 | The row reads | Do |
 |---|---|
 | "no file N in folder M" | The number does not exist or the file is not playable: Media screen, that folder: invalid name, needs transcode, unreadable ("AVFoundation cannot open .webm files": a `.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`, `.f4v`, `.divx`, convert it on another machine) ([Media library](media-library.md)) |
-| A decoder error ("unsupported codec", "VideoToolbox error", "no video track") | Transcode the file again or replace it, then send Control 24–31 (Clear error) on layer channel 50 from the console and back to 0 |
+| A decoder error ("unsupported codec", "VideoToolbox error", "no video track") | Transcode the file again or replace it, then select another clip on the layer and this one again: the file is opened anew |
+| A decoder error on a movie that was playing ("HapDecode failed", "VideoToolbox error") | For half a second or more no frame of the file decoded. The layer shows the last frame that did. When not one frame of a newly selected file decodes from its start frame, the layer goes on playing the clip it showed before. The error goes by itself when a frame decodes again, or when another clip is selected. Transcode the file again or replace it |
 | "no capture device / display / Syphon server numbered N" | Nothing has that number in folder 0: Inputs screen, **Number** ([Live inputs](live-inputs.md)) |
 | "not running", "in use by another app", "no signal" | The live input: plugged in, not open in another app, a signal on the card |
 | "M/N <file> is not answering: the volume is slow or gone" | The file selected as M/N did not open within 2 seconds: its disk is asleep, unplugged or a network share that went away, or a cloud copy not downloaded. The layer keeps its picture, and the row still describes that picture with this error added (today the row's chip reads a red "Decoder error" for a movie or still that keeps playing, and the whole text for a live picture); the clip plays if it opens while it is still selected; other layers change as usual meanwhile. If the file then fails to open, the error becomes "M/N <file>: <why>" and the layer still keeps its picture until another selection. Select another clip or bring the volume back; keep show media on the Mac's own disk |
@@ -261,6 +262,19 @@ Play mode 112 to 127 is Freeze on the layer; Master Control 64 to 127 is
 Freeze all; Output Control 128 to 191 is Freeze. A frozen output shows a
 test pattern live over the held frame. A still image, or a live input that
 lost its signal, holds its last frame by design.
+
+A movie whose frames do not decode holds the last good frame. A bad frame
+in the middle of a clip is skipped: the frame before it stays up a moment
+longer. The log says `decode failed, frame skipped` with the frame number
+and a count, at most once every 10 seconds. A bad frame where playback
+starts (the start of the file, a seek, a retrigger, a cue jump) is not
+skipped: the layer keeps what it showed before, the frame before the seek
+or the previous clip, until a frame decodes. When no frame decodes for half
+a second, the Layers row shows the decoder error (see above) and the log
+says `decode failing`, then `decode still failing` with a count, and
+`decode recovered` when a frame decodes again. These lines too come at most
+once every 10 seconds, each with the number of lines held back, so a
+damaged clip that loops does not fill the log.
 
 ## Outputs stay black although the layers play
 

@@ -97,6 +97,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Tests (B351): the swift CI job also runs `DMXStateBoundsTests`, `HAPFrameBoundsTests`, `HTTPSPipeliningTests` and `MetricsMicrosTests`, which were added today and ran locally only (PR #405).
 - Tests (B354): `cueRunnerResumesTheStateAndReportsChanges` waits for the runner's report and lets the DMX queue run before it reads the report list and the snapshot (red once on CI) (PR #407).
 - Tests (B353): the swift CI job (`scripts/test.sh --hosted`) runs the tests one at a time, tests that block or compute for long run off the cooperative pool (`@Test(.offPool)`), the heaviest hosted tests are cheaper, a `waitUntil` that comes close to its deadline says so in the log, and `scripts/test.sh` ends with the ten slowest tests; three CI runs showed no test near its deadline (one was red on the unrelated race fixed in PR #407), where parallel runs had one hold after 9.96 s of 10 (PR #406).
+- Engine (B278, B342): a movie frame that does not decode is skipped at once and the decode thread pauses 15 ms, instead
+  of the same frame being tried for ever every 50 ms with a log line each time; half a second without a decoded frame
+  shows the decoder error on the layer (Layers screen, readiness) until a frame decodes again or the clip changes; the
+  skip lines, and the failing, still-failing and recovered lines, each come at most once every 10 s with a count of what
+  was held back (a recovered line always follows the failing line it pairs with); a VideoToolbox session that went
+  invalid is made again, at most once a second (PR #411).
 
 ## 1.0.0-rc.14 — 2026-11-17
 
