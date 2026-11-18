@@ -9,8 +9,8 @@ import FanousCore
 import Logging
 import Synchronization
 
-/// Show mode on disk (`show-state.json`): written on enter (refreshed every 30 s, and when the current cue changes), removed on leave — and every
-/// clean stop leaves show mode. A file still there at start means the last run ended uncleanly (crash, kill -9, power
+/// Show mode on disk (`show-state.json`): written on enter (refreshed every 30 s, and when the current cue changes),
+/// removed on leave — and every clean stop leaves show mode. A file still there at start means the last run ended uncleanly (crash, kill -9, power
 /// loss) or was an Engine › Restart Engine: show mode resumes when the file is young enough (`maxAge`).
 public struct ShowModeState: Codable, Equatable, Sendable {
     public var on: Bool
@@ -129,8 +129,8 @@ public final class ShowModeController: @unchecked Sendable {
         onChange?(false)
     }
 
-    /// The cue list's current cue changed (B284): written at once while on. Called on the feed queue, never on the cue
-    /// queue (a timing path).
+    /// The cue list's current cue changed (B284): written at once while on. The engine calls it on the feed queue (and
+    /// once at a resume, before entering), never on the cue queue (a timing path).
     public func setCue(_ id: UUID?) {
         state.withLock { s in
             guard s.cue != id else { return }
