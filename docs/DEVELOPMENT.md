@@ -39,7 +39,9 @@ instead of the home directory (`DIR/Library/Application Support/Fanous`,
 `DIR/Movies/Fanous Library`); a keychain-stored TLS key gets a tag of its own
 (`org.fanous.tls@DIR`), so `FANOUS_HOME=DIR fanousd reset-tls` never touches the
 real install's key. `--no-network` leaves out Art-Net (6454), sACN (5568),
-OSC (8000), CITP and Bonjour and binds HTTPS to 127.0.0.1 only (a fresh home has
+OSC (8000), CITP and Bonjour, binds HTTPS to 127.0.0.1 only and keeps the
+"Fanous – Canvas" Syphon server out of the Mac-wide Syphon directory, so the
+installed engine gives it no number in folder 0, 150–169 (B340; a fresh home has
 every role open):
 
 ```bash
@@ -136,7 +138,12 @@ scene to override): folders `NNN_name/` and files `NNN_name.ext`, numbered
 transcode"; FSEvents keep the index current, metadata and thumbnails are
 cached under `~/Library/Application Support/Fanous/cache/`. Explicit scene
 `media` entries (test files) take precedence over the library.
-The canvas is published as the Syphon server "Fanous – Canvas".
+The canvas is published as the Syphon server "Fanous – Canvas" (announced in
+the Syphon directory only with the network on; under `--no-network` other apps
+cannot list it, B340). Tests make their Syphon servers private the same way
+(`SyphonOutput` and `RenderService` announce only when asked); the one test that
+reads the directory announces a server under the fixed name `FanousTest`, so an
+engine on the Mac numbers it once, not once per run.
 
 Ingest: `fanousd ingest DIR out.mov` converts an image sequence from the
 command line; the engine's ingest queue (`/api/ingest`) transcodes uploads and

@@ -35,6 +35,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fix (B295): a HAP file whose width or height is not a multiple of 4 (1366 × 768, 1920 × 1082) plays and gets a
   thumbnail; the decode buffer and the upload count whole 4 × 4 blocks, and a frame that decodes to fewer bytes than its
   track size needs is refused instead of read past its end (PR #394).
+- Fix (B340): test runs and test instances (`--no-network`) no longer take the installed engine's Syphon numbers
+  (folder 0, 150–169): their Syphon servers stay out of the Mac-wide Syphon directory, except one test server under the
+  fixed name `FanousTest`; an engine with the network on announces "Fanous – Canvas" as before (PR #NNN).
 
 ## 1.0.0-rc.14 — 2026-11-17
 

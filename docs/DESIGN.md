@@ -1339,7 +1339,10 @@ the same app and server name takes it again, a rename keeps it, past 20 a new
 server gets none (`live.syphon.unnumbered`). Identity while running is the directory's UUID, so two
 servers with one name (two engines' canvases) get a number each and connect
 to the right one (`SyphonInput.connect(uuid:)`); the engine's own canvas
-server is left out. The catalog lives in `RenderService` (as long as the
+server is left out. Since B340 the canvas is announced in the Syphon
+directory only by an engine with the network on; under `--no-network` (test
+instances) and in tests a server is private (`SyphonServerOptionIsPrivate`), so
+other engines never number it. The catalog lives in `RenderService` (as long as the
 engine) and is published as `live.syphon.servers` `[{file, app, server,
 running, gone?}]`. `MediaLoader` resolves 0/150–169 through it with `liveFactory(uuid)`
 (status name "Syphon: App/Server", codec `syphon`); a scene `media`
