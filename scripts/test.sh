@@ -20,6 +20,8 @@ cd "$(dirname "$0")/.."
 # that neither waits real time nor runs off the pool is a candidate; on a loaded CI runner the wait blurs the list.
 # `--hosted`: the suites a hosted CI runner can run: Core, and the engine suites that need no GPU, media hardware or
 # display (the GPU tests of a mixed file live in its …GPUTests suite). Add a suite here once it passes on macos-26.
+# They run one at a time: on a 3-core runner the polls of a parallel run resumed only once the pool had worked through
+# every test queued at the start, and a 10 s deadline held after 9.96 s (B353); serial, the queue wait is zero.
 if [[ "${1:-}" == "--hosted" ]]; then
   shift
   hosted='AudioLifecycleTests|BonjourTests|CITPServerTests|ClientErrorTextTests|DXTCompressorTests|DisplayModeSwitcherTests'
@@ -29,7 +31,7 @@ if [[ "${1:-}" == "--hosted" ]]; then
   hosted+='|RESTAuthTests|RoleAuthTests|ShowControlTests|SlaveClockTests|StateServerTests|StateStoreRedactionTests|StateStoreTests'
   hosted+='|SyncReceiverTests|SyncSenderTests|TLSIdentityTests|TripleBufferTests|UDPFlowTests|UDPSendTests|UIExpiryTests'
   hosted+='|UniverseSettingsEngineTests|WallCommandsTests|WebSocketHandshakeTests|WebSocketSessionTests'
-  set -- --filter "FanousCoreTests|FanousEngineTests\.($hosted)/" "$@"
+  set -- --no-parallel --filter "FanousCoreTests|FanousEngineTests\.($hosted)/" "$@"
 fi
 # Test engines get a throwaway FANOUS_HOME, so an AppPaths write lands there and not in the real install (B240); a
 # FANOUS_HOME already set is kept.
