@@ -135,7 +135,9 @@ public final class LibraryIndex: @unchecked Sendable {
     /// version it was written with is not this one (a cache from before this field has none); entries without a reason
     /// are not stale and keep their hit and thumbnail. BUMP THIS whenever a reason text changes. The texts are made in
     /// `probe` (still, movie, sequence and unknown-type reasons) and in `openFailureText` (the movie open failure, also
-    /// used by the ingest queue), and in `loadCache` (`stoppedTwice`).
+    /// used by the ingest queue), and in `loadCache` (`stoppedTwice`). An entry with `stoppedTwice` is never stale (B267): a
+    /// re-probe after an update would cost two more stops of the engine per such file; it goes when the file changes.
+    /// Rewording `stoppedTwice` itself makes the old entries stale, with that cost.
     static let reasonsVersion = 1
     static let stoppedTwice = "the engine stopped twice while reading it: replace or re-save the file to try again"
 
@@ -188,7 +190,8 @@ public final class LibraryIndex: @unchecked Sendable {
     public func stop() {
         guard running.exchange(false, ordering: .relaxed) else { return }
         probeWake.signal()
-        _ = probeExited.wait(timeout: .now() + .seconds(10))
+        // B267: a probe still running after the wait is cut off by a stop of our own (exit follows), not a crash: no blame
+        if probeExited.wait(timeout: .now() + .seconds(10)) == .timedOut { try? FileManager.default.removeItem(at: markerFile) }
         probeThread = nil  // its block holds the index: a replaced index (B51) must be freed
         if let stream {
             FSEventStreamStop(stream)
@@ -280,7 +283,7 @@ public final class LibraryIndex: @unchecked Sendable {
                 }
                 if item.status == .invalid {
                     invalidCount += 1
-                } else if let cached = cache[Self.cacheKey(item)], cached.reason == nil || cached.reasonsVersion == Self.reasonsVersion {
+                } else if let cached = cache[Self.cacheKey(item)], cached.reason == nil || cached.reasonsVersion == Self.reasonsVersion || cached.reason == Self.stoppedTwice {
                     item.metadata = cached.metadata
                     item.thumbnail = cached.thumbnail
                     item.status = cached.status
@@ -315,12 +318,15 @@ public final class LibraryIndex: @unchecked Sendable {
 
     // MARK: Probing (library thread)
 
-    /// The trailing version re-probes every file once when the metadata gains a field (v2: `pixelAspect`, B146).
+    /// The trailing version re-probes every file once when the metadata gains a field (v2: `pixelAspect`, B146). Bumping it
+    /// also re-probes the files marked `stoppedTwice` (B267): each can stop the engine twice more before it is marked again.
     static func cacheKey(_ item: LibraryItem) -> String { "\(item.path)|\(Int(item.modified))|\(item.size)|v2" }
 
     private func probeLoop() {
         while running.load(ordering: .relaxed) {
             guard let path = state.withLock({ $0.pendingProbes.isEmpty ? nil : $0.pendingProbes.removeFirst() }) else {
+                // B267: nothing in work, so a marker kept from the last stop (its file changed or went) blames no one
+                try? FileManager.default.removeItem(at: markerFile)
                 probeWake.wait()
                 continue
             }
@@ -332,9 +338,14 @@ public final class LibraryIndex: @unchecked Sendable {
     private func probe(_ url: URL) {
         guard let item = state.withLock({ s in s.snapshot.folders.lazy.flatMap(\.items).first { $0.path == url.path } }) else { return }
         let key = Self.cacheKey(item)
-        let stops = state.withLock { $0.stoppedIn?.key == key ? $0.stoppedIn!.stops : 0 }
+        let stops = state.withLock { s -> Int in
+            guard let stoppedIn = s.stoppedIn, stoppedIn.key == key else { return 0 }
+            s.stoppedIn = nil  // read once: a second probe of the file (a rescan meanwhile) starts from 0 again
+            return stoppedIn.stops
+        }
         // ponytail: one small file written and removed per probe, beside the full cache rewrite of B328; not atomic, a torn
-        // marker reads as none (the file is then not blamed)
+        // marker reads as none (the file is then not blamed). One marker per cache directory: while the root is replaced
+        // (B51) two indexes probe on two threads and each removes the other's marker, so a stop in that window blames no one.
         try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
         try? JSONEncoder().encode(ProbeMarker(path: item.path, key: key, stops: stops)).write(to: markerFile)
         defer { try? FileManager.default.removeItem(at: markerFile) }
@@ -476,14 +487,15 @@ public final class LibraryIndex: @unchecked Sendable {
         guard let data = try? Data(contentsOf: markerFile), let marker = try? JSONDecoder().decode(ProbeMarker.self, from: data),
             marker.path.hasPrefix(root.path + "/")
         else { return }
-        try? FileManager.default.removeItem(at: markerFile)
         if marker.stops + 1 >= 2 {
             logger.warning("the engine stopped twice while reading this library file: listed as unreadable until it changes", metadata: ["file": "\(marker.path)"])
             state.withLock {
                 $0.cache[marker.key] = CacheEntry(metadata: nil, thumbnail: nil, status: .unreadable, reason: Self.stoppedTwice, reasonsVersion: Self.reasonsVersion)
             }
-            saveCache()
+            saveCache()  // before the marker goes: a stop in between keeps the count
+            try? FileManager.default.removeItem(at: markerFile)
         } else {
+            // the marker stays until a probe overwrites it or the queue drains: a stop before that leaves the count at one
             logger.warning("the engine stopped while reading this library file: it is read once more", metadata: ["file": "\(marker.path)"])
             state.withLock { $0.stoppedIn = (marker.key, marker.stops + 1) }
         }

@@ -12,7 +12,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Engine (B267): a library file or an ingest job that the engine stopped in twice (a crash, a kill, a power cut) is
   listed as unreadable or failed with the reason and not tried a third time, so it cannot keep the engine from
-  starting; the original stays where it is, and a changed file or a re-queued job is tried again (PR #401).
+  starting; failing moves or deletes no file, a job whose output was complete is done, and a changed file or a
+  re-queued job is tried again (PR #401).
 - Engine (B265): decoding a corrupt HAP frame returns an error instead of reading outside the sample (a crash in
   the thumbnailer or on a layer); the vendored `hap.c` checks chunk offsets, sizes and section lengths (PR #392).
 - Release: 1.0.0-rc.14 is on GitHub as a pre-release with the signed, notarized dmg, built from main bcdb5f3

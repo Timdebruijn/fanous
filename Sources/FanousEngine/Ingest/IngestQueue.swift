@@ -119,16 +119,26 @@ public final class IngestQueue: @unchecked Sendable {
                     changed = true
                     continue
                 }
+                // B267: a stop after the output took its name, before `done` was saved: done, and the original goes as
+                // configured if it had not yet (`execute` refuses a destination that exists, so this job wrote it)
+                if !job.inPlace, files.fileExists(atPath: job.destination.path), !files.fileExists(atPath: temporary.path) {
+                    jobs[index].state = .done
+                    jobs[index].finishedAt = Date()
+                    changed = true
+                    if files.fileExists(atPath: job.source.path) { finishOriginal(of: job) }
+                    continue
+                }
                 try? files.removeItem(at: temporary)  // the half-written output of the crashed run
-                // B267: a job the engine stopped in twice (in show mode a paused job counts too) is not started a third time;
-                // its source stays where it is. Saved now, so a stop before the job is claimed again is not counted.
+                // B267: a job the engine stopped in twice (in show mode a paused job counts too) is not started a third time.
+                // Failing it moves and deletes nothing (an in-place job may have replaced its source already). Saved now, so a
+                // stop before the job is claimed again is not counted.
                 let runs = (job.interruptedRuns ?? 0) + 1
                 jobs[index].interruptedRuns = runs
                 changed = true
                 if runs >= 2 {
                     jobs[index].state = .failed("the engine stopped twice during this job")
                     jobs[index].finishedAt = Date()
-                    logger.warning("the engine stopped twice during this ingest job: failed, the source is left in place", metadata: ["source": "\(job.source.path)"])
+                    logger.warning("the engine stopped twice during this ingest job: failed; no file is moved or deleted for it", metadata: ["source": "\(job.source.path)"])
                 } else {
                     jobs[index].state = .queued
                     logger.warning("the engine stopped during this ingest job: it starts over", metadata: ["source": "\(job.source.path)"])

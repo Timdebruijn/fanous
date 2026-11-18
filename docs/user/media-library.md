@@ -195,7 +195,8 @@ A HAP Q transcode of 1080p runs at about 11 frames a second on the M1 Pro,
 so a 25 fps clip takes about two and a half times its length; ProRes at
 1080p is not measured. The queue survives an engine restart; a job that was running starts over, once: when the engine stops during the
 same job a second time (a crash, or a power cut; also while it waits in show mode), it fails with "the engine stopped
-twice during this job" and its source stays where it is. Jobs can be
+twice during this job". Failing moves or deletes no file: the source is where the job left it, and so is any output it
+already wrote. A job whose output was complete when the engine stopped is done. Jobs can be
 queued in show mode, but they wait until it ends. The status bar shows the
 running job's progress; do it before the show.
 

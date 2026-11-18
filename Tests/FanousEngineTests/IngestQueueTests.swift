@@ -562,6 +562,31 @@ import VideoToolbox
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["002_bad.mov"])
     }
 
+    /// B267: a stop after the output took its name, before `done` was saved, is a finished job, not an interrupted run: done,
+    /// and the original goes to the originals folder as it would have.
+    @Test func outputWrittenBeforeAStopMakesTheJobDone() throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let source = directory.appending(path: "incoming/clip.mov")
+        let destination = directory.appending(path: "library/001_Clips/001_clip.mov")
+        let originals = directory.appending(path: "library/001_Clips/_originals")
+        for (url, text) in [(source, "the original"), (destination, "the result")] {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(text.utf8).write(to: url)
+        }
+        var job = IngestJob(source: source, destination: destination, kind: .transcode(codec: .proRes422HQ), originalsDirectory: originals)
+        job.state = .running(progress: 1)
+        job.interruptedRuns = 1
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode([job]).write(to: directory.appending(path: "queue.json"))
+
+        #expect(IngestQueue(persistenceURL: directory.appending(path: "queue.json")).jobs.first?.state == .done, "not failed: it finished")
+        #expect(IngestQueue(persistenceURL: directory.appending(path: "queue.json")).jobs.first?.state == .done, "saved as done")
+        #expect(try String(contentsOf: destination, encoding: .utf8) == "the result")
+        #expect(!FileManager.default.fileExists(atPath: source.path))
+        #expect(try String(contentsOf: originals.appending(path: "clip.mov"), encoding: .utf8) == "the original")
+    }
+
     /// B169: a crash between the two renames of an in-place job leaves the original in `_originals/` and the finished result
     /// as the hidden temporary. The restart puts that temporary in place and saves the job as done, before any worker runs
     /// (a job left queued, then cancelled while ingest is paused, would otherwise keep the hidden file for good).

@@ -365,6 +365,55 @@ struct LibraryIndexTests {
         #expect(await waitUntil(every: .milliseconds(20)) { index.snapshot.folders.first?.items.first?.status == .playable })
     }
 
+    /// An update that rewords the reasons does not send a file that stopped the engine twice through two more stops.
+    @Test func aStoppedTwiceEntryOutlivesAReasonsVersionChange() throws {
+        let (root, cache, _, key) = try twoStills()
+        let old = LibraryIndex.CacheEntry(metadata: nil, thumbnail: nil, status: .unreadable, reason: LibraryIndex.stoppedTwice, reasonsVersion: LibraryIndex.reasonsVersion - 1)
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        try JSONEncoder().encode([key: old]).write(to: cache.appending(path: "library-index.json"))
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.rescan()
+        #expect(index.snapshot.folders.first?.items.map(\.status) == [.unreadable, .probing], "a hit, not probed again")
+    }
+
+    /// A second probe of the file in the same run (a rescan while it is read) starts from no stops: one later stop does not
+    /// mark it.
+    @Test func theStopCountIsUsedOnce() async throws {
+        let (root, cache, first, key) = try twoStills()
+        try leaveMarker(cache, path: first, key: key, stops: 0)
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        #expect(FileManager.default.fileExists(atPath: index.markerFile.path), "kept until the probe overwrites it")
+        final class Seen: Sendable { let stops = Mutex<[Int]>([]) }
+        let seen = Seen()
+        let marker = index.markerFile
+        index.thumbnailer = { [weak index] url, _, _ in
+            guard url == first, let data = try? Data(contentsOf: marker), let m = try? JSONDecoder().decode(LibraryIndex.ProbeMarker.self, from: data) else { return nil }
+            let count = seen.stops.withLock { $0.append(m.stops); return $0.count }
+            if count == 1 { index?.rescan() }  // its cache entry is not written yet: queued again
+            return nil
+        }
+        index.start()
+        defer { index.stop() }
+        #expect(await waitUntil(every: .milliseconds(20)) { seen.stops.withLock { $0.count } == 2 })
+        #expect(seen.stops.withLock { $0 } == [1, 0])
+    }
+
+    /// A stop of our own that cuts a slow probe off (the join gives up after 10 s, then the process exits) blames no one.
+    @Test func aStopThatCutsAProbeOffRemovesTheMarker() async throws {
+        let (root, cache, first, _) = try twoStills()
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        index.thumbnailer = { url, _, _ in
+            if url == first { release.wait() }
+            return nil
+        }
+        index.start()
+        #expect(await waitUntil(every: .milliseconds(20)) { FileManager.default.fileExists(atPath: index.markerFile.path) })
+        try await offPool { index.stop() }  // waits the full 10 s: the probe is held
+        #expect(!FileManager.default.fileExists(atPath: index.markerFile.path))
+    }
+
     /// A marker under another root is another index's (B51: the old index still probes while the root is replaced).
     @Test func aMarkerUnderAnotherRootIsLeftAlone() async throws {
         let (root, cache, _, _) = try twoStills()
@@ -374,6 +423,20 @@ struct LibraryIndexTests {
         index.rescan()
         #expect(index.snapshot.folders.first?.items.map(\.status) == [.probing, .probing])
         #expect(FileManager.default.fileExists(atPath: index.markerFile.path))
+    }
+
+    /// A marker kept at a first stop whose file is not probed again (it changed or went) goes when the queue drains, so the
+    /// next start does not warn about it again.
+    @Test func aKeptMarkerGoesWhenNothingIsInWork() async throws {
+        let (root, cache, first, key) = try twoStills()
+        let probed = await started(root, cache, Thumbnails())  // both cached: the next start probes nothing
+        probed.stop()
+        try leaveMarker(cache, path: first, key: key + "-gone", stops: 0)
+        let thumbnails = Thumbnails()
+        let index = await started(root, cache, thumbnails)
+        defer { index.stop() }
+        #expect(thumbnails.made.withLock { $0 }.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: index.markerFile.path))
     }
 }
 
