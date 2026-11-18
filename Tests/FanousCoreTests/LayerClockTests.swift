@@ -117,7 +117,7 @@ import Testing
 
     static let cadences: [(Double, Double, Double, Int, Int, [Int], [Int])] = [
         // fps, hz, speed, frames per tick p/q, the holds of frame 0 and of every frame after it
-        (60.0, 60.0, 100.0, 1, 1, [1], [1]),  // matched: main repeated 899 and skipped 899 of 3600 with ±1 µs
+        (60.0, 60.0, 100.0, 1, 1, [1], [1]),  // matched: main repeated 891 and skipped 891 of 3600 with ±1 µs
         (50, 50, 100, 1, 1, [1], [1]),
         (60000 / 1001, 60000 / 1001, 100, 1, 1, [1], [1]),
         (60, 60, 0, 0, 1, [], []),  // speed 0: frame 0 throughout
