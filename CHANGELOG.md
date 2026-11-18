@@ -12,7 +12,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Engine (B364): a playing movie layer shows every frame: the decode thread went back to the requested frame
   whenever it was ahead of it, so the ring held two frames in turn and the layer showed 2 frames of every 11 (with
-  the 8-frame ring), holding the second; it now fills the ring with the frames ahead in play direction (PR #N).
+  the 8-frame ring), holding the second; it now fills the ring with the frames ahead in play direction (PR #413).
 - Engine (B270): an HTTPS connection reads and parses the next request only once the previous response has left, so
   a client that pipelines requests and never reads no longer makes the engine queue responses without bound
   (PR #397).
