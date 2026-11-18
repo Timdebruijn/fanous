@@ -49,18 +49,19 @@ import Testing
         #expect(decoder.wakeups.load(ordering: .relaxed) == wakeups + 2)
     }
 
-    /// Plays `steps` frames from `start` in `direction` with a clock the test controls: each tick asks for the next frame
-    /// once the decode thread has filled the ring, as a decoder faster than the clip's rate does. Returns the frame
-    /// shown on each tick and the ring's frame numbers just before it.
+    /// Plays the clock's `frames` in `direction` with a clock the test controls: each tick asks for its frame once the
+    /// decode thread has filled the ring, as a decoder faster than the clip's rate does. A tick in `unseen` requests
+    /// but draws nothing (a layer at intensity 0 keeps its decoder fed). Returns the frame shown on each drawn tick and
+    /// the ring's frame numbers just before it.
     private func play(
-        _ playback: LayerPlayback, _ decoder: LayerDecoder, from start: Int, steps: Int, direction: Int, count: Int
+        _ playback: LayerPlayback, _ decoder: LayerDecoder, _ frames: [Int], direction: Int, unseen: Set<Int> = []
     ) async -> (shown: [Int], rings: [[Int]]) {
         var shown: [Int] = []
         var rings: [[Int]] = []
-        for step in 0..<steps {
-            let frame = ((start + direction * step) % count + count) % count
+        for (tick, frame) in frames.enumerated() {
             decoder.request(frame: frame, direction: direction)
             await waitUntil(.seconds(2)) { decoder.ring.count == decoder.ring.capacity }
+            guard !unseen.contains(tick) else { continue }
             rings.append((0..<decoder.ring.count).compactMap { decoder.ring.peek($0)?.frameIndex })
             shown.append(playback.frame(at: frame, direction: direction)?.frameIndex ?? -1)
         }
@@ -86,7 +87,7 @@ import Testing
     @Test func playingForwardShowsEveryFrameAcrossTheLoop() async throws {
         let (playback, decoder) = try await layer(frames: 20, capacity: 8)
         defer { decoder.stop() }
-        let (shown, rings) = await play(playback, decoder, from: 0, steps: 30, direction: 1, count: 20)
+        let (shown, rings) = await play(playback, decoder, (0..<30).map { $0 % 20 }, direction: 1)
         // the old fill alternated the requested frame and the next one, and the layer held the second for 10 frames
         #expect(shown == (0..<30).map { $0 % 20 }, "the shown frame follows the clock, also past the loop")
         #expect(rings.allSatisfy { $0.count == 8 && consecutive($0, direction: 1, count: 20) }, "\(rings)")
@@ -95,7 +96,7 @@ import Testing
     @Test func playingInReverseShowsEveryFrameAcrossTheLoop() async throws {
         let (playback, decoder) = try await layer(frames: 20, capacity: 8)
         defer { decoder.stop() }
-        let (shown, rings) = await play(playback, decoder, from: 19, steps: 30, direction: -1, count: 20)
+        let (shown, rings) = await play(playback, decoder, (0..<30).map { (19 - $0 + 20) % 20 }, direction: -1)
         #expect(shown == (0..<30).map { (19 - $0 + 20) % 20 }, "the shown frame follows the clock backwards")
         #expect(rings.allSatisfy { $0.count == 8 && consecutive($0, direction: -1, count: 20) }, "\(rings)")
     }
@@ -103,12 +104,40 @@ import Testing
     @Test func aSeekLandsOnTheRequestedFrame() async throws {
         let (playback, decoder) = try await layer(frames: 40, capacity: 8)
         defer { decoder.stop() }
-        _ = await play(playback, decoder, from: 0, steps: 5, direction: 1, count: 40)
+        _ = await play(playback, decoder, Array(0..<5), direction: 1)
         // a jump past the ring: what is buffered is on the wrong side, the ring drains and the thread restarts there
         decoder.request(frame: 30, direction: 1)
         _ = playback.frame(at: 30, direction: 1)
-        let (shown, rings) = await play(playback, decoder, from: 30, steps: 3, direction: 1, count: 40)
+        let (shown, rings) = await play(playback, decoder, [30, 31, 32], direction: 1)
         #expect(shown == [30, 31, 32])
         #expect(rings.last == Array(30...37), "filled ahead from the requested frame")
+    }
+
+    // With a ring that holds frames ahead, the shown frame must reach the clock's frame on the tick it is asked for,
+    // also when the clock moves more than one frame per tick (B364 review: the pick looked at the first 3 ring frames
+    // only, the shown frame moved at most one frame per tick and fell behind for good)
+    @Test func twoFramesPerTickShowTheClocksFrames() async throws {
+        let (playback, decoder) = try await layer(frames: 40, capacity: 8)
+        defer { decoder.stop() }
+        let clock = (0..<30).map { $0 * 2 % 40 }
+        let (shown, _) = await play(playback, decoder, clock, direction: 1)
+        #expect(shown == clock)
+    }
+
+    @Test func aSkippedFrameDoesNotLeaveTheLayerLate() async throws {
+        let (playback, decoder) = try await layer(frames: 40, capacity: 8)
+        defer { decoder.stop() }
+        let clock = Array(0...9) + Array(11...29)
+        let (shown, _) = await play(playback, decoder, clock, direction: 1)
+        #expect(shown == clock)
+    }
+
+    @Test func aLayerUnseenForAFewTicksComesBackOnTheClock() async throws {
+        let (playback, decoder) = try await layer(frames: 40, capacity: 8)
+        defer { decoder.stop() }
+        let clock = Array(0..<30)
+        // 4 ticks unseen: the ring kept the frames up to 5 past the last shown one (and that one and the one before)
+        let (shown, _) = await play(playback, decoder, clock, direction: 1, unseen: Set(10..<14))
+        #expect(shown == Array(0..<10) + Array(14..<30))
     }
 }

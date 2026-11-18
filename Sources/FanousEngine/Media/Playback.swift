@@ -244,8 +244,8 @@ public final class LayerPlayback: @unchecked Sendable {
             }
         }
         guard ring.count > 0 else { return holdFrame }
-        var best: DecodedFrame?
-        for i in 0..<min(ring.count, 3) {
+        var best: DecodedFrame?  // the whole ring: with frames decoded ahead the clock's frame can be anywhere in it (B364)
+        for i in 0..<ring.count {
             guard let f = ring.peek(i) else { break }
             if best == nil || behind(f.frameIndex) < behind(best!.frameIndex) { best = f }
         }

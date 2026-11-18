@@ -10,9 +10,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Engine (B364): a playing movie layer shows every frame: the decode thread went back to the requested frame
+- Engine (B364): a playing movie layer shows the clock's frame: the decode thread went back to the requested frame
   whenever it was ahead of it, so the ring held two frames in turn and the layer showed 2 frames of every 11 (with
-  the 8-frame ring), holding the second; it now fills the ring with the frames ahead in play direction (PR #413).
+  the 8-frame ring), holding the second; it now fills the ring with the frames ahead in play direction, and the pick
+  looks at the whole ring, so a skipped tick or a speed above one frame per tick no longer leaves the picture late
+  (above about 2.5 frames per tick it still lags 2 or 3 frames, B372) (PR #413).
 - Engine (B270): an HTTPS connection reads and parses the next request only once the previous response has left, so
   a client that pipelines requests and never reads no longer makes the engine queue responses without bound
   (PR #397).
