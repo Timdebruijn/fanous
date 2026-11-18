@@ -1245,6 +1245,7 @@ public final class Engine: @unchecked Sendable {
             }
         }
         context.artnetError = artnet?.failure
+        context.oscError = osc?.failure
         context.sacnError = sacnError.withLock { $0 }
         context.projectProblem = projectProblem.withLock { $0 }
         let statuses = outputStatus.withLock { $0 }

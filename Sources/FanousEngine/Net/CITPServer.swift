@@ -58,7 +58,8 @@ public final class CITPServer: @unchecked Sendable {
     private let providers: Providers
     private let logger: Logger
     private let queue = DispatchQueue(label: "org.fanous.citp", qos: .utility)
-    private var listener: NWListener?
+    /// Made again when it fails (B272), on a port of its own again: the beacon announces the new one.
+    private var listener: RecoveringListener?
     private var multicastSocket: Int32 = -1
     private var beaconReported = false
     private var lastDropLog = -Double.infinity
@@ -88,29 +89,31 @@ public final class CITPServer: @unchecked Sendable {
     // MARK: Lifecycle
 
     public func start() throws {
-        let parameters = NWParameters.tcp
-        parameters.allowLocalEndpointReuse = true
-        let listener = try NWListener(using: parameters, on: .any)
-        listener.stateUpdateHandler = { [weak self] state in
+        let listener = RecoveringListener(name: "CITP listener", queue: queue, logger: logger) { [weak self] in
+            let parameters = NWParameters.tcp
+            parameters.allowLocalEndpointReuse = true
+            let listener = try NWListener(using: parameters, on: .any)
+            listener.newConnectionHandler = { [weak self] connection in
+                guard let self else { return connection.cancel() }
+                let session = Session(connection: connection, server: self)
+                connections[ObjectIdentifier(session)] = session
+                session.start()
+                publishStatus()
+            }
+            return listener
+        } onState: { [weak self] state, listener in
             guard let self else { return }
             switch state {
             case .ready:
                 let port = listener.port?.rawValue ?? 0
                 status.withLock { $0.port = port }
                 logger.info("CITP listening", metadata: ["tcp": "\(port)"])
-                startMulticast()
-            case .failed(let error): logger.error("CITP listener failed", metadata: ["error": "\(error)"])
+                if multicastSocket < 0 { startMulticast() }
+            case .failed: status.withLock { $0.port = 0 }  // no beacon for a dead port; System › Network reads "not running"
             default: break
             }
         }
-        listener.newConnectionHandler = { [weak self] connection in
-            guard let self else { return connection.cancel() }
-            let session = Session(connection: connection, server: self)
-            connections[ObjectIdentifier(session)] = session
-            session.start()
-            publishStatus()
-        }
-        listener.start(queue: queue)
+        try listener.start()
         self.listener = listener
     }
 
@@ -141,7 +144,7 @@ public final class CITPServer: @unchecked Sendable {
             frameTimer?.cancel()
             statusTimer = nil
             frameTimer = nil
-            listener?.cancel()
+            listener?.stop()
             if multicastSocket >= 0 { close(multicastSocket) }
             multicastSocket = -1
             for (_, session) in connections { session.connection.cancel() }

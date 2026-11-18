@@ -358,8 +358,11 @@ public struct ReadinessContext: Sendable {
     public var universesSilent: [String] = []
     /// "artnet:0.0.1: en5" per patched universe whose interface this Mac does not have or offers no sACN multicast on (B28).
     public var interfacesMissing: [String] = []
-    /// Why the Art-Net listener failed (UDP 6454 held exclusively); nil when Art-Net runs (B167).
+    /// Why the Art-Net listener is down (UDP 6454 held exclusively, B167; failed and trying again, or waiting for a
+    /// network, B272); nil when Art-Net listens.
     public var artnetError: String?
+    /// The same for the OSC listeners, UDP and TCP 8000 (B272).
+    public var oscError: String?
     /// Why the sACN port could not be bound at start; nil when sACN runs.
     public var sacnError: String?
     /// B281: the project did not come from `project.json` at start, and what runs instead.
@@ -429,11 +432,14 @@ public enum Readiness {
             context.interfacesMissing.isEmpty ? "present, or any interface" : "not usable: \(context.interfacesMissing.joined(separator: "; "))",
             "Connect the network adapter, or pick another interface for the universe (Patch › Interface)", failing: .warn)
         add(
-            "artnetport", "Art-Net port 6454 available", context.artnetError == nil, context.artnetError.map { "in use, running without Art-Net: \($0)" } ?? "listening",
-            "Quit the program that holds UDP 6454 (sudo lsof -nP -iUDP:6454), then Engine › Restart Engine", failing: .warn)
+            "artnetport", "Art-Net port 6454 available", context.artnetError == nil, context.artnetError.map { "not listening: \($0)" } ?? "listening",
+            "Quit a program that holds UDP 6454 (sudo lsof -nP -iUDP:6454), or check the network: the engine listens again by itself within 5 s", failing: .warn)
         add(
             "sacnport", "sACN port 5568 available", context.sacnError == nil, context.sacnError.map { "in use, running without sACN: \($0)" } ?? "listening",
             "Quit the program that holds UDP 5568 (sudo lsof -nP -iUDP:5568), then Engine › Restart Engine", failing: .warn)
+        add(
+            "oscport", "OSC port 8000 available", context.oscError == nil, context.oscError.map { "not listening: \($0)" } ?? "listening",
+            "Quit a program that holds port 8000 (sudo lsof -nP -i:8000), or check the network: the engine listens again by itself within 5 s", failing: .warn)
         let outputsOK = context.outputsLost.isEmpty && context.outputsUnassigned.isEmpty && context.outputsBound > 0
         add(
             "outputs", "All outputs bound to their displays", outputsOK,

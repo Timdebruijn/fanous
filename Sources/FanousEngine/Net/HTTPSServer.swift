@@ -29,7 +29,10 @@ public final class HTTPSServer: @unchecked Sendable {
     /// The port actually bound (differs from `port` when 0 was requested); set once the listener is ready.
     nonisolated(unsafe) public private(set) var boundPort: UInt16?
 
-    private let listener: NWListener
+    /// Made again when it fails (B272).
+    private var listener: RecoveringListener!
+    /// `_fanous._tcp`, carried by the listener (`bonjour`).
+    private var fanousService: NWListener.Service?
     /// `_https._tcp` for the same port: an NWListener carries one service, and a second NWListener on the port
     /// fails with EADDRINUSE on macOS 27 despite `allowLocalEndpointReuse`, so this one is registered with dns_sd.
     private var httpsService: NWListener.Service?
@@ -60,11 +63,27 @@ public final class HTTPSServer: @unchecked Sendable {
         let parameters = NWParameters(tls: tls, tcp: tcp)
         parameters.allowLocalEndpointReuse = true
         guard let nwPort = NWEndpoint.Port(rawValue: port) else { throw TLSIdentityError.security(errSecParam, "port") }
-        if loopbackOnly {
-            parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: nwPort)
-            listener = try NWListener(using: parameters)
-        } else {
-            listener = try NWListener(using: parameters, on: nwPort)
+        if loopbackOnly { parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: nwPort) }
+        let make = { [weak self] () throws -> NWListener in
+            let listener = try loopbackOnly ? NWListener(using: parameters) : NWListener(using: parameters, on: nwPort)
+            listener.service = self?.fanousService
+            listener.newConnectionHandler = { [weak self] connection in
+                guard let self else { return connection.cancel() }
+                ClientConnection(connection, server: self).start()
+            }
+            return listener
+        }
+        _ = try make()  // invalid parameters throw here, as before, not at the first attempt
+        listener = RecoveringListener(name: "HTTPS listener", queue: queue, logger: logger, make: make) { [weak self, logger, port] state, listener in
+            switch state {
+            case .ready:
+                self?.boundPort = listener.port?.rawValue ?? port
+                logger.info("HTTPS listening", metadata: ["port": "\(self?.boundPort ?? port)"])
+                self?.registerHTTPS()
+            case .failed, .waiting: self?.deregisterHTTPS()
+            case .cancelled: logger.info("HTTPS listener stopped")
+            default: break
+            }
         }
     }
 
@@ -80,38 +99,20 @@ public final class HTTPSServer: @unchecked Sendable {
     public func bonjour(name: String) {
         guard !loopbackOnly, port != 0 else { return }
         let services = Self.services(name: name, port: port)
-        listener.service = services[0]
+        fanousService = services[0]
         httpsService = services[1]
     }
 
     /// What `start()` advertises (tests).
-    var advertisedServices: [NWListener.Service] { [listener.service, httpsService].compactMap { $0 } }
+    var advertisedServices: [NWListener.Service] { [fanousService, httpsService].compactMap { $0 } }
 
     public func start() {
-        listener.stateUpdateHandler = { [weak self, logger, port] state in
-            switch state {
-            case .ready:
-                self?.boundPort = self?.listener.port?.rawValue ?? port
-                logger.info("HTTPS listening", metadata: ["port": "\(self?.boundPort ?? port)"])
-                self?.registerHTTPS()
-            case .failed(let error):
-                logger.error("HTTPS listener failed", metadata: ["error": "\(error)"])
-                self?.deregisterHTTPS()
-            case .waiting: self?.deregisterHTTPS()
-            case .cancelled: logger.info("HTTPS listener stopped")
-            default: break
-            }
-        }
-        listener.newConnectionHandler = { [weak self] connection in
-            guard let self else { return connection.cancel() }
-            ClientConnection(connection, server: self).start()
-        }
-        listener.start(queue: queue)
+        do { try listener.start() } catch { logger.error("HTTPS listener failed", metadata: ["error": "\(error)"]) }
     }
 
     /// Synchronous, so a start right after (Restart Engine) does not collide with its own old `_https._tcp` name.
     public func stop() {
-        listener.cancel()
+        listener.stop()
         queue.sync { deregisterHTTPS() }
     }
 
