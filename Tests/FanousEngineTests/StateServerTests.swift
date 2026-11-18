@@ -182,7 +182,8 @@ import Testing
         _ = try await Self.receive(a, until: "welcome")
         try await a.send(.string(#"{"t":"sub","stream":"dmx","universe":"artnet:0.0.0"}"#))
         let id = try #require(try await Self.receive(a, until: "sub")["id"]?.int)
-        for bad in ["-1", "4294967296", "1.5", "1e99", "99999"] {
+        // 2^32 + id would end the live stream under a truncating conversion
+        for bad in ["-1", "4294967296", "\(4_294_967_296 + id)", "1.5", "1e99", "99999"] {
             try await a.send(.string(#"{"t":"unsub","id":\#(bad)}"#))
         }
         try await a.send(.string(#"{"t":"snapshot"}"#))
