@@ -185,7 +185,7 @@ struct DMXStateBoundsTests {
         #expect(Self.intensity(store, at: 60) == 77 << 8)
         store.queue.sync {
             var t = 60.5
-            while t < 90 {
+            while t < 63 {  // 2.5 s: under two refill lines, as 30 s were at the engine's 15 s
                 store.receive(sacn: SACNData(cid: Self.cid(1_000_000), sourceName: "late", sequence: UInt8(Int(t * 2) % 256), universe: 4000, slots: [1]), at: t)
                 store.tick(at: t)
                 t += 0.5

@@ -71,9 +71,10 @@ not justify a copy. A `waitUntil` that held only after more than half its
 deadline prints a "waitUntil margin" line: on CI, grep the log for it.
 `scripts/test.sh` ends with the ten slowest tests and the run's median duration,
 the queue wait every duration includes. To see the stall on this Mac, run it with
-`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1` (a pool one thread wide). `scripts/test.sh --hosted` (CI) runs the tests one at a
-time: on a 3-core runner a parallel run's polls waited behind every test queued
-at the start, up to 9.96 s of a 10 s deadline (B353).
+`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1` (a pool one thread wide).
+`scripts/test.sh --hosted` (CI) runs the tests one at a time: on a 3-core runner
+a parallel run's polls waited behind every test queued at the start, up to
+9.96 s of a 10 s deadline (B353).
 
 Multi-server sync on one Mac (DESIGN.md §23): two such engines, each with its
 own sync port in `settings.json` and the other's port as a unicast target (a

@@ -157,6 +157,7 @@ struct WebSocketSessionTests {
     /// session gets a 64 KB limit: the rule is the same as at 16 MB, without building 16 MB in a debug build (B353). Off
     /// the pool all the same: on a one-thread pool this test held the thread for about 3.7 s (measured, cause not traced).
     @Test(.offPool) func fragmentsAboveTheMessageLimitAreRefusedWith1009() async throws {
+        #expect(WebSocketSession.maxMessageBytes == 16 * 1024 * 1024)  // the engine's limit; the rule is tested below at 64 KB
         let limit = 64 * 1024
         let pair = try await Pair.make(messageLimit: limit)
         defer { pair.stop() }
