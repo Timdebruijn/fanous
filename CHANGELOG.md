@@ -10,12 +10,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Engine (B278, B342): a movie frame that does not decode is skipped at once and the decode thread pauses 15 ms, instead
-  of the same frame being tried for ever every 50 ms with a log line each time; half a second without a decoded frame
-  shows the decoder error on the layer (Layers screen, readiness) until a frame decodes again or the clip changes; the
-  skip lines, and the failing, still-failing and recovered lines, each come at most once every 10 s with a count of what
-  was held back (a recovered line always follows the failing line it pairs with); a VideoToolbox session that went
-  invalid is made again, at most once a second (PR #411).
+- Engine (B364): a playing movie layer no longer sits on 2 frames of every 11 (with the 8-frame ring): the decode
+  thread went back to the requested frame whenever it was ahead of it, so the ring held two frames in turn; it now
+  fills the ring with the frames ahead in play direction. The layer advances at most one frame per tick, so after a
+  skipped or unseen tick it stays that many frames late until it is retriggered or the ring drains, and at two or
+  more frames per tick it stalls and jumps (B372) (PR #413).
 - Engine (B270): an HTTPS connection reads and parses the next request only once the previous response has left, so
   a client that pipelines requests and never reads no longer makes the engine queue responses without bound
   (PR #397).
@@ -80,6 +79,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   before (PR #396).
 - Tests (B350): `aRunningFadeReportsNothing` no longer waits to see a 0.3 s fade in flight, which a held-up poll misses (red once on CI) (PR #404).
 - Tests (B351): the swift CI job also runs `DMXStateBoundsTests`, `HAPFrameBoundsTests`, `HTTPSPipeliningTests` and `MetricsMicrosTests`, which were added today and ran locally only (PR #405).
+- Engine (B278, B342): a movie frame that does not decode is skipped at once and the decode thread pauses 15 ms, instead
+  of the same frame being tried for ever every 50 ms with a log line each time; half a second without a decoded frame
+  shows the decoder error on the layer (Layers screen, readiness) until a frame decodes again or the clip changes; the
+  skip lines, and the failing, still-failing and recovered lines, each come at most once every 10 s with a count of what
+  was held back (a recovered line always follows the failing line it pairs with); a VideoToolbox session that went
+  invalid is made again, at most once a second (PR #411).
 
 ## 1.0.0-rc.14 — 2026-11-17
 
