@@ -386,8 +386,8 @@ public enum Transcoder {
             // rate, else the smallest frame duration as it is. Fall back to the nominal rate without a usable minimum.
             var frameDuration: CMTime
             if !minimum.isNumeric || minimum.seconds <= 0 {
-                guard nominal > 0 else { throw TranscodeError.reader("unknown frame rate") }
-                frameDuration = Transcoder.standardFrameDuration(nearest: Double(nominal)) ?? CMTime(value: 1, timescale: CMTimeScale(nominal.rounded()))
+                guard nominal > 0, let timescale = CMTimeScale(exactly: nominal.rounded()), timescale > 0 else { throw TranscodeError.reader("unknown frame rate") }
+                frameDuration = Transcoder.standardFrameDuration(nearest: Double(nominal)) ?? CMTime(value: 1, timescale: timescale)
             } else if abs(minimum.seconds * Double(nominal) - 1) > max(0.01, Double(nominal) / Double(minimum.timescale) + 1e-9) {
                 // (over 1 %, or over one tick of the track's timescale: 29.97 on a 1 ms timescale reports 33 ms, 1.1 % off)
                 // Variable rate: the fastest rate, so no frame is lost; the smallest gap would make a 1000 fps file of a
@@ -399,10 +399,17 @@ public enum Transcoder {
             } else if let standard = Transcoder.standardFrameDuration(nearest: Double(nominal)) {
                 frameDuration = standard
             } else if abs(Double(nominal) / Double(nominal).rounded() - 1) < 0.005 {
-                frameDuration = CMTime(value: 1, timescale: CMTimeScale(nominal.rounded()))  // 15 fps on a 1 ms timescale: 1/15, not 66 ms
+                // 15 fps on a 1 ms timescale: 1/15, not 66 ms. B264: a header can claim 2^31 fps, which no timescale holds.
+                guard let timescale = CMTimeScale(exactly: nominal.rounded()) else { throw TranscodeError.reader("unknown frame rate") }
+                frameDuration = CMTime(value: 1, timescale: timescale)
             } else {
                 frameDuration = minimum
             }
+            // B264: a header timescale of 0 reads as a NaN duration, a huge one overflows the frame counts of `run`; both
+            // trapped. The library's bound: a longer result would not play.
+            let frames = 0...Double(Int32.max)
+            guard frames.contains((range.duration.seconds / frameDuration.seconds).rounded()), frames.contains((range.end.seconds / frameDuration.seconds).rounded())
+            else { throw TranscodeError.reader("unknown duration") }
             let alpha = formats.contains { description in
                 let flag = CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_ContainsAlphaChannel)
                 let subtype = CMFormatDescriptionGetMediaSubType(description)

@@ -23,6 +23,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   holds two keys for one layer no longer crashes the engine at every start: the canonical key wins (PR #389).
 - Fix (B263): a command buffer that never started on the GPU no longer traps the render thread when the Mac has been up
   more than 71.6 minutes; frame times in the metrics are clamped and such a buffer books no GPU time (PR #391).
+- Fix (B264): a movie whose header gives no usable duration (a timescale of 0 reads as NaN) no longer crashes the engine at the
+  library probe and at every start after it; it is listed unreadable with "unknown duration", as is one whose frame count would exceed Int32 (an edit list of 2^32 s), and
+  ingest fails both, or a track claiming 2^31 fps, with a reason; an audio loop too long to count in frames is no loop instead of a crash (PR #390).
 
 ## 1.0.0-rc.14 — 2026-11-17
 

@@ -68,7 +68,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
     private let panBits = Atomic<UInt32>(Float(0).bitPattern)
     // Loop range of a forward loop (`setState(loop:)`): start (seconds) and length in frames; 0 frames = no loop.
     // One atomic so a reader never pairs a new start with an old length: start frame << 32 | length in frames.
-    private let loopBits = Atomic<UInt64>(0)
+    let loopBits = Atomic<UInt64>(0)  // internal for a test (B264)
 
     // Statistics.
     private let pullCount = Atomic<Int>(0)
@@ -109,9 +109,11 @@ public final class LayerAudioChannel: @unchecked Sendable {
     }
 
     func setState(wantedPTS: Double, active: Bool, volume: Float, pan: Float, loop: (start: Double, end: Double)? = nil, atHostNanos nanos: UInt64) {
-        let frames = loop.map { Int((($0.end - $0.start) * Self.rate).rounded()) } ?? 0
-        let start = loop.map { Int(($0.start * Self.rate).rounded()) } ?? 0
-        loopBits.store(frames >= Self.sampleRate / 2 && start >= 0 ? UInt64(start) << 32 | UInt64(frames) : 0, ordering: .relaxed)
+        // B264: a loop that is no whole number of frames in 32 bits (NaN, or longer than ~25 h) is no loop; `Int(_:)` trapped
+        let frames = loop.flatMap { Int(exactly: (($0.end - $0.start) * Self.rate).rounded()) } ?? 0
+        let start = loop.flatMap { Int(exactly: ($0.start * Self.rate).rounded()) } ?? -1
+        let fits = (Self.sampleRate / 2...Int(UInt32.max)).contains(frames) && (0...Int(UInt32.max)).contains(start)
+        loopBits.store(fits ? UInt64(start) << 32 | UInt64(frames) : 0, ordering: .relaxed)
         clockOffsetBits.store((wantedPTS - Double(nanos) / 1e9).bitPattern, ordering: .relaxed)
         volumeBits.store(volume.bitPattern, ordering: .relaxed)
         panBits.store(pan.bitPattern, ordering: .relaxed)

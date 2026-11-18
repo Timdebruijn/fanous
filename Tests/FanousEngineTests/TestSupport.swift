@@ -142,6 +142,18 @@ func writePatternMovie(
     }
 }
 
+/// B264: overwrites the big-endian UInt32 `offset` bytes into the last `box` (a four-letter atom type) of the movie at
+/// `url`; the movie header sits at the end of what AVAssetWriter writes. A version-0 `mvhd`/`mdhd` has its timescale at
+/// 20 and its duration at 24; an `stts` its entry count at 12 and its first entry's delta at 20.
+func patchAtom(_ url: URL, _ box: String, at offset: Int, to value: UInt32) throws {
+    var data = try Data(contentsOf: url)
+    let type = try #require(data.range(of: Data(box.utf8), options: .backwards))
+    let start = type.lowerBound - 4
+    try #require(data[start + 8] == 0, "a version-0 \(box)")
+    withUnsafeBytes(of: value.bigEndian) { data.replaceSubrange(start + offset..<start + offset + 4, with: $0) }
+    try data.write(to: url)
+}
+
 /// Where `PatternFrames`' white bar starts in `frame`, one decoded frame of a pattern movie of `size` (any codec), drawn
 /// through the compositor as on stage: the first column of row 100 (below the counter) whose blue is above 200, which only
 /// the bar's is. Frame n has it at x = 8n (mod width − 16), so it tells which frame was decoded; -1: no bar.

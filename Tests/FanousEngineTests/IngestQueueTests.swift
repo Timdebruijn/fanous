@@ -1122,6 +1122,28 @@ extension IngestQueueTests {
         #expect(FileManager.default.fileExists(atPath: notAMovie.path))
     }
 
+    /// B264: a header the frame counts cannot be computed from fails the job instead of trapping the engine (and, with the
+    /// job persisted as running, trapping it again at every start): timescale 0 in `mvhd` (a NaN duration), and a track
+    /// that claims 2^31 fps (timescale 2^31 − 1, one tick per frame; `nominalFrameRate` rounds up to 2^31 as a Float).
+    @Test func headerWithoutUsableTimingFailsTheJob() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        queue.start()
+        defer { queue.stop() }
+        let noDuration = directory.appending(path: "no_duration.mov"), tooFast = directory.appending(path: "too_fast.mov")
+        try await writePatternMovie(to: noDuration, size: (64, 64), fps: 25, frames: 2)
+        try patchAtom(noDuration, "mvhd", at: 20, to: 0)
+        try await writePatternMovie(to: tooFast, size: (64, 64), fps: 25, frames: 2)
+        try patchAtom(tooFast, "mdhd", at: 20, to: UInt32(Int32.max))
+        try patchAtom(tooFast, "mdhd", at: 24, to: 2)
+        try patchAtom(tooFast, "stts", at: 20, to: 1)  // one entry: both frames one tick long
+        for (source, text) in [(noDuration, "unknown duration"), (tooFast, "unknown frame rate")] {
+            let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_\(source.lastPathComponent)"), kind: .transcode(codec: .proRes422HQ)))
+            #expect(await Self.wait(for: job.id, in: queue) == .failed("cannot read the source: \(text)"))
+            #expect(FileManager.default.fileExists(atPath: source.path), "the source survives a failed job")
+        }
+    }
+
     /// B194: a container AVFoundation has no reader for fails with the library's reason, not AVFoundation's "Cannot Open",
     /// and the source is still there byte for byte, with no output or temporary beside the destination.
     @Test func unopenableContainerFailsWithTheLibrarysReasonAndKeepsTheSource() async throws {

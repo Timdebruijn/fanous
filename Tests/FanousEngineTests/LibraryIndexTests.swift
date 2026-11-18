@@ -307,6 +307,47 @@ struct LibraryIndexGPUTests {
         #expect(index.resolve(MediaKey(folder: 1, file: 1)) == nil && index.resolve(MediaKey(folder: 1, file: 2)) == nil)
     }
 
+    /// B264: a movie header with timescale 0 reads as a NaN duration (measured: `asset.duration` 0/0, `.seconds` NaN, the
+    /// track's `timeRange` too). The probe's frame count trapped on it at every start, since no cache entry was written;
+    /// now the file is not playable and says why, and opening it for playback throws instead of trapping.
+    @Test func aMovieWithoutADurationIsUnreadable() async throws {
+        let folder = try tempDir("fanous-library").appending(path: "001_Show")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let movie = folder.appending(path: "001_no_duration.mov")
+        try await writePatternMovie(to: movie, size: (64, 64), fps: 25, frames: 2)
+        try patchAtom(movie, "mvhd", at: 20, to: 0)
+        let index = LibraryIndex(root: folder.deletingLastPathComponent(), cacheDirectory: folder.appending(path: "_cache"), logger: testLogger)
+        index.start()
+        defer { index.stop() }
+        #expect(await waitUntil(every: .milliseconds(50)) { index.snapshot.folders.first?.items.first.map { $0.status != .probing } == true })
+        let item = try #require(index.snapshot.folders.first?.items.first)
+        #expect(item.status == .unreadable && item.reason == "unknown duration")
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        await #expect { _ = try await MovieSource.open(url: movie, device: device, poolSize: 2) } throws: { "\($0)" == "unknown duration" }
+    }
+
+    /// B264: an edit list of 2^32 − 1 s at movie timescale 1 is taken as the track's length (measured: `asset.duration`
+    /// 4294967295/1, 25 fps, ~1.1e11 frames). Such a count traps playback's frame arithmetic, so the probe refuses any
+    /// count beyond Int32 like a missing duration; before, it was listed playable.
+    @Test func aMovieLongerThanPlaybackCanCountIsUnreadable() async throws {
+        let folder = try tempDir("fanous-library").appending(path: "001_Show")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let movie = folder.appending(path: "001_endless.mov")
+        try await writePatternMovie(to: movie, size: (64, 64), fps: 25, frames: 2)
+        try patchAtom(movie, "mvhd", at: 20, to: 1)
+        try patchAtom(movie, "mvhd", at: 24, to: .max)
+        try patchAtom(movie, "tkhd", at: 28, to: .max)
+        try patchAtom(movie, "elst", at: 16, to: .max)  // the one segment's duration, in the movie timescale
+        let index = LibraryIndex(root: folder.deletingLastPathComponent(), cacheDirectory: folder.appending(path: "_cache"), logger: testLogger)
+        index.start()
+        defer { index.stop() }
+        #expect(await waitUntil(every: .milliseconds(50)) { index.snapshot.folders.first?.items.first.map { $0.status != .probing } == true })
+        let item = try #require(index.snapshot.folders.first?.items.first)
+        #expect(item.status == .unreadable && item.reason == "unknown duration", "listed \(item.status), \(item.metadata?.frameCount ?? -1) frames")
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        await #expect { _ = try await MovieSource.open(url: movie, device: device, poolSize: 2) } throws: { "\($0)" == "unknown duration" }
+    }
+
     /// A playable movie resolves after probing, its thumbnail is requested, and FSEvents picks up a new file.
     @Test func probeResolvesAndWatcherRescans() async throws {
         let root = try tempDir("fanous-library")
