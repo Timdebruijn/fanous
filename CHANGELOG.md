@@ -79,6 +79,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   before (PR #396).
 - Tests (B350): `aRunningFadeReportsNothing` no longer waits to see a 0.3 s fade in flight, which a held-up poll misses (red once on CI) (PR #404).
 - Tests (B351): the swift CI job also runs `DMXStateBoundsTests`, `HAPFrameBoundsTests`, `HTTPSPipeliningTests` and `MetricsMicrosTests`, which were added today and ran locally only (PR #405).
+- Tests (B354): `cueRunnerResumesTheStateAndReportsChanges` waits for the runner's report and lets the DMX queue run before it reads the report list and the snapshot (red once on CI) (PR #407).
 
 ## 1.0.0-rc.14 — 2026-11-17
 
