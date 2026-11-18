@@ -9,7 +9,7 @@ import FanousCore
 import Logging
 import Synchronization
 
-/// Show mode on disk (`show-state.json`): written on enter (and refreshed every 30 s), removed on leave — and every
+/// Show mode on disk (`show-state.json`): written on enter (refreshed every 30 s, and when the current cue changes), removed on leave — and every
 /// clean stop leaves show mode. A file still there at start means the last run ended uncleanly (crash, kill -9, power
 /// loss) or was an Engine › Restart Engine: show mode resumes when the file is young enough (`maxAge`).
 public struct ShowModeState: Codable, Equatable, Sendable {
@@ -20,12 +20,16 @@ public struct ShowModeState: Codable, Equatable, Sendable {
     public var written: Double
     /// Written by the stop for Engine › Restart Engine: show mode kept on purpose.
     public var restart: Bool?
+    /// The current cue's id when written (B284), so a resume lands on it; absent in files of older builds, and ignored
+    /// by them.
+    public var cue: UUID?
 
-    public init(on: Bool = true, since: Double, written: Double, restart: Bool? = nil) {
+    public init(on: Bool = true, since: Double, written: Double, restart: Bool? = nil, cue: UUID? = nil) {
         self.on = on
         self.since = since
         self.written = written
         self.restart = restart
+        self.cue = cue
     }
 
     /// A file this young still resumes the show (engine crash, restart, or the Mac went down mid-show); an older one is
@@ -71,6 +75,8 @@ public final class ShowModeController: @unchecked Sendable {
         var stopping = false
         /// Where the on/off state survives an unclean end; nil: not persisted.
         var file: URL?
+        /// The cue list's current cue (B284), also while off, so entering writes it.
+        var cue: UUID?
     }
 
     private let logger: Logger
@@ -123,6 +129,16 @@ public final class ShowModeController: @unchecked Sendable {
         onChange?(false)
     }
 
+    /// The cue list's current cue changed (B284): written at once while on. Called on the feed queue, never on the cue
+    /// queue (a timing path).
+    public func setCue(_ id: UUID?) {
+        state.withLock { s in
+            guard s.cue != id else { return }
+            s.cue = id
+            if s.on { persist(s) }
+        }
+    }
+
     /// Refreshes the write time while on (readiness timer), so a show longer than `maxAge` still resumes after
     /// a crash or a power loss.
     public func touch() {
@@ -167,7 +183,7 @@ public final class ShowModeController: @unchecked Sendable {
         guard let stateURL = s.file else { return }
         do {
             if s.on || restart {
-                let value = ShowModeState(since: s.since, written: Date().timeIntervalSince1970, restart: restart ? true : nil)
+                let value = ShowModeState(since: s.since, written: Date().timeIntervalSince1970, restart: restart ? true : nil, cue: s.cue)
                 try JSONEncoder().encode(value).write(to: stateURL, options: .atomic)
             } else if FileManager.default.fileExists(atPath: stateURL.path) {
                 try FileManager.default.removeItem(at: stateURL)

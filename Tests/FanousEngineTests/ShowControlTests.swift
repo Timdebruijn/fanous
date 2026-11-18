@@ -1319,6 +1319,52 @@ struct ShowControlTests {
         #expect(!FileManager.default.fileExists(atPath: url.path))
     }
 
+    /// B284: the current cue rides in the state file: written on enter and on every change while on, kept for a restart,
+    /// nothing while off. A file of an older build (no `cue`) still loads, with no cue.
+    @Test func showModeStateCarriesTheCurrentCue() throws {
+        let url = try tempDir("fanous-show").appending(path: "show-state.json")
+        let show = ShowModeController(logger: testLogger, stateURL: url)
+        let (three, four) = (UUID(), UUID())
+        show.setCue(three)
+        #expect(!FileManager.default.fileExists(atPath: url.path), "off: no file")
+        show.enter()
+        #expect(ShowModeState.load(from: url)?.cue == three)
+        show.setCue(four)
+        #expect(ShowModeState.load(from: url)?.cue == four)
+        show.stop(keepingState: true)
+        let kept = try #require(ShowModeState.load(from: url))
+        #expect(kept.restart == true && kept.cue == four)
+
+        try Data(#"{"on":true,"since":1,"written":2}"#.utf8).write(to: url)
+        let old = try #require(ShowModeState.load(from: url))
+        #expect(old.cue == nil)
+    }
+
+    /// B284: the runner's resume lands on the cue with the list's value at its end at once (no fade from 0) and reports
+    /// each current cue once, not per tick; the next GO fires the cue after it. (No follow: `CueTests` covers that.)
+    @Test func cueRunnerResumesOnTheCueAndReportsChanges() async throws {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
+        store.setPolicy(.internal)
+        let runner = CueRunner(dmx: store)
+        defer { runner.stop() }
+        let reported = Mutex<[UUID?]>([])
+        runner.onCurrentChange = { id in reported.withLock { $0.append(id) } }
+        let half = CueValue(fixture: .layer(1), parameter: .layer(.intensity), raw: 32768)
+        let list = CueList(cues: [
+            Cue(number: 1, fadeTime: 5, values: [half]),
+            Cue(number: 2, fadeTime: 5),
+            Cue(number: 3, fadeTime: 0),
+        ])
+        runner.replace(list: list)
+        runner.resume(id: list.cues[1].id)
+        #expect(await waitUntil { runner.status.withLock { $0.current } == 2 })
+        #expect(abs(store.snapshots.withLatest { $0.layers[0].intensity } - 0.5) < 0.01, "cue 1's value at its end, not fading from 0")
+        #expect(!runner.status.withLock { $0.fading })
+        runner.go()
+        #expect(await waitUntil { runner.status.withLock { $0.current } == 3 })
+        #expect(await waitUntil { reported.withLock { $0 } == [list.cues[1].id, list.cues[2].id] })
+    }
+
     /// Resume only within 2 h of the last write, whether the engine died or the Mac (B186): a crash nobody restarted
     /// does not resume show mode days later. A file written in the future (clock stepped back) is stale.
     @Test func showModeStartDecision() throws {

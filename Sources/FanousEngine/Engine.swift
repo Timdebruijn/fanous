@@ -424,9 +424,22 @@ public final class Engine: @unchecked Sendable {
         }
         // Phase 7: cues, timecode, show mode (DESIGN.md §14–15)
         let cues = CueRunner(dmx: dmx)
-        cues.replace(list: ShowCommands.cueList(from: project))
-        lastCues = ShowCommands.cueList(from: project)
+        // B284: the current cue goes into the show-state file, written on the feed queue like `touch()`, not the cue queue
+        cues.onCurrentChange = { [showMode, feedQueue] id in feedQueue.async { showMode.setCue(id) } }
+        let cueList = ShowCommands.cueList(from: project)
+        cues.replace(list: cueList)
+        lastCues = cueList
         self.cues = cues
+        // B284: a resumed show is back on its cue, with the look the list builds up to it; nothing fades or follows
+        if let id = resumeShow?.cue {
+            if let cue = cueList.cues.first(where: { $0.id == id }) {
+                cues.resume(id: id)
+                showMode.setCue(id)  // before the enter below writes the file
+                logger.warning("cue position resumed", metadata: ["cue": "\(cue.number)", "name": "\(cue.name)"])
+            } else {
+                logger.warning("cue position not resumed: the cue is no longer in the cue list", metadata: ["id": "\(id)"])
+            }
+        }
         timecodeClock.onFrame = { [weak self] timecode, _ in self?.cues?.timecode(timecode) }
         ControlCommands.register(on: store, hooks: ControlCommands.Hooks(set: { dmx.setUI($0, $1, raw: $2) }, release: { dmx.releaseUI($0) }, keep: { dmx.keepUI($0) }))
         ShowCommands.register(

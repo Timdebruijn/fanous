@@ -177,7 +177,8 @@ projectors may blank for a moment.
 
 ### What comes back after the engine stops
 
-The engine writes its show-mode state to disk every 30 seconds.
+The engine writes its show-mode state to disk every 30 seconds, with the
+current cue, which it also writes at every Go.
 
 ```mermaid
 flowchart TD
@@ -188,7 +189,7 @@ flowchart TD
   why -- "power cut" --> login["After the Mac is up and the show user logged in, the engine starts"]
   auto --> age{"Last write under 2 hours old?"}
   login --> age
-  age -- yes --> resume["Back in show mode: display modes kept, ingest paused, cursor hidden"]
+  age -- yes --> resume["Back in show mode: display modes kept, ingest paused, cursor hidden, the current cue current again"]
   age -- no --> normal
   resume --> banner["Status bar: 'Show mode resumed after the engine restarted at HH:MM'"]
 ```
@@ -210,8 +211,9 @@ kept show mode on; check the outputs." instead.
    picture.
 2. Every iPad logs in again: the logins did not survive the restart. The
    app window on the Mac needs no login.
-3. Operator: Go to the section's first cue; no cue is current after a
-   restart.
+3. Operator: the cue that was current is current again, with what the
+   cues up to it set; its clips started again from their first frame.
+   Check the picture; Go fires the next cue.
 4. Programmer, on the System screen: the red banner "Show mode is on with
    blocking items" when an acknowledged item failed again; acknowledgements
    did not survive either. Acknowledge them again.

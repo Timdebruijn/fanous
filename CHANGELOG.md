@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine (B284): when show mode resumes after a crash or Engine › Restart Engine, the cue list is back on the cue
+  that was current, with the values the cues up to it set and no fade or follow replayed; the next GO fires the cue
+  after it (PR #N).
+
 - Engine (B265): decoding a corrupt HAP frame returns an error instead of reading outside the sample (a crash in
   the thumbnailer or on a layer); the vendored `hap.c` checks chunk offsets, sizes and section lengths (PR #392).
 - Release: 1.0.0-rc.14 is on GitHub as a pre-release with the signed, notarized dmg, built from main bcdb5f3

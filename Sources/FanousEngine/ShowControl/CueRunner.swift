@@ -26,6 +26,10 @@ public final class CueRunner: @unchecked Sendable {
     private let dmx: DMXStore
     private var timer: DispatchSourceTimer?
     public let status = Mutex(Status(current: nil, currentName: nil, next: nil, nextName: nil, fading: false, count: 0))
+    /// B284: called on the cue queue when the current cue changes (its id, nil for none), not per tick; set before the
+    /// first command. It must not block: the engine hands the id to the show-state file off this queue.
+    public var onCurrentChange: (@Sendable (UUID?) -> Void)?
+    private var lastCurrentID: UUID?  // cue queue only
 
     public init(dmx: DMXStore) {
         self.dmx = dmx
@@ -41,6 +45,9 @@ public final class CueRunner: @unchecked Sendable {
     public func go() { queue.async { [self] in act { $0.go(at: CACurrentMediaTime()) } } }
     public func back() { queue.async { [self] in act { $0.back(at: CACurrentMediaTime()) } } }
     public func goto(_ number: Double) { queue.async { [self] in act { $0.goto(number: number, at: CACurrentMediaTime()) } } }
+
+    /// Show mode resumed (B284): back on that cue, see `CueEngine.resume(id:)`.
+    public func resume(id: UUID) { queue.async { [self] in act { _ = $0.resume(id: id) } } }
 
     /// From the timecode clock (any thread): fires cues whose trigger was crossed.
     public func timecode(_ timecode: Timecode) {
@@ -71,12 +78,17 @@ public final class CueRunner: @unchecked Sendable {
     }
 
     private func publish() {
-        let s = engine.withLock { e -> Status in
-            Status(
+        let (s, id) = engine.withLock { e -> (Status, UUID?) in
+            let status = Status(
                 current: e.current?.number, currentName: e.current?.name, next: e.next?.number, nextName: e.next?.name, fading: e.isFading,
                 count: e.list.cues.count)
+            return (status, e.current?.id)
         }
         status.withLock { $0 = s }
+        if id != lastCurrentID {
+            lastCurrentID = id
+            onCurrentChange?(id)
+        }
     }
 
     public func stop() {

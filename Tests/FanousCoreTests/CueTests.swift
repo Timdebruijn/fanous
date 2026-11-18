@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
+import Foundation
 import Testing
 
 @testable import FanousCore
@@ -110,5 +111,36 @@ import Testing
         engine.replace(list: removed)
         #expect(engine.tick(at: 2).isEmpty, "values of the removed cue are released")
         #expect(engine.current?.number == 2)
+    }
+
+    /// B284: a resume on cue 3 holds what cues 1 to 3 built together (cue 2's Layer 2 too, which a goto 3 would drop),
+    /// at their end values at once: cue 3's 3 s fade is not replayed and its follow does not fire. A trigger timecode
+    /// already passed does not fire when the clock comes back; the next GO fires cue 4.
+    @Test func resumeRebuildsTheLookWithoutFadesFollowsOrPastTriggers() {
+        func value(_ layer: Int, _ raw: UInt16) -> CueValue { CueValue(fixture: .layer(layer), parameter: .layer(.intensity), raw: raw) }
+        let tc = { (s: Int) in Timecode(hours: 0, minutes: 0, seconds: s, frames: 0, rate: .fps25) }
+        let list = CueList(cues: [
+            Cue(number: 1, fadeTime: 2, values: [value(1, 65535)]),
+            Cue(number: 2, fadeTime: 1, values: [value(2, 30000)], timecodeTrigger: tc(10)),
+            Cue(number: 3, fadeTime: 3, values: [value(1, 20000)], followTime: 1),
+            Cue(number: 4, fadeTime: 0, values: [value(2, 0)]),
+        ])
+        var engine = CueEngine(list: list)
+        let resumed = engine.resume(id: list.cues[2].id)
+        #expect(resumed && engine.current?.number == 3)
+        #expect(engine.tick(at: 100) == [value(1, 20000), value(2, 30000)])
+        #expect(!engine.isFading && !engine.hasPendingFollow)
+        _ = engine.tick(at: 200)
+        #expect(engine.current?.number == 3, "no follow fired")
+        engine.timecode(tc(12), at: 203)  // the clock comes back past cue 2's trigger
+        engine.timecode(tc(13), at: 204)
+        #expect(engine.current?.number == 3, "a trigger passed before the resume does not fire")
+        engine.go(at: 205)
+        #expect(engine.current?.number == 4)
+
+        var fresh = CueEngine(list: list)
+        let gone = fresh.resume(id: UUID())
+        #expect(!gone && fresh.current == nil, "a cue no longer in the list")
+        #expect(fresh.tick(at: 0).isEmpty)
     }
 }

@@ -45,10 +45,14 @@ are the programmer's and are refused while the show is locked
   and every other value stays where the last cue left it. A cue that must
   take a layer out needs its Intensity at 0. Nothing is released when a
   later cue fires; removing a cue from the list releases what it held.
-- Jumping into the middle (Go to after a restart, a rehearsal from scene
-  three) does not rebuild what the cues before it set. Give the first cue of
-  each section every value it needs: folder, file, intensity and dissolve.
-  After an engine restart no cue is current ("No cue fired yet").
+- Jumping into the middle (Go to, a rehearsal from scene three) does not
+  rebuild what the cues before it set. Give the first cue of each section
+  every value it needs: folder, file, intensity and dissolve.
+- When show mode comes back after a crash or Engine › Restart Engine, the
+  cue that was current is current again, with what the cues up to it set,
+  in list order, at their end values: no fade runs again and no follow
+  fires; Go fires the next cue. Clips start again from their first frame.
+  Any other start has no cue current ("No cue fired yet").
 
 ## Build a cue
 
@@ -274,6 +278,7 @@ supports have no field on the screen ([REST and WebSocket API](reference/api.md#
   incoming time, with a frame to spare after the start.
 - Lock the show (L), so a stray click cannot change a cue; GO, Back, Go to
   and the timecode switch keep working.
-- After a crash or an engine restart fire the section's first cue with Go
-  to: no cue is current, and Go to does not rebuild earlier cues.
+- After a crash or an engine restart in show mode the current cue comes
+  back, but its clips start again from their first frame: check the
+  picture.
 - Something wrong on the night: [Troubleshooting](troubleshooting.md).

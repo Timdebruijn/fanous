@@ -124,6 +124,24 @@ public struct CueEngine: Sendable {
         fire(index: index, at: time)
     }
 
+    /// Show mode resumed after a crash or a restart (B284): back on that cue with the look running the list in order up
+    /// to it leaves (a tracking list: earlier cues' values stay), every value at its end, no fade, no follow. Timecode
+    /// stays unarmed until its next frame, so no trigger already passed fires again. False when the cue is gone.
+    public mutating func resume(id: UUID) -> Bool {
+        guard let index = list.cues.firstIndex(where: { $0.id == id }) else { return false }
+        for cue in list.cues[...index] {
+            for value in cue.values {
+                let key = Key(fixture: value.fixture, parameter: value.parameter)
+                owner[key] = cue.id
+                fades[key] = nil
+                held[key] = ChannelMap.spec(value.parameter).clamped(value.raw)
+            }
+        }
+        currentID = id
+        follow = nil
+        return true
+    }
+
     /// Fires every cue whose trigger lies in (previous, current]. A jump backwards re-arms.
     public mutating func timecode(_ timecode: Timecode, at time: TimeInterval) {
         let seconds = timecode.secondsValue
