@@ -15,6 +15,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   switch of every step; an incoming picture whose decoder was not ahead yet shows an older frame for 1 to 3 ticks, at
   less than 5 % of a 2 s dissolve. Later switches had none in 12 steps and slow decodes again in one. HAP Q showed
   none in three steps. What sets it off is not measured (PR #424).
+- Docs: the benchmark guide says that a test process left running since 2026-11-18 10:18 kept about one core busy
+  during the runs re-measured on 2026-11-18 and 19 (1684 minutes of CPU in 1702; found 2026-11-19) (PR #425).
 - Docs: the stale frames of permanent dissolves sit at the first switch after a start (five of six runs: one run of
   1 to 3 ticks on one or two layers, none at the later switches); the 101 stale frames of one display run did not
   come back in four more runs (B389, B391) (PR #423).

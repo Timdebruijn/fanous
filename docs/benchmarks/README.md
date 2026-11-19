@@ -36,7 +36,10 @@ Same MacBook Pro M1 Pro (32 GB), macOS 27.2.1, release build of main
 `e7428db6` with the ring change below, headless, 20 s windows, the installed engine stopped. `fanous-bench`
 now runs the engine's own ring (8 frames at every size; it used 6 up to 2000 px
 width before). The Mac was not idle: load average about 3 to 6 from other work, so
-these are the numbers of a busy Mac. Pass = 0 missed, 0 late, 0 texture misses,
+these are the numbers of a busy Mac. Found on 2026-11-19: a test process started
+on 2026-11-18 at 10:18 had used 1684 minutes of CPU in the 1702 minutes it had
+run, so about one core was busy during every run of this section; its use
+during a single run was not sampled. Pass = 0 missed, 0 late, 0 texture misses,
 0 stale frames.
 
 ```bash
