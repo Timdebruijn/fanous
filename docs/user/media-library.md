@@ -320,7 +320,7 @@ to 24, macOS 27.2), so it says what a busy Mac manages, not a show Mac.
 | 4K60 HAP Q | 6 layers pass headless, 7 show late frames (2026-11-18); on the built-in display 6 showed late frames (2026-11-19); 8 fail on GPU time under load (2026-11-03) |
 | Blur and Edge on every layer at 1080p60 | 5 layers pass, ProRes or HAP Q. Above 5 it depends on the run: 16 layers passed every time, 6 to 12 showed late frames in most runs (headless, 2026-11-19). 5 layers also pass on the built-in display. Count on 5 |
 | Blur and Edge on every layer at 4K30 | 8 or 9 layers pass; 16 fail by far (headless, 2026-11-19) |
-| A dissolve (Dissolve channel) | Uses a second decoder: counts as one more layer. 8 layers in permanent 2 s dissolves at 1080p60 miss no frame, but most ProRes runs showed 1 to 4 stale frames in 20 s (headless, 2026-11-18 and 19); one run per codec on the built-in display showed none (2026-11-19) |
+| A dissolve (Dissolve channel) | Uses a second decoder: counts as one more layer. 8 layers in permanent 2 s dissolves at 1080p60 miss no frame. In most ProRes runs the first dissolve after the start showed an older frame for 1 to 3 ticks on one or two layers; the later ones showed none (headless, 2026-11-18 and 19). One run per codec on the built-in display showed none (2026-11-19) |
 
 Rules of thumb:
 
