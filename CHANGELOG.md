@@ -10,6 +10,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: what the block behind the stale frames of a first dissolve goes with (B389): the number of ProRes decoders in
+  use at once, the first time it is 14. 22 traced bench steps on a quiet Mac: none with up to 13 (4 to 6 layers in
+  dissolves, 9 to 13 layers started together), the block with 14 to 16 (7 and 8 layers at their first dissolve and at
+  no later one, 14 to 16 layers at their start). Session, decode thread and ring rise together and are not told apart.
+  Whether decoders used once at engine start take it away is not measured (PR #426).
 - Docs: what the stale frames at the first dissolve after a start are (B389). A trace of 13 bench steps shows 14 to 16
   of the 16 ProRes decoders blocked together for 46 to 59 ms inside one VideoToolbox call, 40 to 65 ms after the first
   switch of every step; an incoming picture whose decoder was not ahead yet shows an older frame for 1 to 3 ticks, at

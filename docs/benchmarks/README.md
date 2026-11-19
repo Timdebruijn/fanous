@@ -116,8 +116,8 @@ decoders (the 8 outgoing and the 8 incoming) each have one frame of 46 to 82 ms
 2.7), and all of them are blocked over the same 46 to 59 ms, which begins 40 to
 65 ms after the switch. Split in four of the steps, that time is inside the
 `VTDecompressionSessionDecodeFrame` call (46 to 81 ms); reading the sample took
-at most 3 ms and wrapping the texture at most 1.4 ms. The start of a step has
-no such frame (no decode over 22 ms), and neither have the 48 later switches of
+at most 3 ms and wrapping the texture at most 1.4 ms. The start of these
+8-layer steps has no such frame (no decode over 22 ms), and neither have the 48 later switches of
 the first 12 steps, made at a load average of 4 to 6 (at most two decodes over
 25 ms at a switch, none over 29 ms, no stale frame). The thirteenth step,
 started at a load average of 17, has slow decodes again at its last switch: 34
@@ -136,11 +136,44 @@ decoder had come: of the 20 incoming pictures whose decoder had finished no
 frame beyond the last one the clock asked for until its release, 19 drew stale
 frames; the other 84 drew none (the line was drawn after seeing the result). At
 the first switch they drew them within 85 ms of the swap, when a 2 s dissolve
-in normal blend shows the incoming picture at less than 5 %. Not measured: what
-VideoToolbox does in that call and what sets it off (the first time more than 8
-sessions decode, once per process, or load on the Mac, which the thirteenth
-step leaves open), whether it shows on a cut or a short dissolve, and whether
-the installed engine has it at the first file change after its start.
+in normal blend shows the incoming picture at less than 5 %. Not measured:
+whether it shows on a cut or a short dissolve, and whether the installed engine
+has it.
+
+What sets it off, measured the same day from 16:01 to 16:10 with the same trace
+build on a quieter Mac (22 single steps of 20 s after a 2 s warm-up, headless,
+ProRes 422 HQ 1080p60; load average 1.4 to 3.6 at the start of a step, three
+steps at 4.8 to 7.4): the number of ProRes decoders in use at once, the first
+time it is 14. A decoder is a decompression session, a decode thread and a ring
+of 8 frames, one per playing file; the steps cannot tell those three apart, nor
+the decode work that comes with them. A step without dissolves starts all its
+decoders together. With 9, 12 and 13 layers there is no decode over 23 ms at
+the start (4 steps); with 14, 15 and 16 layers the block is there (6 steps: 14
+to 18 decodes of over 25 ms on 14 to 16 decoders, up to 78 ms, 90 % or more of
+each inside the call). A step with dissolves has two decoders a layer from a
+switch until the outgoing one is retired 2 s later. With 4, 5 and 6 layers (8,
+10 and 12 decoders) no decode takes over 18 ms at any switch and no frame is
+stale (7 steps); with 7 and 8 layers (14 and 16 decoders) the block is at the
+first switch and at none of the four later ones (5 steps), where by the code
+the count has fallen back to 7 or 8 and returns to 14 or 16. So in these steps
+it comes the first time 14 are in use and not again within the 20 s; the steps
+without dissolves have only their start to show. The line between 13 and 14
+rests on one step of 13 and one of 14 layers without dissolves and on two steps
+each of 6 and 7 layers with them. It is not the size of the burst alone: 13
+decoders opened together show no block, 7 opened next to 7 running ones do.
+Where it falls decides what it costs: the 15 and 16-layer steps drew 1 and 4 to
+8 stale frames in the warm-up, outside the window, and pass; the 8-layer steps
+with dissolves drew 2 to 5 in the window and fail; the two 7-layer steps had
+the block and no stale frame. Eight steps made from 15:07 to 15:11, at a load
+average of 6 to 12, are left out: they had slow decodes with 8 decoders too (up
+to 90 ms at the start of one 8-layer step, 31 and 32 ms at two switches of a
+4-layer step) and at other moments, so load alone does this as well, and "none
+below 14" holds for the 22 quiet steps. Not measured: what VideoToolbox does at
+that count, which of session, thread and ring it counts, whether the count is
+this chip's (M1 Pro), other sizes and ProRes kinds, whether it comes again at a
+higher count (16 layers with dissolves are 32 decoders) or after a longer time
+below 14, and whether decoders opened and used once at engine start would take
+it away from the first switch.
 
 Display runs, 2026-11-19: main `cc1c002b`, `--display 0` (the built-in 120 Hz
 panel, the only display attached), the same criterion, load about 3 to 6.
