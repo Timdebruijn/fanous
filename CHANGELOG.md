@@ -11,7 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Docs: the benchmark guide says that a test process left running since 2026-11-18 10:18 kept about one core busy
-  during the runs re-measured on 2026-11-18 and 19 (1684 minutes of CPU in 1702; found 2026-11-19) (PR #NNN).
+  during the runs re-measured on 2026-11-18 and 19 (1684 minutes of CPU in 1702; found 2026-11-19) (PR #425).
 - Docs: the stale frames of permanent dissolves sit at the first switch after a start (five of six runs: one run of
   1 to 3 ticks on one or two layers, none at the later switches); the 101 stale frames of one display run did not
   come back in four more runs (B389, B391) (PR #423).
