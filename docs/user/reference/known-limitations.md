@@ -83,7 +83,7 @@ link here. Back to the [index](../README.md).
 | A full home volume or an unwritable `Application Support/Fanous` folder is only logged ("autosave failed"): the engine plays on and saves nothing, and the readiness disk item checks the library's volume only. | B188 |
 | There is one project per machine: versions of it can be restored, but there are no project bundles to open or switch between, and no diff between two versions. | — |
 | The layer limit is 32 on every Mac: the engine's ceiling, not a measurement of this Mac. What a Mac plays without dropping frames can be far lower, at 4K for example. | B145 |
-| Everything measured was measured on one MacBook Pro M1 Pro. Other Apple Silicon chips are expectations. The layer counts were measured again on 2026-11-18 without a display and with other work on the Mac; the runs on a display are older. | B49 |
+| Everything measured was measured on one MacBook Pro M1 Pro. Other Apple Silicon chips are expectations. The layer counts were measured again on 2026-11-18 without a display and on 2026-11-19 on the built-in display, both with other work on the Mac; the runs on a 4K display are older. | B49 |
 | A first install on a clean Mac account has not been tested; the notarized build was checked on a developer Mac. | B50 |
 | Not supported at all: Intel Macs, Windows, Linux. | — |
 

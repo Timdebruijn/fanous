@@ -95,7 +95,7 @@ missed frame, no late frame, no layer without a picture, over the whole window.
 
 | Test | Result |
 |---|---|
-| 16 layers, 1080p60, ProRes 422 HQ or HAP Q, on the 120 Hz built-in display, 2 min | 0 missed, 0 late; GPU p99 10 ms (2026-10-26) |
+| 16 layers, 1080p60, ProRes 422 HQ or HAP Q, on the 120 Hz built-in display, 2 min | 0 missed, 0 late; GPU p99 10 ms. One of two ProRes runs drew 101 stale frames in 7227, not explained (2026-11-19) |
 | 4K60 ProRes 422 HQ, on a 4K display | 4 layers pass; 7 showed late GPU frames (2026-11-03, other work running) |
 | 4K60, headless | 5 layers of ProRes 422 HQ or 6 of HAP Q pass; one more shows late GPU frames (2026-11-18, other work running) |
 | 8-hour soak, 8 layers 1080p60, headless, `kill -9` every 2 h | 0 missed frames in about 1.7 million, 5 presented one refresh late; engine back in 0.26 s; memory 218 to 230 MB (2026-10-24) |
