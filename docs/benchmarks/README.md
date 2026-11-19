@@ -91,9 +91,18 @@ switches in a window of 8 layers, 16 decoders):
 | single step at 8 | HAP Q | pass (9.4 ms, 0 stale) |
 | ramp to 8 | HAP Q | 5 pass; 6 fails with 43 stale frames and one late |
 
-So a dissolve under 16 decoders now and then draws a picture with an older
-frame, which the criterion of 2026-10-23 could not see (B389). Which side of
-the dissolve shows it, and whether it is visible, is not measured.
+Six more single steps at 8 ProRes layers on main `1fb204ba`, with the stale
+frames per layer and per run of ticks (B391): five fail on 3, 6, 2, 1 and 2
+stale frames, one passes. In each failing step every stale frame sits in one
+run of 1 to 3 ticks, 1.7 to 1.9 s into the window, on one layer (on two in the
+step with 6). The bench's switch timer first fires 4 s after it is set, just
+before the service starts and the 2 s warm-up, so that moment is the first
+switch after the start; the four later switches of every window drew none. So
+in these six runs it is the first dissolve of a freshly started bench that
+draws a picture with an older frame for a few ticks, which also fits the clean
+ramp (B389); the four single steps of the table above have no such detail. Why
+the first one, which side of the dissolve shows it and whether it is visible
+are not measured. The report file of the single step is the one with 6.
 
 Display runs, 2026-11-19: main `cc1c002b`, `--display 0` (the built-in 120 Hz
 panel, the only display attached), the same criterion, load about 3 to 6.
@@ -114,9 +123,10 @@ Single steps, no ramps:
 | 6 layers | HAP Q | 4K60 canvas | 20 s | **fail**, 6 late (GPU p99 14.0 ms); the headless ramp passed 6 |
 
 The 101 stale frames of the first ProRes run did not come back in the second,
-and the report does not say which layers drew them or in how many ticks in a
-row: not explained (B391). That run has the report file; the passing rerun has
-none (same name). The compositor allocated 21.0 times per tick in the plain
+nor in four more 2-minute runs on main `1fb204ba` (7212 to 7228 frames each,
+0 stale): one run in six. That first report does not say which layers drew
+them or in how many ticks in a row: not explained (B391). That run has the
+report file; the passing reruns have none (same name). The compositor allocated 21.0 times per tick in the plain
 runs, 32.0 and 47.0 with blur + edge on 2 and 5 layers.
 
 ## Results of 2026-10-23 (MacBook Pro M1 Pro, 32 GB, macOS 27.0.1)

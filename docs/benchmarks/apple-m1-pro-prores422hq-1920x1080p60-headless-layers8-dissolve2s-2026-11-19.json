@@ -1,7 +1,7 @@
 {
   "chip" : "Apple M1 Pro",
   "codec" : "prores422hq",
-  "date" : "2026-11-19T08:43:08Z",
+  "date" : "2026-11-19T10:10:41Z",
   "fps" : 60,
   "frameLatency" : 1,
   "gpu" : "Apple M1 Pro",
@@ -17,22 +17,39 @@
       "audioCorrections" : 0,
       "audioMaxDriftMillis" : 0,
       "audioUnderruns" : 0,
-      "compositorMallocs" : 5588,
-      "cpuMax" : 6.268,
-      "cpuP50" : 0.091,
-      "cpuP99" : 0.148,
+      "compositorMallocs" : 6197,
+      "cpuMax" : 4.697,
+      "cpuP50" : 0.098,
+      "cpuP99" : 0.152,
       "dmxSamples" : 0,
       "dmxToPhotonP50" : 0,
       "dmxToPhotonP99" : 0,
-      "frames" : 1242,
-      "gpuMax" : 14.24,
-      "gpuP50" : 4.838,
-      "gpuP99" : 12.734,
+      "frames" : 1239,
+      "gpuMax" : 9.444,
+      "gpuP50" : 4.873,
+      "gpuP99" : 8.698,
       "late" : 0,
       "layers" : 8,
       "missed" : 0,
       "passed" : false,
-      "staleFrames" : 2,
+      "staleByLayer" : [
+        0,
+        0,
+        0,
+        3,
+        3,
+        0,
+        0,
+        0
+      ],
+      "staleFrames" : 6,
+      "staleRuns" : [
+        {
+          "frames" : 6,
+          "start" : 1.7741098332917318,
+          "ticks" : 3
+        }
+      ],
       "textureMisses" : 0
     }
   ],
