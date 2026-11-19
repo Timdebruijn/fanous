@@ -183,37 +183,53 @@ session that decodes one black ProRes 422 frame over and over and keeps every
 output buffer has exactly one slow decode, of 61 to 63 ms: the one after 121
 buffers at 1080p (three runs; 8.55 MB each, 1.035 GB held), after 30 at 4K (two
 runs; 34.1 MB each, 1.023 GB) and after 271 at 720p (two runs; 3.83 MB each,
-1.037 GB). No other decode takes over 15 ms up to 400, 120 and 800 buffers
-(3.4, 4.1 and 3.1 GB), and none at all when at most 60 buffers (0.5 GB) are
-held over 400 decodes. So the mark is between 1.037 and 1.041 GB of held
-output, and the 14 decoders above are 112 ring frames of 8.55 MB plus what each
-holds beside its ring. Passing it before the service starts takes the block
-away from the first switch of an 8-layer step with dissolves: with 16 decoders
-of the bench file decoding 32 frames each (three steps), with 16 sessions of
-the black frame holding 8 buffers each (two), and with one session holding 140
-(two, and one more that waited 61 s before the service started). It stays at
-the first switch when the 16 sessions hold nothing (three steps) and when the
-16 file decoders decode 2 frames each (two).
+1.037 GB; sizes as `CVPixelBufferGetDataSize` gives them). No other decode
+takes over 15 ms up to 400, 120 and 800 buffers (3.4, 4.1 and 3.1 GB), and none
+at all when at most 60 buffers (0.5 GB) are held over 400 decodes. So the mark
+is between 1.037 and 1.041 GB of held output, and the 14 decoders above are 112
+ring frames of 8.55 MB plus what each holds beside its ring. Passing it before
+the service starts takes the block away from the first switch of an 8-layer
+step with dissolves: with 16 decoders of the bench file decoding 32 frames each
+(three steps), with 16 sessions of the black frame holding 8 buffers each
+(two), and with one session holding 140 (two, and one more that waited 61 s
+before the service started). It stays at the first switch when the 16 sessions
+hold nothing (three steps; in a fourth, which waited 60 s, the bench's switch
+timer fired during the wait and the block fell at the start) and when the 16
+file decoders decode 2 frames each (two).
 
-The engine does that itself since PR #427: when the loader first opens a ProRes
-movie, `DecoderWarmUp` encodes one black 1080p frame and decodes it through one
-session on a thread of its own, keeping every buffer, until a decode blocks or
-an eighth of the memory (1.5 to 4 GB) is held, and lets go of all of it. Nine
-steps of 8 ProRes layers in permanent dissolves with it (six of the branch
-build, three of the trace build): all pass with 0 stale frames, where most
-failed on the first switch before. Traced, the block now falls 0.14 to 0.16 s
-after the first hand-over, on the 8 decoders that play (8 decodes of 58 to 62
-ms), and draws no stale frame: their rings are full by then. The warm-up takes
-0.20 to 0.22 s there and blocks with 427 MB held, the layers holding the rest.
-On a test engine with one clip on one layer it takes 0.27 s and blocks at 958
-MB; the engine's resident memory 1, 3 and 8 s later is 105 MB against 100 MB
-without it. What it does not reach is about 1 GB of ProRes started at once as
-the first ProRes of the process: two steps of 16 layers still have the block 70
-ms after their start, before the warm-up gets there, with 7 and 8 stale frames
-in the warm-up time as before (B392). Not measured: the mark on another Mac or
-macOS (the engine logs where a decode blocked, or that none did), what
-VideoToolbox does there, 4K layers in the engine (4 of them hold 1 GB), and a
-cut.
+The engine passes the mark itself since PR #427 (`DecoderWarmUp`): one black
+1080p ProRes frame is encoded and decoded through one hardware session on a
+thread of its own, every buffer kept, until 1.5 GB is held, and all of it is
+let go. It starts when a scan of the library shows a ProRes movie that plays,
+which at engine start is before anything plays, and `fanous-bench` runs it
+before its first ProRes step. Not on a Mac with less than 16 GB of memory. In
+12 runs it took 0.46 to 0.48 s (release bench) or 0.36 s (test engine), and its
+longest decode, 57 to 60 ms, began every time with 1034 MB held: the mark. With
+it, six steps of 8 ProRes layers in permanent dissolves (four of the branch's
+bench, two of the trace build) pass with 0 stale frames, where most failed on
+the first switch before (1 to 6 stale frames, 26 in one step); traced, no
+decode at the start or at a switch takes over 19 ms. Four steps of 16 layers
+pass too, and the two traced ones have 3 and 2 decodes of 25 to 44 ms at their
+start with 0 and 2 stale frames there, where the block alone made 7 and 8. On a
+test engine with a ProRes clip in its library the log reads `library scanned`,
+then `decoder warm-up heldMB=1505 longestAtMB=1034 longestDecodeMs=58 ms=362`,
+before the listener is up and before a layer has media. The memory is the
+system's wired memory, not the process's footprint (`footprint` showed a peak
+of 43 MB): 2.61 GB before the engine started, 3.38 GB in the last sample taken
+during the warm-up, 2.68 GB two seconds later.
+
+A ProRes movie that is not from the library (a scene's file, or a library not
+scanned yet when a layer opens its movie) starts the same warm-up at its first
+open, next to pictures that play. Measured with that as the only trigger, in
+nine steps of 8 layers in dissolves (six of the bench, three traced): all pass
+with 0 stale frames, and the block falls 0.14 to 0.16 s after the first
+hand-over on the 8 decoders that play (58 to 62 ms each), whose rings are full
+by then. A picture swapped in during those 0.2 s would meet the block, and 16
+layers started together pass the mark by themselves 70 ms after their start,
+before the warm-up gets there (7 and 8 stale frames in two steps); both are
+B392. Not measured: the mark on another Mac or macOS (the log line gives the
+longest decode and where it began), what VideoToolbox does there, 4K layers in
+the engine (4 of them hold 1 GB), and a cut.
 
 Display runs, 2026-11-19: main `cc1c002b`, `--display 0` (the built-in 120 Hz
 panel, the only display attached), the same criterion, load about 3 to 6.
