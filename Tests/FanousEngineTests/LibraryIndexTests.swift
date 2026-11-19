@@ -48,6 +48,21 @@ struct LibraryIndexTests {
         #expect(!LibrarySnapshot.empty.holdsProRes)
     }
 
+    /// B389: the index that replaces the engine's on another root starts the warm-up like it (the engine's own hook
+    /// read the old index after a root change); a test's index does not. Empty roots: nothing to warm for.
+    @Test func aReplacementIndexWarmsDecodersLikeTheOneItReplaces() throws {
+        let cache = try tempDir("fanous-warm-cache")
+        let index = LibraryIndex(root: try tempDir("fanous-warm-a"), cacheDirectory: cache, logger: testLogger)
+        #expect(!index.warmsDecoders)
+        let plain = index.replacement(root: try tempDir("fanous-warm-b"))
+        defer { plain.stop() }
+        #expect(!plain.warmsDecoders)
+        index.warmsDecoders = true
+        let next = index.replacement(root: try tempDir("fanous-warm-c"))
+        defer { next.stop() }
+        #expect(next.warmsDecoders)
+    }
+
     /// Numbering, invalid names, duplicates, ignored folders; files are empty so every probe ends "unreadable".
     @Test func scanClassifiesNamesAndDuplicates() throws {
         let root = try tempDir("fanous-library")

@@ -436,6 +436,9 @@ public final class MediaLoader: @unchecked Sendable {
     /// next selection; the open's thread runs on (one blocked in `open(2)` on a gone volume cannot be stopped) and its
     /// media still plays when it answers and nothing newer was selected on the layer.
     var openDeadline: Duration = .seconds(2)
+    /// B389: the first ProRes movie opened starts the decoder warm-up when it has not run. The engine sets it; a
+    /// test's loader leaves the decoder alone.
+    public var warmsDecoders = false
     /// B277: file opens that normally run at once within their deadline (measured: 4 at a time opens 8 ProRes files about
     /// twice as fast as one at a time, 8 at a time no faster; a layer that leaves its open for a clear or a live input
     /// frees its slot while that thread may still run), and open threads alive at most, given-up ones included: never
@@ -913,8 +916,8 @@ public final class MediaLoader: @unchecked Sendable {
                 return playback
             case .movie(let movie, let audio): (source, reader) = (movie, audio)
             }
-            // B389: a ProRes movie that is not from the library (a scene's file): the warm-up the engine starts at its first scan
-            if MovieSource.proResCodecs.contains(source.info.codec) { DecoderWarmUp.startOnce(logger: logger) }
+            // B389: a ProRes movie the library had not shown yet (a scene's file, one still being probed)
+            if warmsDecoders, MovieSource.proResCodecs.contains(source.info.codec) { DecoderWarmUp.startOnce(logger: logger) }
             let ring = FrameRing(capacity: ringCapacity)
             let decoder = LayerDecoder(source: source, ring: ring, logger: logger)
             if let mixer, let reader, reader.hasAudio, layer * 2 + 1 < mixer.channels.count {

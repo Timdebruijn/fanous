@@ -22,7 +22,8 @@ public enum DecoderWarmUp {
         public var skipped: String?
         /// Bytes of decoder output held at the end.
         public var heldBytes = 0
-        /// The longest decode, and the bytes held when it began: on the Mac measured, the block and the mark.
+        /// The longest decode, and the bytes held when it began: on the Mac measured, the block and the mark. With 0
+        /// bytes it is the session's first decode: no block.
         public var longestDecode = 0.0
         public var longestAtBytes = 0
         public var seconds = 0.0
@@ -38,19 +39,19 @@ public enum DecoderWarmUp {
     private static let started = Atomic<Bool>(false)
     public static var hasStarted: Bool { started.load(ordering: .relaxed) }
 
-    /// Once per process, on a thread of its own: the engine calls it when its library holds a ProRes movie (at start,
-    /// before anything plays, or when the first one arrives), and the loader when it opens one from elsewhere. In that
-    /// last case pictures play already: those whose ring is full ride the block out, one started in the 0.2 s after
-    /// that first open can meet it (B392).
+    /// Once per process, on a thread of its own: the library index calls it when a scan or a probe shows the first
+    /// ProRes movie after the engine's start, and the loader when it opens one the library had not shown. Pictures may
+    /// play then: those whose ring is full ride the block out, one swapped in while it runs can meet it (B392).
     public static func startOnce(logger: Logger) {
         guard !started.exchange(true, ordering: .relaxed) else { return }
         let thread = Thread { log(run(target: target), logger: logger) }
         thread.name = "org.fanous.decode.warmup"
-        thread.qualityOfService = .userInitiated  // as the decode threads: it is 0.3 s of work, and late is worse than busy
+        thread.qualityOfService = .userInitiated  // as the decode threads: it is half a second of work, and late is worse than busy
         thread.start()
     }
 
-    /// The same on the calling thread, which waits for it (`fanous-bench`, before its service starts).
+    /// The same on the calling thread, which waits for it: the engine at its start when the first scan shows ProRes,
+    /// and `fanous-bench` before its service starts. Returns at once when the warm-up was started before.
     public static func runOnce(logger: Logger) {
         guard !started.exchange(true, ordering: .relaxed) else { return }
         log(run(target: target), logger: logger)
@@ -84,24 +85,19 @@ public enum DecoderWarmUp {
         }
         let session: VTDecompressionSession
         do {
-            let made = try MovieSource.makeSession(description, codec: kCMVideoCodecType_AppleProRes422)
-            guard !made.1 else {  // the mark was measured on the hardware decoder
-                VTDecompressionSessionInvalidate(made.0)
-                report.skipped = "software ProRes decoder"
-                return report
-            }
-            session = made.0
+            session = try MovieSource.makeSession(description, codec: kCMVideoCodecType_AppleProRes422).0
         } catch {
             report.skipped = "no ProRes decoder: \(error)"
             return report
         }
         defer { VTDecompressionSessionInvalidate(session) }
         nonisolated(unsafe) var held: [CVPixelBuffer] = []
-        let most = target / (width * height * 2) + 1  // no frame is smaller than 4:2:2 at 8 bits: the loop ends whatever a size reads as
+        let most = target / (width * height * 4) + 1  // the decoder's frame is 4:2:2 at 16 bits or more: the loop ends whatever a size reads as
+        var status = noErr
         while report.heldBytes < target, held.count < most {
             let before = held.count
             let t0 = ContinuousClock.now
-            let status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { _, _, buffer, _, _ in
+            status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { _, _, buffer, _, _ in
                 if let buffer { held.append(buffer) }
             }
             guard status == noErr, held.count > before, let buffer = held.last else { break }
@@ -110,6 +106,8 @@ public enum DecoderWarmUp {
             report.heldBytes += CVPixelBufferGetDataSize(buffer)
         }
         report.seconds = (ContinuousClock.now - start) / .seconds(1)
+        // short of the target the mark may not be passed, and it does not run again: the log must not read as done
+        if report.heldBytes < target { report.skipped = "stopped at \(report.heldBytes / 1_000_000) MB of \(target / 1_000_000) (decode status \(status), \(held.count) frames)" }
         return report
     }
 

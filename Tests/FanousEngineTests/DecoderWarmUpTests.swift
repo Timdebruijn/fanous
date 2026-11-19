@@ -8,7 +8,7 @@ import Testing
 @testable import FanousEngine
 
 /// B389. Needs the ProRes encoder and decoder of a real Mac: not on the `--hosted` list. No test asks whether a decode
-/// blocked: another test's loader may take the process past the mark while these run.
+/// blocked. Nothing else in the suite runs the warm-up: a test's loader and library index leave the decoder alone.
 @Suite struct DecoderWarmUpTests {
     @Test(.offPool) func theSampleIsOneProRes422Frame() throws {
         let sample = try #require(DecoderWarmUp.sample(width: 1920, height: 1080))
