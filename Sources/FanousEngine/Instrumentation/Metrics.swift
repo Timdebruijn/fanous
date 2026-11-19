@@ -42,6 +42,15 @@ public struct MetricsSummary: Sendable, CustomStringConvertible {
     }
 }
 
+/// Consecutive ticks that each queued at least one stale picture (B391).
+public struct StaleRun: Sendable, Codable, Equatable {
+    public var start: Double  // target time of the first tick (host seconds)
+    public var ticks: Int
+    public var frames: Int  // `FrameRecord.staleFrames` summed over the run
+
+    public init(start: Double, ticks: Int, frames: Int) { (self.start, self.ticks, self.frames) = (start, ticks, frames) }
+}
+
 public final class MetricsRing: @unchecked Sendable {
     public let capacity: Int
     private var records: [FrameRecord]
@@ -111,5 +120,24 @@ public final class MetricsRing: @unchecked Sendable {
         s.dmxSamples = dmx.count
         if let first = frames.first, let last = frames.last { s.seconds = last.target - first.target }
         return s
+    }
+
+    /// The runs of stale ticks in the last `seconds`, oldest first (B391): when stale pictures were drawn and for how
+    /// long on end. A run counts ticks on which any layer was stale, so which layer it was comes from the layers' own
+    /// counters, not from here. A skipped tick (`missed`) ends a run. Reader side.
+    public func staleRuns(seconds: Double, now: Double) -> [StaleRun] {
+        var runs: [StaleRun] = []
+        var open = false
+        for record in recent(seconds: seconds, now: now) {
+            guard record.staleFrames > 0 else { open = false; continue }
+            if open, record.missed == 0 {
+                runs[runs.count - 1].ticks += 1
+                runs[runs.count - 1].frames += Int(record.staleFrames)
+            } else {
+                runs.append(StaleRun(start: record.target, ticks: 1, frames: Int(record.staleFrames)))
+                open = true
+            }
+        }
+        return runs
     }
 }

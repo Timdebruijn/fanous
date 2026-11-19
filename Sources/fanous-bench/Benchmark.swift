@@ -20,6 +20,16 @@ enum Benchmark {
         var textureMisses: Int
         /// Movie pictures queued with a frame other than their clock's over the window (B371); not judged with `--dmx`.
         var staleFrames: Int
+        /// The layers' own stale counts over the window, and the runs of consecutive stale ticks with `start` in seconds
+        /// into the window (B391): which layers, when and for how long on end. The layers' counters are read beside
+        /// the window and the ring by target time, so the two can differ by a tick's worth; on a window longer than the
+        /// metrics ring (a soak) `staleFrames` and the runs cover its last 16 384 ticks, the layers' counts all of it.
+        var staleByLayer: [Int]
+        var staleRuns: [StaleRun]
+        var staleDetail: String {
+            let longest = staleRuns.max { $0.ticks < $1.ticks }
+            return "by layer \(staleByLayer), \(staleRuns.count) runs" + (longest.map { String(format: ", longest %d ticks at %.1f s", $0.ticks, $0.start) } ?? "")
+        }
         var cpuP50: Double, cpuP99: Double, cpuMax: Double
         var gpuP50: Double, gpuP99: Double, gpuMax: Double
         /// Allocations on the compositor thread over the window (§4.6, `MallocCounter`); nil: no `malloc_logger`, or
@@ -149,6 +159,7 @@ enum Benchmark {
                     let step = try await measure(layers: count, seconds: window, file: file, width: width, height: height, fps: fps, display: useDisplay, ringCapacity: ringCapacity, context: context, metrics: metrics, parameters: parameters, logger: logger)
                     result.steps.append(step)
                     print("layers \(count): \(step.passed ? "PASS" : "FAIL")  frames \(step.frames) missed \(step.missed) late \(step.late) textureMisses \(step.textureMisses) staleFrames \(step.staleFrames)  cpu p99 \(String(format: "%.2f", step.cpuP99)) ms  gpu p99 \(String(format: "%.2f", step.gpuP99)) ms  compositor mallocs \(step.mallocsPerTick)" + (step.dmxSamples > 0 ? String(format: "  dmx→photon p50 %.1f p99 %.1f ms (n=%d)", step.dmxToPhotonP50, step.dmxToPhotonP99, step.dmxSamples) : ""))
+                    if step.staleFrames > 0 { print("  stale: \(step.staleDetail)") }
                     if step.audioCorrections > 0 || step.audioMaxDriftMillis > 0 { print(String(format: "  audio: underruns %d corrections %d max drift %.1f ms", step.audioUnderruns, step.audioCorrections, step.audioMaxDriftMillis)) }
                     if step.passed { result.maxLayers = count } else { break }
                 }
@@ -157,6 +168,7 @@ enum Benchmark {
                     let step = try await measure(layers: result.maxLayers, seconds: soak, file: file, width: width, height: height, fps: fps, display: useDisplay, ringCapacity: ringCapacity, context: context, metrics: metrics, parameters: parameters, logger: logger)
                     result.soakStep = step
                     print("soak: \(step.passed ? "PASS" : "FAIL")  missed \(step.missed) late \(step.late) stale \(step.staleFrames)")
+                    if step.staleFrames > 0 { print("  stale: \(step.staleDetail)") }
                 }
                 try write(result, to: outputDirectory)
             } catch {
@@ -213,6 +225,7 @@ enum Benchmark {
             print("  ingest: transcoding \(source.lastPathComponent) to HAP Q during the window")
         }
         let start = CACurrentMediaTime()
+        let staleAtStart = service.layers.map { $0.staleFrames.load(ordering: .relaxed) }
         let waitsAtStart = service.counters.completionWaits
         // the warm-up ticked, so the driver's thread is known; counted from here on, not process-wide (B97)
         let counted = MallocCounter.available ? pthread_t(bitPattern: service.compositor.tickThread.load(ordering: .relaxed)) : nil
@@ -221,6 +234,8 @@ enum Benchmark {
         let now = CACurrentMediaTime()
         let compositorMallocs = counted.map { _ in MallocCounter.stop() }
         let summary = metrics.summary(seconds: now - start, now: now)
+        let staleByLayer = zip(service.layers, staleAtStart).prefix(layers).map { $0.staleFrames.load(ordering: .relaxed) - $1 }
+        let staleRuns = metrics.staleRuns(seconds: now - start, now: now).map { StaleRun(start: $0.start - start, ticks: $0.ticks, frames: $0.frames) }
         let counters = service.counters
         let audio = service.mixer?.statistics ?? AudioStatistics()
         // ticks book the buffers that finished by then (B105): up to 8 can still be unbooked; waits within the window
@@ -237,7 +252,7 @@ enum Benchmark {
         try await Task.sleep(for: .milliseconds(300))
         return Step(
             layers: layers, frames: summary.frames, missed: summary.missed, late: summary.late, textureMisses: summary.textureMisses, staleFrames: summary.staleFrames,
-            cpuP50: summary.cpuP50, cpuP99: summary.cpuP99, cpuMax: summary.cpuMax, gpuP50: summary.gpuP50, gpuP99: summary.gpuP99,
+            staleByLayer: staleByLayer, staleRuns: staleRuns, cpuP50: summary.cpuP50, cpuP99: summary.cpuP99, cpuMax: summary.cpuMax, gpuP50: summary.gpuP50, gpuP99: summary.gpuP99,
             gpuMax: summary.gpuMax, compositorMallocs: compositorMallocs,
             dmxToPhotonP50: summary.dmxP50, dmxToPhotonP99: summary.dmxP99, dmxSamples: summary.dmxSamples,
             audioUnderruns: Int(audio.underruns), audioCorrections: Int(audio.corrections), audioMaxDriftMillis: audio.maxDriftMillis,
@@ -266,6 +281,10 @@ enum Benchmark {
         }
         if let dmx = result.steps.last, dmx.dmxSamples > 0 {
             md += String(format: "\nDMX→photon estimate (Art-Net receive → target presentation time): p50 %.1f ms, p99 %.1f ms over %d DMX frames\n", dmx.dmxToPhotonP50, dmx.dmxToPhotonP99, dmx.dmxSamples)
+        }
+        for s in result.steps + [result.soakStep].compactMap({ $0 }) where s.staleFrames > 0 {
+            let runs = s.staleRuns.prefix(12).map { String(format: "%.1f s × %d ticks (%d)", $0.start, $0.ticks, $0.frames) }.joined(separator: ", ")
+            md += "\nStale frames at \(s.layers) layers: \(s.staleDetail). Runs (start in the window × ticks (frames)): \(runs)\(s.staleRuns.count > 12 ? ", …" : "")\n"
         }
         if let soak = result.soakStep {
             md += String(format: "\nSoak at %d layers for %.0f s: %@ (missed %d, late %d, texture misses %d, stale frames %d)\n", soak.layers, result.soakSeconds, soak.passed ? "pass" : "fail", soak.missed, soak.late, soak.textureMisses, soak.staleFrames)

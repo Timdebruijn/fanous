@@ -12,8 +12,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 case ${1:-} in
-  sweep) FILTER='^layers|^soak|wrote|error' ;;
-  phase3|drift) FILTER='^layers|^  audio|wrote|error' ;;
+  sweep) FILTER='^layers|^  stale|^soak|wrote|error' ;;
+  phase3|drift) FILTER='^layers|^  stale|^  audio|wrote|error' ;;
   *) echo "usage: scripts/bench.sh sweep|phase3|drift" >&2; exit 64 ;;
 esac
 MEDIA=${MEDIA:-"$HOME/Movies/Fanous Bench"}

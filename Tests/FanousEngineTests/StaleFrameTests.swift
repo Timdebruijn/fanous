@@ -178,4 +178,31 @@ struct MetricsStaleFramesTests {
         #expect(ring.summary(seconds: 0.15, now: 100.4).staleFrames == 4, "the window: the last two ticks")
         #expect(ring.summary(seconds: 1, now: 100.5).description.contains("staleFrames 6"))
     }
+
+    /// B391: consecutive stale ticks are one run, a clean tick ends it, and the window cuts a run.
+    @Test func staleTicksInARowAreOneRun() {
+        let ring = MetricsRing(capacity: 8)
+        for (i, stale) in [0, 2, 0, 1, 3, 0].enumerated() {
+            var record = FrameRecord()
+            record.target = 100 + Double(i) / 10
+            record.staleFrames = UInt16(stale)
+            _ = ring.write(record)
+        }
+        #expect(ring.staleRuns(seconds: 1, now: 100.6) == [StaleRun(start: 100 + 1.0 / 10, ticks: 1, frames: 2), StaleRun(start: 100 + 3.0 / 10, ticks: 2, frames: 4)])
+        #expect(ring.staleRuns(seconds: 0.25, now: 100.6) == [StaleRun(start: 100 + 4.0 / 10, ticks: 1, frames: 3)], "the window starts inside the run")
+        #expect(MetricsRing(capacity: 8).staleRuns(seconds: 1, now: 100).isEmpty)
+    }
+
+    /// Two stale ticks with a skipped tick between them were not drawn one after the other: two runs.
+    @Test func aSkippedTickEndsARun() {
+        let ring = MetricsRing(capacity: 8)
+        for (target, missed) in [(100.0, 0), (100.5, 1)] {
+            var record = FrameRecord()
+            record.target = target
+            record.missed = UInt16(missed)
+            record.staleFrames = 1
+            _ = ring.write(record)
+        }
+        #expect(ring.staleRuns(seconds: 1, now: 100.6).map(\.ticks) == [1, 1])
+    }
 }
