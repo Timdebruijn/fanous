@@ -26,7 +26,9 @@ Until 2026-11-18 a playing layer decoded about 8 of every 11 frames (B364),
 picked its picture from three ring entries (B372), and the criterion could not
 see a picture drawn with an older frame (B371). Every headless number further
 down this page was measured in that state; this section replaces them. The
-display runs, the soaks and DMX→photon have not been repeated.
+display runs on the built-in panel were repeated on 2026-11-19 (at the end of
+this section); the runs on a 4K display, the ingest runs, the soaks and
+DMX→photon have not been.
 
 Same MacBook Pro M1 Pro (32 GB), macOS 27.2.1, release build of main
 `e7428db6` with the ring change below, headless, 20 s windows, the installed engine stopped. `fanous-bench`
@@ -91,10 +93,34 @@ So a dissolve under 16 decoders now and then draws a picture with an older
 frame, which the criterion of 2026-10-23 could not see (B389). Which side of
 the dissolve shows it, and whether it is visible, is not measured.
 
+Display runs, 2026-11-19: main `cc1c002b`, `--display 0` (the built-in 120 Hz
+panel, the only display attached), the same criterion, load about 3 to 6.
+Single steps, no ramps:
+
+| Variant | Codec | Canvas | Window | Result |
+|---|---|---|---|---|
+| 16 layers | ProRes 422 HQ | 1080p60 | 120 s | first run **fail on 101 stale frames** (7227 frames, 0 missed, 0 late, 0 texture misses, GPU p99 10.5 ms); second run **pass** (7224 frames, 0 stale, 10.1 ms) |
+| 16 layers | HAP Q | 1080p60 | 120 s | **pass**, 7224 frames, GPU p99 9.6 ms |
+| invert + tint on all 16 layers | HAP Q | 1080p60 | 20 s | **pass**, GPU p99 12.4 ms |
+| invert + tint on all 16 layers | ProRes 422 HQ | 1080p60 | 20 s | **pass**, GPU p99 12.7 ms |
+| permanent 2 s dissolves, 8 layers | HAP Q | 1080p60 | 20 s | **pass**, 0 stale, GPU p99 10.1 ms |
+| permanent 2 s dissolves, 8 layers | ProRes 422 HQ | 1080p60 | 20 s | **pass**, 0 stale, GPU p99 10.6 ms |
+| blur + edge on every layer, 2 layers | both | 1080p60 | 20 s | **pass**, GPU p99 4.8 ms (HAP Q was 10.3 ms on 2026-10-23, before the scratch pass of B2) |
+| blur + edge on every layer, 5 layers | both | 1080p60 | 20 s | **pass**, GPU p99 9.8 ms (HAP Q) and 10.5 ms (ProRes) |
+| 4 layers | ProRes 422 HQ | 4K60 canvas | 20 s | **pass**, GPU p99 10.4 ms |
+| 5 layers | ProRes 422 HQ | 4K60 canvas | 20 s | **pass**, GPU p99 12.5 ms |
+| 6 layers | HAP Q | 4K60 canvas | 20 s | **fail**, 6 late (GPU p99 14.0 ms); the headless ramp passed 6 |
+
+The 101 stale frames of the first ProRes run did not come back in the second,
+and the report does not say which layers drew them or in how many ticks in a
+row: not explained (B391). That run has the report file; the passing rerun has
+none (same name). The compositor allocated 21.0 times per tick in the plain
+runs, 32.0 and 47.0 with blur + edge on 2 and 5 layers.
+
 ## Results of 2026-10-23 (MacBook Pro M1 Pro, 32 GB, macOS 27.0.1)
 
-The headless rows are superseded by the section above; the display rows have
-not been repeated.
+The headless rows are superseded by the section above, the display rows by its
+display runs of 2026-11-19.
 
 Pass = 0 missed, 0 late, 0 texture misses in a 20 s window after 2 s warm-up.
 Headless rows use the mach-clock compositor; display rows use the drawable-loop
@@ -132,8 +158,10 @@ ProRes 4444 1080p 1.8 ms (`y416`, alpha kept) vs 0.95 ms native; HAP Q 1080p
 ## Phase 3 (2026-10-23): effects, dissolves, audio
 
 The blur + edge and dissolve rows below are superseded by the section
-"Re-measured 2026-11-18 and 19"; the per-pixel effect rows, the cost per
-effect and the audio runs have not been repeated.
+"Re-measured 2026-11-18 and 19", and so are the display rows of this table
+(invert + tint on 16 layers, dissolves on 8, blur + edge on 2); the headless
+per-pixel effect rows, the cost per effect and the audio runs have not been
+repeated.
 
 Same machine and criterion; release build; `scripts/bench.sh phase3` runs the
 matrix (`--effects a,b` puts both effect slots on every layer, `--dissolve 2`
@@ -336,7 +364,8 @@ badly, so `nextDrawable()` blocked. Not a regression of the review round (the
 older build shows it too). The 8 h soak ran headless and did not see it.
 
 16 layers on the 120 Hz built-in panel with three drawables (release, 2 min
-each, `fanous-bench run --layers 16 --window 120 --display 1`):
+each, `fanous-bench run --layers 16 --window 120 --display 1`; repeated on
+2026-11-19 with the stale-frame criterion, see "Re-measured 2026-11-18 and 19"):
 
 | Codec | Frames | Missed | Late | Texture misses | GPU p99 |
 |---|---|---|---|---|---|

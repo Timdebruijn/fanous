@@ -1,0 +1,42 @@
+{
+  "chip" : "Apple M1 Pro",
+  "codec" : "prores422hq",
+  "date" : "2026-11-19T09:24:17Z",
+  "display" : 0,
+  "fps" : 60,
+  "frameLatency" : 1,
+  "gpu" : "Apple M1 Pro",
+  "height" : 1080,
+  "maxLayers" : 5,
+  "media" : "prores422hq_1920x1080p60.mov",
+  "memoryGB" : 32,
+  "os" : "Version 27.2.1 (Build 26B131)",
+  "ringCapacity" : 8,
+  "soakSeconds" : 0,
+  "steps" : [
+    {
+      "audioCorrections" : 0,
+      "audioMaxDriftMillis" : 0,
+      "audioUnderruns" : 0,
+      "compositorMallocs" : 57482,
+      "cpuMax" : 0.187,
+      "cpuP50" : 0.113,
+      "cpuP99" : 0.176,
+      "dmxSamples" : 0,
+      "dmxToPhotonP50" : 0,
+      "dmxToPhotonP99" : 0,
+      "frames" : 1224,
+      "gpuMax" : 10.609,
+      "gpuP50" : 7.091,
+      "gpuP99" : 10.535,
+      "late" : 0,
+      "layers" : 5,
+      "missed" : 0,
+      "passed" : true,
+      "staleFrames" : 0,
+      "textureMisses" : 0
+    }
+  ],
+  "width" : 1920,
+  "windowSeconds" : 20
+}
