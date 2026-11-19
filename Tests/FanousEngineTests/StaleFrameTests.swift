@@ -192,4 +192,17 @@ struct MetricsStaleFramesTests {
         #expect(ring.staleRuns(seconds: 0.25, now: 100.6) == [StaleRun(start: 100 + 4.0 / 10, ticks: 1, frames: 3)], "the window starts inside the run")
         #expect(MetricsRing(capacity: 8).staleRuns(seconds: 1, now: 100).isEmpty)
     }
+
+    /// Two stale ticks with a skipped tick between them were not drawn one after the other: two runs.
+    @Test func aSkippedTickEndsARun() {
+        let ring = MetricsRing(capacity: 8)
+        for (target, missed) in [(100.0, 0), (100.5, 1)] {
+            var record = FrameRecord()
+            record.target = target
+            record.missed = UInt16(missed)
+            record.staleFrames = 1
+            _ = ring.write(record)
+        }
+        #expect(ring.staleRuns(seconds: 1, now: 100.6).map(\.ticks) == [1, 1])
+    }
 }

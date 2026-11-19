@@ -122,14 +122,15 @@ public final class MetricsRing: @unchecked Sendable {
         return s
     }
 
-    /// The runs of stale ticks in the last `seconds`, oldest first: one long run is a layer that stayed behind, many
-    /// short ones are single late decodes (B391). Reader side.
+    /// The runs of stale ticks in the last `seconds`, oldest first (B391): when stale pictures were drawn and for how
+    /// long on end. A run counts ticks on which any layer was stale, so which layer it was comes from the layers' own
+    /// counters, not from here. A skipped tick (`missed`) ends a run. Reader side.
     public func staleRuns(seconds: Double, now: Double) -> [StaleRun] {
         var runs: [StaleRun] = []
         var open = false
         for record in recent(seconds: seconds, now: now) {
             guard record.staleFrames > 0 else { open = false; continue }
-            if open {
+            if open, record.missed == 0 {
                 runs[runs.count - 1].ticks += 1
                 runs[runs.count - 1].frames += Int(record.staleFrames)
             } else {

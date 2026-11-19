@@ -17,8 +17,8 @@ Pass criterion per step: 0 missed display-link ticks, 0 late GPU completions,
 2026-11-18, 0 stale frames (a movie picture drawn with a frame other than its
 clock's, B371; reported but not judged with `--dmx`), over the whole
 window (after a 2 s warm-up). A step with stale frames also reports them per
-layer and as runs of consecutive ticks (B391): one long run is a layer that
-stayed behind, many short ones are single late decodes. Headless runs use a `mach_wait_until` clock at
+layer and as runs of consecutive stale ticks (B391): the counts per layer say
+which layers, the runs say when and for how long on end. Headless runs use a `mach_wait_until` clock at
 the canvas rate and measure CPU/GPU/decode throughput; display runs add the
 real `CAMetalDisplayLink` with `preferredFrameLatency = 1`.
 

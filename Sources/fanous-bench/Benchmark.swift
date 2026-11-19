@@ -21,8 +21,9 @@ enum Benchmark {
         /// Movie pictures queued with a frame other than their clock's over the window (B371); not judged with `--dmx`.
         var staleFrames: Int
         /// The layers' own stale counts over the window, and the runs of consecutive stale ticks with `start` in seconds
-        /// into the window (B391): which layers, and whether one stayed behind or many were late once. The layers'
-        /// counters are read beside the window, the ring by target time, so the two can differ by a tick's worth.
+        /// into the window (B391): which layers, when and for how long on end. The layers' counters are read beside
+        /// the window and the ring by target time, so the two can differ by a tick's worth; on a window longer than the
+        /// metrics ring (a soak) `staleFrames` and the runs cover its last 16 384 ticks, the layers' counts all of it.
         var staleByLayer: [Int]
         var staleRuns: [StaleRun]
         var staleDetail: String {
