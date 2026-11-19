@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Bench: a step with stale frames reports them per layer and as runs of consecutive stale ticks, in the output, the
+  report and its JSON (`staleByLayer`, `staleRuns`), so a layer that stayed behind can be told from single late
+  decodes (B391) (PR #NNN).
 - Docs: the display runs on the built-in panel are measured again with the stale-frame criterion: 16 layers at
   1080p60, invert + tint on 16, dissolves on 8 and blur + edge on 5 hold, 4 and 5 ProRes 422 HQ layers pass at
   4K60, and one of two 2-minute runs of 16 ProRes layers drew 101 stale frames (B391) (PR #421).
