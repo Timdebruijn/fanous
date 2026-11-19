@@ -303,23 +303,23 @@ does not see the path.
 All numbers are from the reference MacBook Pro M1 Pro (32 GB), release
 build. "Headless" is the engine's own clock with no display; "display" is a
 real output. Pass means no missed or late frame and no texture miss in a
-10 or 20 s window. The 2026-10-23 runs were idle (macOS 27.0.1); the
-2026-11-03 runs were on a 4K display with other work on the Mac (load 5 to
-24, macOS 27.2), so they say what a busy Mac manages, not a show Mac.
-These runs could not see a layer that showed an older frame on time (a stale
-frame); the benchmark counts those since 2026-11-18, and the numbers below are
-still to be measured again with it.
+10 or 20 s window, and for the headless runs of 2026-11-18 and 19 also no
+stale frame: a layer that showed an older frame on time. Those runs replace
+the headless ones of 2026-10-23, which were made while a playing layer skipped
+frames. The display runs are older and could not see a stale frame. Every run
+from 2026-11-03 on had other work on the Mac (load 3 to 24, macOS 27.2), so
+it says what a busy Mac manages, not a show Mac.
 
 | Content | Result |
 |---|---|
-| 16 layers of 1080p60 ProRes 422 HQ | Pass headless (GPU p99 3.9 ms); on the display one texture miss in 1212 frames (2026-10-23); pass under load on the 4K display (2026-11-03) |
-| 16 layers of 1080p60 HAP Q | Pass headless and on the display (2026-10-23) |
-| 16 layers of 4K30 ProRes 422 HQ | Pass headless (GPU p99 13.3 ms, 2026-10-23); no display run |
-| 4K60 ProRes 422 HQ | 3 to 7 layers headless depending on the run, with single texture misses that did not reproduce later (2026-10-23, 2026-11-02); 4 layers pass on the 4K display under load, 7 showed late GPU frames (2026-11-03). Treat 4 as the safe number |
-| 4K30 HAP Q | 16 layers headless with the default read-ahead of 8 frames (2026-10-23) |
-| 4K60 HAP Q | At least 4 layers headless (2026-10-23); 8 fail on GPU time under load (2026-11-03) |
-| Blur and Edge on every layer at 1080p60 | 3 ProRes layers pass, 4 fail; 2 HAP Q layers pass, 3 fail (headless, 2026-10-23, before the blur change of 2026-11-03 that cut the cost of Blur alone by about half) |
-| A dissolve (Dissolve channel) | Uses a second decoder: counts as one more layer. 8 layers in permanent 2 s dissolves at 1080p60 pass (2026-10-23) |
+| 16 layers of 1080p60 ProRes 422 HQ | Pass headless (GPU p99 9.9 ms, 2026-11-18); on the display one texture miss in 1212 frames (2026-10-23); pass under load on the 4K display (2026-11-03) |
+| 16 layers of 1080p60 HAP Q | Pass headless (2026-11-18) and on the display (2026-10-23) |
+| 16 layers of 4K30 ProRes 422 HQ or HAP Q | Pass headless (GPU p99 14 to 15 ms, 2026-11-18); no display run |
+| 4K60 ProRes 422 HQ | 5 layers pass headless, 6 show a late frame (2026-11-18); 4 layers pass on the 4K display under load, 7 showed late GPU frames (2026-11-03). Treat 4 as the safe number |
+| 4K60 HAP Q | 6 layers pass headless, 7 show late frames (2026-11-18); 8 fail on GPU time under load (2026-11-03) |
+| Blur and Edge on every layer at 1080p60 | 5 layers pass, ProRes or HAP Q. Above 5 it depends on the run: 16 layers passed every time, 6 to 12 showed late frames in most runs (headless, 2026-11-19). Count on 5 |
+| Blur and Edge on every layer at 4K30 | 8 or 9 layers pass; 16 fail by far (headless, 2026-11-19) |
+| A dissolve (Dissolve channel) | Uses a second decoder: counts as one more layer. 8 layers in permanent 2 s dissolves at 1080p60 miss no frame, but most ProRes runs showed 1 to 4 stale frames in 20 s (headless, 2026-11-18 and 19) |
 
 Rules of thumb:
 

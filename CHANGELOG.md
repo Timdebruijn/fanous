@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: the layer counts are measured again with the stale-frame criterion and the repaired playback (B375):
+  16 layers hold at 1080p60 and 4K30, 4K60 is 5 ProRes 422 HQ or 6 HAP Q layers, blur + edge on every layer is 5
+  layers at 1080p60, and permanent dissolves on 8 layers now and then draw a stale frame; `fanous-bench` runs the
+  engine's ring of 8 at every size (it used 6 up to 2000 px width) (PR #420).
 - Engine: a movie layer queued with a frame other than its clock's is counted: `/metrics` has `staleFrames`,
   `totalStaleFrames` and `layerStaleFrames`, and `fanous-bench` reports stale frames and fails a step on any (B371)
   (PR #419).

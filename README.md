@@ -97,6 +97,7 @@ missed frame, no late frame, no layer without a picture, over the whole window.
 |---|---|
 | 16 layers, 1080p60, ProRes 422 HQ or HAP Q, on the 120 Hz built-in display, 2 min | 0 missed, 0 late; GPU p99 10 ms (2026-10-26) |
 | 4K60 ProRes 422 HQ, on a 4K display | 4 layers pass; 7 showed late GPU frames (2026-11-03, other work running) |
+| 4K60, headless | 5 layers of ProRes 422 HQ or 6 of HAP Q pass; one more shows late GPU frames (2026-11-18, other work running) |
 | 8-hour soak, 8 layers 1080p60, headless, `kill -9` every 2 h | 0 missed frames in about 1.7 million, 5 presented one refresh late; engine back in 0.26 s; memory 218 to 230 MB (2026-10-24) |
 | Art-Net in to pixel out, 2 layers, 60 fps canvas | p99 32 ms: two frames; the display's own scan-out not included (2026-10-23) |
 
@@ -180,7 +181,7 @@ with a "where to start" chart: [docs/user/README.md](docs/user/README.md).
   canvas rate to the display's refresh, and expect two projectors up to one refresh apart.
 - **Audio is one stereo mix** on the Mac's default output, at 100 % forward speed only.
 - **Apple Silicon only:** no Intel, Windows or Linux.
-- **4K60 is about 4 ProRes layers;** Blur and Edge on every layer fit 3 ProRes layers at 1080p60 (headless, measured before the Blur speed-up).
+- **4K60 is about 4 ProRes layers;** Blur and Edge on every layer fit 5 layers at 1080p60 (headless, 2026-11-19).
 - **No NDI, DeckLink or AJA in the open build.** No text layer, no MIDI output; 3D mapping comes
   later. In plain words: [known limitations](docs/user/reference/known-limitations.md);
   everything open: [`docs/BACKLOG.md`](docs/BACKLOG.md).

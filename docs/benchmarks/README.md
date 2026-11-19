@@ -13,12 +13,88 @@ BIN=$(swift build -c release --show-bin-path)
 ```
 
 Pass criterion per step: 0 missed display-link ticks, 0 late GPU completions,
-0 ticks where a visible layer had no decoded frame ready, over the whole
+0 ticks where a visible layer had no decoded frame ready and, since
+2026-11-18, 0 stale frames (a movie picture drawn with a frame other than its
+clock's, B371; reported but not judged with `--dmx`), over the whole
 window (after a 2 s warm-up). Headless runs use a `mach_wait_until` clock at
 the canvas rate and measure CPU/GPU/decode throughput; display runs add the
 real `CAMetalDisplayLink` with `preferredFrameLatency = 1`.
 
-## Results so far (MacBook Pro M1 Pro, 32 GB, macOS 27.0.1, 2026-10-23)
+## Re-measured 2026-11-18 and 19 (B375)
+
+Until 2026-11-18 a playing layer decoded about 8 of every 11 frames (B364),
+picked its picture from three ring entries (B372), and the criterion could not
+see a picture drawn with an older frame (B371). Every headless number further
+down this page was measured in that state; this section replaces them. The
+display runs, the soaks and DMX→photon have not been repeated.
+
+Same MacBook Pro M1 Pro (32 GB), macOS 27.2.1, release build of main
+`e7428db6` with the ring change below, headless, 20 s windows, the installed engine stopped. `fanous-bench`
+now runs the engine's own ring (8 frames at every size; it used 6 up to 2000 px
+width before). The Mac was not idle: load average about 3 to 6 from other work, so
+these are the numbers of a busy Mac. Pass = 0 missed, 0 late, 0 texture misses,
+0 stale frames.
+
+```bash
+"$BIN/fanous-bench" run --media DIR --headless --window 20 --codec C --res R --max-layers 16
+"$BIN/fanous-bench" run … --max-layers 16 --effects blur,edge     # ramp; --layers N for one step
+"$BIN/fanous-bench" run … --max-layers 8 --dissolve 2
+```
+
+| Codec | Canvas | Max layers | GPU p99 there | First failure |
+|---|---|---|---|---|
+| ProRes 422 HQ | 1080p60 | 16 (cap) | 9.9 ms | — |
+| ProRes 422 HQ | 4K30 | 16 (cap) | 14.2 ms | — |
+| ProRes 422 HQ | 4K60 | 5 | 13.1 ms | 6: one late frame |
+| HAP Q | 1080p60 | 16 (cap) | 8.6 ms | — |
+| HAP Q | 4K30 | 16 (cap) | 15.4 ms | — |
+| HAP Q | 4K60 | 6 | 9.5 ms | 7: five late frames |
+
+No step of these six ramps had a stale frame or a texture miss, and the
+compositor allocated 4.0 times per tick in every passing step. The 4K60
+limits are late GPU completions. GPU p99 at 16 × 1080p60 was 3.9 ms (ProRes) and
+2.9 ms (HAP Q) on 2026-10-23; what part of the difference is the repaired
+fill, the load or the newer macOS has not been separated (the display run of
+2026-10-26 already showed 10.0 and 9.6 ms).
+
+Blur + edge on every layer (the scratch pass of B2, 2026-11-03, is in):
+
+| Run | Codec | Canvas | Result |
+|---|---|---|---|
+| ramp | ProRes 422 HQ | 1080p60 | **5 layers** (GPU p99 11.9 ms); 6 fails with 6 late |
+| ramp | HAP Q | 1080p60 | **5 layers** (12.0 ms); 6 fails with 11 late |
+| ramp | ProRes 422 HQ | 4K30 | **9 layers** (29.1 ms); 10 fails with 249 late |
+| ramp | HAP Q | 4K30 | **8 layers** (26.9 ms); 9 fails with 2 late |
+| single steps | ProRes 422 HQ | 1080p60 | 6: fail (75 late, 15.8 ms) and fail (4 late, 14.4 ms) · 8: fail (8 late, 12.3 ms) · 10: fail (2 late, 10.5 ms) · 12: pass (11.9 ms) · 16: pass twice (13.3 ms) |
+| single steps | HAP Q | 1080p60 | 6: pass (11.5 ms) · 8: pass (9.7 ms) · 12: fail (66 late, 18.6 ms) · 16: pass twice (13.4 ms) |
+| single step, 16 layers | both | 4K30 | fail: 412 of 421 frames late, GPU p99 133 and 139 ms |
+
+At 1080p60 the result is not monotone in the layer count: 16 layers passed in
+all four single steps while 6 to 12 failed in five of eight, and the GPU time
+of a step does not follow its layer count. The cause is not measured (B388);
+until it is, 5 is the number to count on. A step that ran twice under one
+name has the file of its last run only. The compositor allocated about 6 per
+tick plus 5 for every blurred and edged layer (11.0 at 1 layer, 85.9 at 16);
+the 5 per such layer is the figure of DESIGN §4.6.
+
+Permanent 2 s dissolves at 1080p60 (every layer switches file every 4 s: 40
+switches in a window of 8 layers, 16 decoders):
+
+| Run | Codec | Result |
+|---|---|---|
+| ramp to 8 | ProRes 422 HQ | 8 pass (GPU p99 10.9 ms, 0 stale) |
+| four single steps at 8 | ProRes 422 HQ | all fail on stale frames alone: 4, 3, 1 and 2 (0 missed, 0 late, 0 texture misses) |
+| single step at 8 | HAP Q | pass (9.4 ms, 0 stale) |
+| ramp to 8 | HAP Q | 5 pass; 6 fails with 43 stale frames and one late |
+
+So a dissolve under 16 decoders now and then draws a picture with an older
+frame, which the criterion of 2026-10-23 could not see (B389). Which side of
+the dissolve shows it, and whether it is visible, is not measured.
+
+## Results of 2026-10-23 (MacBook Pro M1 Pro, 32 GB, macOS 27.0.1)
+
+The headless rows are superseded by the section above; the display rows have
+not been repeated.
 
 Pass = 0 missed, 0 late, 0 texture misses in a 20 s window after 2 s warm-up.
 Headless rows use the mach-clock compositor; display rows use the drawable-loop
@@ -39,8 +115,9 @@ driver on the built-in display (ADR-0006 amendment).
 | HAP Q | 4K60 | 8 | headless | ≥ 4 (max tested) | GPU p99 3.0 ms at 4 |
 
 Ring depth (frames decoded ahead per layer) is the decisive tier knob at 4K:
-the engine defaults to 8 at every resolution (`RenderService.ringCapacity`),
-`fanous-bench` to 6 up to 2000 px width and 8 above. The remaining 4K60 ProRes
+the engine defaults to 8 at every resolution (`RenderService.ringCapacity`);
+`fanous-bench` used 6 up to 2000 px width and 8 above for these runs and takes
+the engine's value since 2026-11-18. The remaining 4K60 ProRes
 failures are single late decodes in 20 s windows (zero-tolerance criterion),
 to be attacked in Phase 3 (decode-thread scheduling, VT asynchronous decode).
 
@@ -53,6 +130,10 @@ ProRes 4444 1080p 1.8 ms (`y416`, alpha kept) vs 0.95 ms native; HAP Q 1080p
 0.8 ms / 4K 1.6 ms (chunked, parallel); HAP 1080p 0.4 ms.
 
 ## Phase 3 (2026-10-23): effects, dissolves, audio
+
+The blur + edge and dissolve rows below are superseded by the section
+"Re-measured 2026-11-18 and 19"; the per-pixel effect rows, the cost per
+effect and the audio runs have not been repeated.
 
 Same machine and criterion; release build; `scripts/bench.sh phase3` runs the
 matrix (`--effects a,b` puts both effect slots on every layer, `--dissolve 2`

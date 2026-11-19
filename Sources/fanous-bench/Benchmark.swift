@@ -65,7 +65,9 @@ enum Benchmark {
         let parts = resolution.replacingOccurrences(of: "p", with: "x").split(separator: "x").compactMap { Double($0) }
         guard parts.count == 3 else { throw RenderError.pipeline("resolution must look like 1920x1080p60") }
         let (width, height, fps) = (Int(parts[0]), Int(parts[1]), parts[2])
-        let ringCapacity = width > 2000 ? 8 : 6
+        // the engine's own ring (B375): with stale frames in the pass criterion the look-ahead decides a step, so the
+        // bench must not measure a ring the engine never runs (it used 6 up to 2000 px width until 2026-11-18)
+        let ringCapacity = SceneConfig().ringCapacity
         let file = mediaDirectory.appending(path: "\(codec)_\(width)x\(height)p\(Int(fps)).mov")
         guard FileManager.default.fileExists(atPath: file.path) else { throw RenderError.pipeline("missing \(file.path); run `fanous-bench media` first") }
         let useDisplay = headless ? nil : (display ?? 0)
