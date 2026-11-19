@@ -10,8 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Docs: the stale frames of permanent dissolves are the first switch after a start (five of six runs: one run of 1
-  to 3 ticks on one or two layers, none at the later switches); the 101 stale frames of one display run did not
+- Docs: the stale frames of permanent dissolves sit at the first switch after a start (five of six runs: one run of
+  1 to 3 ticks on one or two layers, none at the later switches); the 101 stale frames of one display run did not
   come back in four more runs (B389, B391) (PR #423).
 - Bench: a step with stale frames reports them per layer and as runs of consecutive stale ticks, in the output, the
   report and its JSON (`staleByLayer`, `staleRuns`): which layers, when and for how long on end; `scripts/bench.sh`
