@@ -10,6 +10,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: what the stale frames at the first dissolve after a start are (B389). A trace of 13 bench steps shows 14 to 16
+  of the 16 ProRes decoders blocked together for 46 to 59 ms inside one VideoToolbox call, 40 to 65 ms after the first
+  switch of every step; an incoming picture whose decoder was not ahead yet shows an older frame for 1 to 3 ticks, at
+  less than 5 % of a 2 s dissolve. Later switches had none in 12 steps and slow decodes again in one. HAP Q showed
+  none in three steps. What sets it off is not measured (PR #424).
 - Docs: the stale frames of permanent dissolves sit at the first switch after a start (five of six runs: one run of
   1 to 3 ticks on one or two layers, none at the later switches); the 101 stale frames of one display run did not
   come back in four more runs (B389, B391) (PR #423).

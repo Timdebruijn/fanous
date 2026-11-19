@@ -100,9 +100,44 @@ before the service starts and the 2 s warm-up, so that moment is the first
 switch after the start; the four later switches of every window drew none. So
 in these six runs it is the first dissolve of a freshly started bench that
 draws a picture with an older frame for a few ticks, which also fits the clean
-ramp (B389); the four single steps of the table above have no such detail. Why
-the first one, which side of the dissolve shows it and whether it is visible
-are not measured. The report file of the single step is the one with 6.
+ramp (B389); the four single steps of the table above have no such detail.
+The report file of the single step is the one with 6.
+
+Traced on 2026-11-19: a build of main `4835a6f7` with timestamps in the
+decoder, the loader and the compositor (the trace points are not in main), 13
+single steps at 8 ProRes layers. 11 fail: on 1 to 6 stale frames at the first
+switch, and the thirteenth on 32 more at its last switch (below). In all 13 the
+decodes in flight block together at the first switch: 14 to 16 of the 16
+decoders (the 8 outgoing and the 8 incoming) each have one frame of 46 to 82 ms
+(counted: over 25 ms), where a traced frame typically takes 1 to 5 ms (median
+2.7), and all of them are blocked over the same 46 to 59 ms, which begins 40 to
+65 ms after the switch. Split in four of the steps, that time is inside the
+`VTDecompressionSessionDecodeFrame` call (46 to 81 ms); reading the sample took
+at most 3 ms and wrapping the texture at most 1.4 ms. The start of a step has
+no such frame (no decode over 22 ms), and neither have the 48 later switches of
+the first 12 steps, made at a load average of 4 to 6 (at most two decodes over
+25 ms at a switch, none over 29 ms, no stale frame). The thirteenth step,
+started at a load average of 17, has slow decodes again at its last switch: 34
+of 25 to 107 ms on all 16 decoders, spread over 140 ms with no moment at which
+all are blocked, at least four fifths of each inside the same call, and 32
+stale frames over 7 ticks; its three switches in between are clean. HAP Q,
+which does not decode through VideoToolbox, showed no block in three steps (15
+switches, 0 stale frames, no decode over 26 ms, at a load average of 21 to 26).
+
+The stale frames are always the incoming picture's: none of the 104 outgoing
+pictures drew one. An outgoing ring holds up to 8 frames, 133 ms at 60 fps (its
+depth at the switch was not traced). An incoming picture is swapped in as soon
+as its ring holds a frame, and at the first switch the loader had handed it
+over 22 to 43 ms before the block began. Split afterwards by how far each
+decoder had come: of the 20 incoming pictures whose decoder had finished no
+frame beyond the last one the clock asked for until its release, 19 drew stale
+frames; the other 84 drew none (the line was drawn after seeing the result). At
+the first switch they drew them within 85 ms of the swap, when a 2 s dissolve
+in normal blend shows the incoming picture at less than 5 %. Not measured: what
+VideoToolbox does in that call and what sets it off (the first time more than 8
+sessions decode, once per process, or load on the Mac, which the thirteenth
+step leaves open), whether it shows on a cut or a short dissolve, and whether
+the installed engine has it at the first file change after its start.
 
 Display runs, 2026-11-19: main `cc1c002b`, `--display 0` (the built-in 120 Hz
 panel, the only display attached), the same criterion, load about 3 to 6.
