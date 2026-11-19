@@ -12,7 +12,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Docs: the display runs on the built-in panel are measured again with the stale-frame criterion: 16 layers at
   1080p60, invert + tint on 16, dissolves on 8 and blur + edge on 5 hold, 4K60 is 5 ProRes 422 HQ layers, and one
-  of two 2-minute runs of 16 ProRes layers drew 101 stale frames (B391) (PR #NNN).
+  of two 2-minute runs of 16 ProRes layers drew 101 stale frames (B391) (PR #421).
 - Docs: the layer counts are measured again with the stale-frame criterion and the repaired playback (B375):
   16 layers hold at 1080p60 and 4K30, 4K60 is 5 ProRes 422 HQ or 6 HAP Q layers, blur + edge on every layer is 5
   layers at 1080p60, and permanent dissolves on 8 layers now and then draw a stale frame; `fanous-bench` runs the
