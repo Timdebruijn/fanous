@@ -104,7 +104,7 @@ switch after the start; the four later switches of every window drew none. So
 in these six runs it is the first dissolve of a freshly started bench that
 draws a picture with an older frame for a few ticks, which also fits the clean
 ramp (B389); the four single steps of the table above have no such detail.
-The report file of the single step is since PR #NNN a step with the decoder
+The report file of the single step is since PR #427 a step with the decoder
 warm-up (below), a pass; the one with 6 is in the history of that file.
 
 Traced on 2026-11-19: a build of main `4835a6f7` with timestamps in the
@@ -195,7 +195,7 @@ the black frame holding 8 buffers each (two), and with one session holding 140
 the first switch when the 16 sessions hold nothing (three steps) and when the
 16 file decoders decode 2 frames each (two).
 
-The engine does that itself since PR #NNN: when the loader first opens a ProRes
+The engine does that itself since PR #427: when the loader first opens a ProRes
 movie, `DecoderWarmUp` encodes one black 1080p frame and decodes it through one
 session on a thread of its own, keeping every buffer, until a decode blocks or
 an eighth of the memory (1.5 to 4 GB) is held, and lets go of all of it. Nine

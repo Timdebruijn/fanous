@@ -14,7 +14,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   GB of decoded frames; a layer started at that moment drew an older frame for a few ticks. The engine now passes that
   mark by itself when it first opens a ProRes movie (a decoder warm-up on its own thread, 0.2 to 0.3 s, its memory let
   go again), so a later start or dissolve does not meet it: 8 layers in permanent dissolves pass 9 of 9 bench steps
-  with 0 stale frames, where most failed on their first switch (B389; what it does not reach is B392) (PR #NNN).
+  with 0 stale frames, where most failed on their first switch (B389; what it does not reach is B392) (PR #427).
 - Docs: what the block behind the stale frames of a first dissolve goes with (B389): the number of ProRes decoders in
   use at once, the first time it is 14. 22 traced bench steps on a quiet Mac: none with up to 13 (4 to 6 layers in
   dissolves, 9 to 13 layers started together), the block with 14 to 16 (7 and 8 layers at their first dissolve and at
