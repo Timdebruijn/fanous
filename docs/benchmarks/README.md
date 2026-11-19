@@ -36,7 +36,9 @@ Same MacBook Pro M1 Pro (32 GB), macOS 27.2.1, release build of main
 `e7428db6` with the ring change below, headless, 20 s windows, the installed engine stopped. `fanous-bench`
 now runs the engine's own ring (8 frames at every size; it used 6 up to 2000 px
 width before). The Mac was not idle: load average about 3 to 6 from other work, so
-these are the numbers of a busy Mac. Pass = 0 missed, 0 late, 0 texture misses,
+these are the numbers of a busy Mac. Found on 2026-11-19: a test process left
+behind on 2026-11-18 at 10:18 held one core at 100 % during every run of this
+section. Pass = 0 missed, 0 late, 0 texture misses,
 0 stale frames.
 
 ```bash
@@ -100,9 +102,37 @@ before the service starts and the 2 s warm-up, so that moment is the first
 switch after the start; the four later switches of every window drew none. So
 in these six runs it is the first dissolve of a freshly started bench that
 draws a picture with an older frame for a few ticks, which also fits the clean
-ramp (B389); the four single steps of the table above have no such detail. Why
-the first one, which side of the dissolve shows it and whether it is visible
-are not measured. The report file of the single step is the one with 6.
+ramp (B389); the four single steps of the table above have no such detail.
+The report file of the single step is the one with 6.
+
+Traced on 2026-11-19: a build of main `4835a6f7` with timestamps in the
+decoder, the loader and the compositor (the trace points are not in main), 13
+single steps at 8 ProRes layers, of which 11 fail on 1 to 6 stale frames at
+the first switch. In all 13, and only at the first switch, the decodes in
+flight block together: 14 to 16 of the 16 decoders (the 8 outgoing and the 8
+incoming) each have one frame that takes 46 to 82 ms where a frame otherwise
+takes 2 to 5, and all of them are blocked over the same 46 to 59 ms, which
+begins 40 to 65 ms after the switch. Split in four of the steps, that time is
+inside `VTDecompressionSessionDecodeFrame` (46 to 81 ms); reading the sample
+took at most 3 ms and wrapping the texture at most 1.4 ms. The start of a step
+has no such frame (no decode over 22 ms), and neither have the 48 later
+switches of the 12 steps that ran undisturbed (at most two decodes over 25 ms
+at a switch, none over 29 ms, no stale frame; the thirteenth step met other
+load on the Mac at its last switch, load average 17). HAP Q, which does not
+decode through VideoToolbox, shows no block in three steps (15 switches, 0
+stale frames, no decode over 26 ms, at a load average of 21 to 26).
+
+The stale frames are always the incoming picture's. An outgoing picture has a
+full ring, 8 frames or 133 ms ahead, and rides the block out. An incoming one
+is swapped in as soon as its ring holds a frame, and its decoder has had 22 to
+43 ms when the block begins: of the 104 incoming pictures, 19 of the 20 whose
+decoder was not at least a frame ahead of the clock when it was released drew
+stale frames, and none of the other 84. They drew them within 85 ms of the
+swap, when a 2 s dissolve shows the incoming picture at less than 5 %. Not
+measured: what VideoToolbox does in that block and what sets it off (the first
+time more than 8 sessions decode, or once per process), whether it shows on a
+cut, and whether the installed engine has it at the first file change after
+its start.
 
 Display runs, 2026-11-19: main `cc1c002b`, `--display 0` (the built-in 120 Hz
 panel, the only display attached), the same criterion, load about 3 to 6.
