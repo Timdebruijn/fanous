@@ -10,59 +10,95 @@ import Synchronization
 import VideoToolbox
 
 /// B389: the first time a process holds about 1 GB of ProRes decoder output at once (measured on an M1 Pro with 32 GB:
-/// 1.04 GB, which is 122 frames of 1080p, 31 of 4K or 272 of 720p), every ProRes decode in flight blocks for about
-/// 60 ms inside `VTDecompressionSessionDecodeFrame`, once per process. Playing, that is a layer started at the wrong
-/// moment drawing an older frame for a few ticks (docs/benchmarks/README.md). This pays it where no picture depends on
-/// it: one ProRes frame is encoded and decoded over and over through one session, every output buffer kept, until a
-/// decode blocks or `cap` bytes are held; then all of it is let go. The process stays past the mark afterwards.
+/// the buffer that takes it past 1.04 GB, counted as `CVPixelBufferGetDataSize`; that is the 122nd frame of 1080p, the
+/// 31st of 4K or the 272nd of 720p), every ProRes decode in flight blocks for about 60 ms inside
+/// `VTDecompressionSessionDecodeFrame`, once per process. A picture swapped in just then draws an older frame for a
+/// few ticks (docs/benchmarks/README.md). This passes the mark where it costs least: one black ProRes frame is encoded
+/// and decoded over and over through one session, every output buffer kept, until `target` bytes are held; then all of
+/// it is let go. The process stays past the mark afterwards.
 public enum DecoderWarmUp {
     public struct Report: Sendable, Equatable {
-        /// Bytes of decoder output held when it stopped.
+        /// Why it did not run; nil when it did.
+        public var skipped: String?
+        /// Bytes of decoder output held at the end.
         public var heldBytes = 0
-        /// Bytes held when a decode blocked; nil when none did up to the cap.
-        public var blockedAtBytes: Int?
+        /// The longest decode, and the bytes held when it began: on the Mac measured, the block and the mark.
         public var longestDecode = 0.0
+        public var longestAtBytes = 0
         public var seconds = 0.0
     }
 
-    /// A decode this long is the block: a frame of the warm-up takes about 1 ms and the block about 60.
-    static let blocked = 0.040
+    /// What it holds before it lets go: half as much again as the mark measured.
+    // ponytail: one mark measured on one Mac (1.04 GB with 32 GB of memory, macOS 27.2.1). If another Mac has it
+    // higher this does not reach it and playback is as it was without the warm-up; the log line gives the longest
+    // decode and where it came, which on a Mac with the mark is the block (about 60 ms) and elsewhere about 1 ms.
+    static let target = 1_500_000_000
+    /// Below this much memory it does not run: 1.5 GB held next to a show is too much of an 8 GB Mac.
+    static let leastMemory: UInt64 = 16_000_000_000
     private static let started = Atomic<Bool>(false)
+    public static var hasStarted: Bool { started.load(ordering: .relaxed) }
 
-    /// As much as is held at most: an eighth of the memory, between 1.5 and 4 GB.
-    // ponytail: one mark measured on one Mac (1.04 GB with 32 GB of memory); the cap guesses that it does not grow
-    // faster than the memory. The log line says where a decode blocked, or that none did: read it on another Mac.
-    static var cap: Int { Int(min(max(SystemInfo.physicalMemoryBytes / 8, 1_500_000_000), 4_000_000_000)) }
-
-    /// Once per process, on a thread of its own; the loader calls it when it first opens a ProRes movie. That movie's
-    /// ring is full, 8 frames ahead, well before the block comes (about 0.3 s later) and rides it out.
+    /// Once per process, on a thread of its own: the engine calls it when its library holds a ProRes movie (at start,
+    /// before anything plays, or when the first one arrives), and the loader when it opens one from elsewhere. In that
+    /// last case pictures play already: those whose ring is full ride the block out, one started in the 0.2 s after
+    /// that first open can meet it (B392).
     public static func startOnce(logger: Logger) {
         guard !started.exchange(true, ordering: .relaxed) else { return }
-        let thread = Thread {
-            let report = run(cap: cap)
+        let thread = Thread { log(run(target: target), logger: logger) }
+        thread.name = "org.fanous.decode.warmup"
+        thread.qualityOfService = .userInitiated  // as the decode threads: it is 0.3 s of work, and late is worse than busy
+        thread.start()
+    }
+
+    /// The same on the calling thread, which waits for it (`fanous-bench`, before its service starts).
+    public static func runOnce(logger: Logger) {
+        guard !started.exchange(true, ordering: .relaxed) else { return }
+        log(run(target: target), logger: logger)
+    }
+
+    private static func log(_ report: Report, logger: Logger) {
+        if let skipped = report.skipped {
+            logger.info("decoder warm-up skipped", metadata: ["reason": "\(skipped)"])
+        } else {
             logger.info(
                 "decoder warm-up",
                 metadata: [
                     "ms": "\(Int(report.seconds * 1000))", "heldMB": "\(report.heldBytes / 1_000_000)",
-                    "blockedAtMB": "\(report.blockedAtBytes.map { "\($0 / 1_000_000)" } ?? "none")", "longestDecodeMs": "\(Int(report.longestDecode * 1000))",
+                    "longestDecodeMs": "\(Int(report.longestDecode * 1000))", "longestAtMB": "\(report.longestAtBytes / 1_000_000)",
                 ])
         }
-        thread.name = "org.fanous.decode.warmup"
-        thread.qualityOfService = .utility
-        thread.start()
     }
 
-    /// Decodes and holds until a decode blocks or `cap` bytes are held; an empty report when the encoder or the
-    /// decoder is not there.
-    static func run(cap: Int, width: Int = 1920, height: Int = 1080) -> Report {
+    /// Decodes and holds until `target` bytes are held.
+    static func run(target: Int, memory: UInt64 = SystemInfo.physicalMemoryBytes, width: Int = 1920, height: Int = 1080) -> Report {
         var report = Report()
+        guard target > 0 else { return report }
+        guard memory >= leastMemory else {
+            report.skipped = "\(memory / 1_000_000_000) GB of memory"
+            return report
+        }
         let start = ContinuousClock.now
-        guard let sample = sample(width: width, height: height), let description = CMSampleBufferGetFormatDescription(sample),
-            let (session, _) = try? MovieSource.makeSession(description, codec: kCMVideoCodecType_AppleProRes422)
-        else { return report }
+        guard let sample = sample(width: width, height: height), let description = CMSampleBufferGetFormatDescription(sample) else {
+            report.skipped = "no ProRes encoder"
+            return report
+        }
+        let session: VTDecompressionSession
+        do {
+            let made = try MovieSource.makeSession(description, codec: kCMVideoCodecType_AppleProRes422)
+            guard !made.1 else {  // the mark was measured on the hardware decoder
+                VTDecompressionSessionInvalidate(made.0)
+                report.skipped = "software ProRes decoder"
+                return report
+            }
+            session = made.0
+        } catch {
+            report.skipped = "no ProRes decoder: \(error)"
+            return report
+        }
         defer { VTDecompressionSessionInvalidate(session) }
         nonisolated(unsafe) var held: [CVPixelBuffer] = []
-        while report.heldBytes < cap {
+        let most = target / (width * height * 2) + 1  // no frame is smaller than 4:2:2 at 8 bits: the loop ends whatever a size reads as
+        while report.heldBytes < target, held.count < most {
             let before = held.count
             let t0 = ContinuousClock.now
             let status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { _, _, buffer, _, _ in
@@ -70,12 +106,7 @@ public enum DecoderWarmUp {
             }
             guard status == noErr, held.count > before, let buffer = held.last else { break }
             let seconds = (ContinuousClock.now - t0) / .seconds(1)
-            report.longestDecode = max(report.longestDecode, seconds)
-            if seconds >= blocked, before > 0 {  // the first decode of a session is slow by itself
-                report.blockedAtBytes = report.heldBytes
-                report.heldBytes += CVPixelBufferGetDataSize(buffer)
-                break
-            }
+            if seconds > report.longestDecode { (report.longestDecode, report.longestAtBytes) = (seconds, report.heldBytes) }
             report.heldBytes += CVPixelBufferGetDataSize(buffer)
         }
         report.seconds = (ContinuousClock.now - start) / .seconds(1)

@@ -65,6 +65,11 @@ public struct LibrarySnapshot: Codable, Sendable, Equatable {
     public var fileCount: Int
     public var invalidCount: Int
 
+    /// A ProRes movie the engine can play is in the library (B389: the decoder warm-up is for those).
+    var holdsProRes: Bool {
+        folders.contains { $0.items.contains { $0.status == .playable && MovieSource.proResCodecs.contains(makeFourCC($0.metadata?.codec ?? "")) } }
+    }
+
     public static let empty = LibrarySnapshot(root: "", rootExists: false, folders: [], scannedAt: 0, fileCount: 0, invalidCount: 0)
 
     /// For clients below operator (B25): no root, and paths relative to it (still unique, so UI keys keep working).

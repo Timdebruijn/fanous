@@ -326,9 +326,11 @@ public final class Engine: @unchecked Sendable {
         library.thumbnailer = { url, metadata, kind in thumbnailer.make(for: url, metadata: metadata, kind: kind) }
         // a file that becomes playable (a probe after a scan or a root change) reaches layers still showing "missing", and a
         // changed image mask file is compiled again
-        library.onChange = { [weak self] in
+        library.onChange = { [weak self, weak library, logger] in
             self?.render?.loader.changed(.missingLibrary)
             self?.imageMaskFilesChanged()
+            // B389: after the first scan nothing plays yet, so the decoder's one block falls where no picture is
+            if !DecoderWarmUp.hasStarted, library?.snapshot.holdsProRes == true { DecoderWarmUp.startOnce(logger: logger) }
         }
         library.start()
         libraryBox.withLock { $0 = library }

@@ -913,7 +913,8 @@ public final class MediaLoader: @unchecked Sendable {
                 return playback
             case .movie(let movie, let audio): (source, reader) = (movie, audio)
             }
-            if MovieSource.proResCodecs.contains(source.info.codec) { DecoderWarmUp.startOnce(logger: logger) }  // B389
+            // B389: a ProRes movie that is not from the library (a scene's file): the warm-up the engine starts at its first scan
+            if MovieSource.proResCodecs.contains(source.info.codec) { DecoderWarmUp.startOnce(logger: logger) }
             let ring = FrameRing(capacity: ringCapacity)
             let decoder = LayerDecoder(source: source, ring: ring, logger: logger)
             if let mixer, let reader, reader.hasAudio, layer * 2 + 1 < mixer.channels.count {
