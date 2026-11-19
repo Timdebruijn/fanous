@@ -29,9 +29,9 @@ down this page was measured in that state; this section replaces them. The
 display runs, the soaks and DMX→photon have not been repeated.
 
 Same MacBook Pro M1 Pro (32 GB), macOS 27.2.1, release build of main
-`e7428db6`, headless, 20 s windows, the installed engine stopped. `fanous-bench`
+`e7428db6` with the ring change below, headless, 20 s windows, the installed engine stopped. `fanous-bench`
 now runs the engine's own ring (8 frames at every size; it used 6 up to 2000 px
-width before). The Mac was not idle: load average 3 to 6 from other work, so
+width before). The Mac was not idle: load average about 3 to 6 from other work, so
 these are the numbers of a busy Mac. Pass = 0 missed, 0 late, 0 texture misses,
 0 stale frames.
 
@@ -51,8 +51,8 @@ these are the numbers of a busy Mac. Pass = 0 missed, 0 late, 0 texture misses,
 | HAP Q | 4K60 | 6 | 9.5 ms | 7: five late frames |
 
 No step of these six ramps had a stale frame or a texture miss, and the
-compositor allocated 4.0 times per tick throughout. The 4K60 limits are late
-GPU completions, not decode. GPU p99 at 16 × 1080p60 was 3.9 ms (ProRes) and
+compositor allocated 4.0 times per tick in every passing step. The 4K60
+limits are late GPU completions. GPU p99 at 16 × 1080p60 was 3.9 ms (ProRes) and
 2.9 ms (HAP Q) on 2026-10-23; what part of the difference is the repaired
 fill, the load or the newer macOS has not been separated (the display run of
 2026-10-26 already showed 10.0 and 9.6 ms).
@@ -73,8 +73,9 @@ At 1080p60 the result is not monotone in the layer count: 16 layers passed in
 all four single steps while 6 to 12 failed in five of eight, and the GPU time
 of a step does not follow its layer count. The cause is not measured (B388);
 until it is, 5 is the number to count on. A step that ran twice under one
-name has the file of its last run only. The compositor allocated 6 + 5 per
-blurred and edged layer per tick (11.0 at 1, 85.9 at 16), as DESIGN §4.6 says.
+name has the file of its last run only. The compositor allocated about 6 per
+tick plus 5 for every blurred and edged layer (11.0 at 1 layer, 85.9 at 16);
+the 5 per such layer is the figure of DESIGN §4.6.
 
 Permanent 2 s dissolves at 1080p60 (every layer switches file every 4 s: 40
 switches in a window of 8 layers, 16 decoders):

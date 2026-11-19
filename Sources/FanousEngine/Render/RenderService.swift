@@ -17,7 +17,7 @@ public struct SceneConfig: Codable, Sendable {
     public var layerCount = 1
     public var media: [MediaEntry] = []
     public var display: Int?  // NSScreen index; nil = headless
-    /// Frames decoded ahead per layer; 8 is needed for 4K (benchmarks 2026-10-23), 6 suffices for 1080p.
+    /// Frames decoded ahead per layer; 8 is needed for 4K (benchmarks 2026-10-23). `fanous-bench` measures with this value.
     public var ringCapacity = 8
     public var frameLatency = 1
     /// CAMetalDisplayLink instead of the drawable loop (stalls on macOS 27.0.1, see ADR-0006 amendment).
