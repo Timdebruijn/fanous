@@ -1,0 +1,41 @@
+{
+  "chip" : "Apple M1 Pro",
+  "codec" : "hapq",
+  "date" : "2026-11-19T08:46:45Z",
+  "fps" : 60,
+  "frameLatency" : 1,
+  "gpu" : "Apple M1 Pro",
+  "height" : 1080,
+  "maxLayers" : 6,
+  "media" : "hapq_1920x1080p60.mov",
+  "memoryGB" : 32,
+  "os" : "Version 27.2.1 (Build 26B131)",
+  "ringCapacity" : 8,
+  "soakSeconds" : 0,
+  "steps" : [
+    {
+      "audioCorrections" : 0,
+      "audioMaxDriftMillis" : 0,
+      "audioUnderruns" : 0,
+      "compositorMallocs" : 43776,
+      "cpuMax" : 0.178,
+      "cpuP50" : 0.134,
+      "cpuP99" : 0.164,
+      "dmxSamples" : 0,
+      "dmxToPhotonP50" : 0,
+      "dmxToPhotonP99" : 0,
+      "frames" : 1217,
+      "gpuMax" : 11.561,
+      "gpuP50" : 8.908,
+      "gpuP99" : 11.515,
+      "late" : 0,
+      "layers" : 6,
+      "missed" : 0,
+      "passed" : true,
+      "staleFrames" : 0,
+      "textureMisses" : 0
+    }
+  ],
+  "width" : 1920,
+  "windowSeconds" : 20
+}
