@@ -136,11 +136,33 @@ decoder had come: of the 20 incoming pictures whose decoder had finished no
 frame beyond the last one the clock asked for until its release, 19 drew stale
 frames; the other 84 drew none (the line was drawn after seeing the result). At
 the first switch they drew them within 85 ms of the swap, when a 2 s dissolve
-in normal blend shows the incoming picture at less than 5 %. Not measured: what
-VideoToolbox does in that call and what sets it off (the first time more than 8
-sessions decode, once per process, or load on the Mac, which the thirteenth
-step leaves open), whether it shows on a cut or a short dissolve, and whether
-the installed engine has it at the first file change after its start.
+in normal blend shows the incoming picture at less than 5 %. Not measured:
+whether it shows on a cut or a short dissolve, and whether the installed engine
+has it.
+
+What sets it off, measured the same day at 16:00 with the same trace build on a
+quieter Mac (22 single steps of 20 s; load average 1.4 to 3.6, three steps at
+4.8 to 7.4): the number of ProRes sessions decoding at once, the first time it
+reaches 14. A step without dissolves starts all its sessions together. With 9,
+12 and 13 layers there is no decode over 23 ms at the start (4 steps); with 14,
+15 and 16 layers the block is there (6 steps: 14 to 18 decodes of over 25 ms on
+14 to 16 decoders, up to 78 ms, 90 % or more of each inside the call). A step
+with dissolves doubles its sessions at a switch. With 4, 5 and 6 layers (8, 10
+and 12 sessions) no decode takes over 18 ms at any switch and no frame is stale
+(7 steps); with 7 and 8 layers (14 and 16 sessions) the block is at the first
+switch and at no later one (5 steps). So it comes once, when the fourteenth
+session joins, and not again when the count falls and returns to 14 or 16
+within the 20 s. The counts 13, 14 and 15 without dissolves are one step each.
+Where it falls decides what it costs: the 15 and 16-layer steps drew 1 and 4 to
+8 stale frames in the warm-up, outside the window, and pass; the 8-layer steps
+with dissolves drew 2 to 5 in the window and fail; the two 7-layer steps had
+the block and no stale frame. Eight steps made at 15:08, at a load average of 6
+to 12, are left out: they had slow decodes at other moments too, as the
+thirteenth step above. Not measured: what VideoToolbox does at that count,
+whether the count is this chip's (M1 Pro), whether it comes again at a higher
+count (16 layers with dissolves are 32 sessions), whether sessions opened and
+used once at engine start would take it away from the first switch, and whether
+it returns after a longer time below 14.
 
 Display runs, 2026-11-19: main `cc1c002b`, `--display 0` (the built-in 120 Hz
 panel, the only display attached), the same criterion, load about 3 to 6.
