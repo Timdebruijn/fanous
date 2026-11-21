@@ -217,12 +217,12 @@ takes about half a millisecond, median 0.46 to 0.53 ms in these runs), and the
 VideoToolbox call takes at most 0.9 ms. So the time behind those stale frames
 is in the read call, not in the VideoToolbox decode, the texture wrap or the
 compositor. The rings did not run empty: the decoders of layers 12, 14, 15 and
-16 spent 1.35 to 1.43 s of those 1.6 s in slow decodes, their rings fell to 2 or 3
-frames, and the frames in them lagged the clock (layer 13, with 1.34 s, kept 5
-and drew none). The same came once more in a headless step of 16 layers: 98 of
-its 103 decodes over 12 ms within 0.25 s at the end of the window (up to 54 ms
-in the read, no stale frame; the window may have cut the spell short). The run
-with 101 has no trace: that it was the same is possible, not shown. Not
+16 spent 1.35 to 1.43 s of those 1.6 s in slow decodes, their rings fell to 2
+or 3 frames, and the frames in them lagged the clock (layer 13, with 1.34 s,
+kept 5 and drew none). The same came once more in a headless step of 16 layers:
+98 of its 103 decodes over 12 ms within 0.25 s at the end of the window (up to
+54 ms in the read, no stale frame; the window may have cut the spell short).
+The run with 101 has no trace: that it was the same is possible, not shown. Not
 measured: what holds the call up (the disk, the file cache, a lock in
 AVFoundation shared by the generators of one file, the decode thread not being
 scheduled, another process), and whether layers that read different files meet
