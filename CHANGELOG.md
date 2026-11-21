@@ -12,11 +12,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Engine: ProRes decoding stalls once, for about 60 ms inside VideoToolbox, the first time the process holds about 1
   GB of decoded frames; a picture swapped in at that moment drew an older frame for a few ticks. The engine now passes
-  that mark by itself when it starts and its library holds a ProRes movie (a decoder warm-up on its own thread: half a
-  second with 1.5 GB of memory held, then let go; not on a Mac with less than 16 GB), so a later start or dissolve
-  does not meet it: 8 layers in permanent dissolves pass 6 of 6 bench steps with 0 stale frames, where most failed on
-  their first switch. `fanous-bench` runs the same warm-up before its first ProRes step (B389; what it does not reach
-  is B392) (PR #427).
+  that mark by itself at its start when its library holds a ProRes movie (a decoder warm-up: half a second longer to
+  start, with 1.5 GB of memory held and let go; not on a Mac with less than 16 GB), so the first dissolve does not
+  meet it: 8 layers in permanent dissolves pass 9 of 9 bench steps with 0 stale frames, where most failed on their
+  first switch. `fanous-bench` runs the same warm-up before its first ProRes step (B389; what it does not reach is
+  B392) (PR #427).
 - Docs: what the block behind the stale frames of a first dissolve goes with (B389): the number of ProRes decoders in
   use at once, the first time it is 14. 22 traced bench steps on a quiet Mac: none with up to 13 (4 to 6 layers in
   dissolves, 9 to 13 layers started together), the block with 14 to 16 (7 and 8 layers at their first dissolve and at

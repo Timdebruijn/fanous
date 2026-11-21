@@ -372,13 +372,16 @@ display link's `targetTimestamp`:
 - **Decoder warm-up (B389).** The first time a process holds about 1 GB of
   ProRes decoder output (measured: 1.04 GB on an M1 Pro), VideoToolbox blocks
   every ProRes decode in flight for about 60 ms, once. `DecoderWarmUp` passes
-  that mark on a thread of its own: one encoded black 1080p frame decoded
-  through one hardware session, every output buffer kept, until 1.5 GB is
-  held; then all of it is let go. The engine starts it when a scan of the
-  library shows a ProRes movie that plays (at engine start that is before
-  anything plays); the loader starts it when it first opens a ProRes movie
-  that came another way, next to pictures whose full rings ride the block
-  out. Once per process, and not on a Mac with less than 16 GB of memory
+  that mark on purpose: one encoded black 1080p frame decoded through one
+  hardware session, every output buffer kept, until 1.5 GB is held; then all
+  of it is let go. The engine runs it at its start, after the library's first
+  scan when that shows a ProRes movie that plays, and goes on when it is done
+  (about half a second). A library that shows its first ProRes movie later
+  (a probe, an upload, another root) starts it from the index on a thread of
+  its own, also in a show: nothing ProRes plays yet at that moment, and
+  leaving it to the first open would put the block next to that picture. The
+  loader starts it for a ProRes movie the library had not shown. Once per
+  process, and not on a Mac with less than 16 GB of memory
   (`docs/benchmarks/README.md`; what it does not reach is B392).
 
 ### 4.3 Compositing pass (per canvas)
