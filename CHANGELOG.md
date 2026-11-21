@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: what is behind the stale frames of a 16-layer display run (B391). A traced 2-minute run drew 69 within 1.6 s,
+  and in those 1.6 s every slow decode (692 on all 16 decoders) spent its time reading the sample from the file, not
+  in the decoder. What stalls the read is not measured (PR #NNN).
 - Docs: what the block behind the stale frames of a first dissolve goes with (B389): the number of ProRes decoders in
   use at once, the first time it is 14. 22 traced bench steps on a quiet Mac: none with up to 13 (4 to 6 layers in
   dissolves, 9 to 13 layers started together), the block with 14 to 16 (7 and 8 layers at their first dissolve and at

@@ -196,9 +196,28 @@ Single steps, no ramps:
 The 101 stale frames of the first ProRes run did not come back in the second,
 nor in four more 2-minute runs on main `1fb204ba` (7212 to 7228 frames each,
 0 stale): one run in six. That first report does not say which layers drew
-them or in how many ticks in a row: not explained (B391). That run has the
+them or in how many ticks in a row (B391). That run has the
 report file; the passing reruns have none (same name). The compositor allocated 21.0 times per tick in the plain
 runs, 32.0 and 47.0 with blur + edge on 2 and 5 layers.
+
+Traced on 2026-11-19 (the trace build of B389, which timestamps every decode
+and splits it into reading the sample, the VideoToolbox call and wrapping the
+texture): two more 2-minute runs of the 16 ProRes layers on the built-in
+display. The first drew no stale frame and has no decode over 12 ms in its
+window. The second drew 69 (7206 frames, 0 missed, 0 late), on layers 12, 14,
+15 and 16, one or two frames behind, in two runs of ticks at 94.5 to 94.7 s and
+95.1 to 95.8 s. In those 1.6 s, and but for one decode nowhere else in the run,
+692 decodes take over 12 ms (119 over 25 ms) on all 16 decoders, and every one
+spends over four fifths of its time reading the sample from the file
+(`AVSampleBufferGenerator.makeSampleBuffer`, up to 62 ms where a read takes
+about half a millisecond); the VideoToolbox call takes under 1 ms in each. So
+behind those stale frames is a spell of slow reads, not decoding and not the
+compositor. The same came once more in a headless step of 16 layers (103
+decodes over 12 ms within 0.25 s, all in the read, up to 54 ms, no stale
+frame). The run with 101 has no trace, so that it was the same is likely, not
+shown. Not measured: what holds the reads up (the disk, the file cache,
+AVFoundation, another process), and whether layers that read different files
+meet it together: here all 16 read one file.
 
 ## Results of 2026-10-23 (MacBook Pro M1 Pro, 32 GB, macOS 27.0.1)
 

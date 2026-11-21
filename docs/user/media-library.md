@@ -313,7 +313,7 @@ to 24, macOS 27.2), so it says what a busy Mac manages, not a show Mac.
 
 | Content | Result |
 |---|---|
-| 16 layers of 1080p60 ProRes 422 HQ | Pass headless (GPU p99 9.9 ms, 2026-11-18). On the built-in display for 2 minutes: no missed or late frame in two runs, but one of them showed 101 stale frames in 7227, not explained (2026-11-19). Pass under load on the 4K display (2026-11-03) |
+| 16 layers of 1080p60 ProRes 422 HQ | Pass headless (GPU p99 9.9 ms, 2026-11-18). On the built-in display for 2 minutes: no missed or late frame in two runs, but one of them showed 101 stale frames in 7227 (2026-11-19). A later run with 69 was traced: for 1.6 s reading the file was slow, not the decoder; what slowed it is not known. Pass under load on the 4K display (2026-11-03) |
 | 16 layers of 1080p60 HAP Q | Pass headless (2026-11-18) and on the built-in display for 2 minutes (2026-11-19) |
 | 16 layers of 4K30 ProRes 422 HQ or HAP Q | Pass headless (GPU p99 14 to 15 ms, 2026-11-18); no display run |
 | 4K60 ProRes 422 HQ | 5 layers pass headless, 6 show a late frame (2026-11-18); 4 and 5 layers pass on the built-in display (2026-11-19); 4 layers pass on the 4K display under load, 7 showed late GPU frames (2026-11-03). Treat 4 as the safe number |
