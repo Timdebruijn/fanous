@@ -295,6 +295,114 @@ AVFoundation shared by the generators of one file, the decode thread not being
 scheduled, another process), and whether layers that read different files meet
 it together: here all 16 read one file.
 
+## Measured again, 2026-11-19 and 21 (B390)
+
+The rows the section above had not repeated, and its ramps once more. Same
+machine and macOS, headless, 20 s windows, the installed engine stopped, kept
+awake. The ramps are of 2026-11-19, 17:03 to 17:46, on the branch of PR #427 at
+`0c0f5e04` (the rerun of one ramp with later changes of that branch); the rest
+is of 2026-11-21, 17:06 to 18:33, on its final code (`b6115fb7`, the soak
+`2a86eaff`). In all of them the decoder warm-up of B389 is done before the
+first measured window. The load average over one minute at the start of a step
+was 1.4 to 6.1 (the HAP Q dissolve steps 7.4, 9.7 and 12.3, the hour's soak
+7.6), over 15 minutes 2.9 to 6.0. The two 4K60 ramps and the HAP Q ramps of
+2026-11-19 ran at 1.4 to 2.6, quieter than the 3 to 6 of the section above, the
+ProRes 1080p60 and 4K30 ramps at 4.4 to 6.0; the series of 2026-11-21 was not
+clearly quieter: the system's photo analysis and Spotlight ran during parts of
+both days, and the desktop app this was run from used several cores when the
+second series started. Pass = 0 missed, 0 late, 0 texture misses, 0 stale
+frames.
+
+| Codec | Canvas | Max layers | GPU p99 there | First failure |
+|---|---|---|---|---|
+| ProRes 422 HQ | 1080p60 | 16 (cap) | 8.7 ms | — |
+| ProRes 422 HQ | 4K30 | 16 (cap) | 13.1 ms | — |
+| ProRes 422 HQ | 4K60 | 6 | 13.2 ms | 7: 98 late frames |
+| HAP Q | 1080p60 | 16 (cap) | 8.7 ms | — |
+| HAP Q | 4K30 | 16 (cap) | 15.2 ms | — |
+| HAP Q | 4K60 | 6 | 12.9 ms | 7: 119 late frames |
+
+No step had a stale frame or a texture miss, and the compositor allocated 4.0
+times per tick in every passing step. The ProRes 1080p60 row and its report are
+the second ramp's: the first, about 35 minutes earlier with the photo analysis
+at about half a core, stopped at 9 layers on 2 late frames. ProRes 4K60 holds 6
+layers here and 5 in the section above.
+
+Blur + edge on every layer:
+
+| Run | Codec | Canvas | Result |
+|---|---|---|---|
+| ramp | ProRes 422 HQ | 1080p60 | **5 layers** (GPU p99 9.3 ms); 6 fails with 90 late |
+| ramp | HAP Q | 1080p60 | **8 layers** (8.5 ms); 9 fails with 107 late |
+| ramp | ProRes 422 HQ | 4K30 | **8 layers** (26.9 ms); 9 fails with 6 late |
+| ramp | HAP Q | 4K30 | **8 layers** (27.4 ms); 9 fails with 2 late |
+| single step, 16 layers | ProRes 422 HQ | 1080p60 | pass (13.7 ms) |
+| single step, 16 layers | HAP Q | 1080p60 | pass (14.5 ms) |
+| single step, 16 layers | both | 4K30 | fail: 412 and 385 frames late, GPU p99 135 and 161 ms |
+
+At 1080p60 it is again not monotone: the ProRes ramp fails on late frames at 6
+layers and the HAP Q ramp at 9, and 16 layers pass for both (B388). The
+compositor allocated 31 to 46 times per tick in the last passing step of a ramp
+and 86 at 16 layers.
+
+GPU cost per effect:
+
+| Effect | GPU p50 | GPU p99 | p50 over no effect |
+|---|---|---|---|
+| none | 0.64 ms | 0.67 ms | — |
+| pixelate, invert, luma key, mirror, tint, threshold, chroma key | 0.65–0.77 ms | 1.1–2.4 ms | ≈ 0.0–0.1 ms |
+| edge (Sobel, 9 taps) | 1.00 ms | 1.5 ms | ≈ 0.4 ms |
+| kaleidoscope | 1.37 ms | 2.9 ms | ≈ 0.7 ms |
+| blur (radius 2.5 % of height) | 1.88 ms | 3.3 ms | ≈ 1.2 ms |
+| blur + edge | 3.67 ms | 4.8 ms | ≈ 3.0 ms |
+
+One 1080p HAP Q layer, the whole frame with clear and output pass. With one
+light layer the p99 moves much more than the p50, so both are given; the table
+of 2026-10-23 quotes p99 only (blur 2.5, edge 2.2, both 5.2 ms, before the
+scratch pass of B2). Blur and edge allocate 11 and 7 times per tick on the
+compositor thread, the others 4. The differences are those of one layer and do
+not add up or scale: the first step of the HAP Q blur + edge ramp, the same one
+layer, has a p50 of 2.42 ms where the single step has 3.67, and 16 layers with
+blur + edge have a p50 of 13.2 ms against 6.3 without, about 0.4 ms a layer.
+
+Both effect slots on every layer, dissolves, ingest:
+
+| Variant | Codec | Canvas | Result |
+|---|---|---|---|
+| invert + tint on all 16 layers | HAP Q | 1080p60 | **pass**, GPU p99 13.7 ms |
+| invert + tint on all 16 layers | ProRes 422 HQ | 1080p60 | **pass**, GPU p99 9.4 ms |
+| pixelate + kaleidoscope on all 16 layers | HAP Q | 1080p60 | **pass**, GPU p99 11.5 ms |
+| invert + tint on all 16 layers | HAP Q | 4K30 | **pass**, GPU p99 17.8 ms |
+| permanent 2 s dissolves, 8 layers, three steps | ProRes 422 HQ | 1080p60 | **pass** three times, 0 stale, GPU p99 9.0 to 9.7 ms |
+| permanent 2 s dissolves, 8 layers, three steps | HAP Q | 1080p60 | **pass** three times, 0 stale, GPU p99 8.8 to 8.9 ms |
+| 8 layers + ingest ProRes 4444 → HAP Q, 40 s | HAP Q | 1080p60 | **pass**, GPU p99 6.4 ms; the job was done when the window ended (log line) |
+| 8 layers + ingest ProRes 4444 → HAP Q, 40 s | ProRes 422 HQ | 1080p60 | **pass**, GPU p99 6.7 ms; job done |
+
+Audio, one HAP Q 1080p60 layer with a 48 kHz LPCM track (a 10 s file, headless,
+the layer clock is master): the 20 s run had 0 underruns, 5 drift corrections
+and a largest drift of 18.3 ms, where 2026-10-23 had 0 corrections and 11.8 ms.
+The one-hour soak: 0 underruns (26 on 2026-10-23, at the loop wraps), 6 drift
+corrections (0 then) and a largest drift of 20.1 ms (15.3 then); video 0
+missed, 0 late and 0 stale in the last 16 384 ticks. Four more runs of 20 and
+60 s had 4 to 6 corrections and 18.2 to 19.9 ms: the count does not grow with
+the window (5, 5, 5 and 6 in 20 s, 4 in 60 s, 6 in an hour), which suggests
+they come early; when they fall is not measured. The acceptance "drift < 20 ms
+over 1 h at 1×" is missed by 0.1 ms. The playback fixes of 2026-11-18 are not
+needed for it: the bench of rc.14 (2026-11-17), which predates them, gave 0
+corrections and 13.2 ms once and 6 and 4 corrections with 19.2 and 19.9 ms
+twice on the same file. So 10 of these 11 runs have a largest drift of 18.2 to
+20.1 ms and corrections, and one has neither; what decides it is not measured
+(B393). The soak's report shows 52.7 allocations per tick: an hour's count over
+the ticks the metrics ring still holds; over the hour it is 4.0.
+
+Not repeated: the runs on a 4K display and DMX→photon (B390), and the 8-hour
+soak (B333). The report files of this section are the `…-2026-11-19` ramps and
+the `…-2026-11-21` steps; a step that ran three times has the last one's, and
+the one-layer step without an effect shares its name with the 20 s audio run,
+whose report it is; the other audio runs have no report file. The dissolve
+steps have no stale frame because the bench runs the decoder warm-up of PR #427
+first.
+
 ## Results of 2026-10-23 (MacBook Pro M1 Pro, 32 GB, macOS 27.0.1)
 
 The headless rows are superseded by the section above, the display rows by its
@@ -338,8 +446,8 @@ ProRes 4444 1080p 1.8 ms (`y416`, alpha kept) vs 0.95 ms native; HAP Q 1080p
 The blur + edge and dissolve rows below are superseded by the section
 "Re-measured 2026-11-18 and 19", and so are the display rows of this table
 (invert + tint on 16 layers, dissolves on 8, blur + edge on 2); the headless
-per-pixel effect rows, the cost per effect and the audio runs have not been
-repeated.
+per-pixel effect rows, the cost per effect and the audio runs were repeated on
+2026-11-21 ("Measured again, 2026-11-19 and 21").
 
 Same machine and criterion; release build; `scripts/bench.sh phase3` runs the
 matrix (`--effects a,b` puts both effect slots on every layer, `--dissolve 2`
@@ -396,7 +504,8 @@ layer clock is master): 20 s run 0 underruns, 0 drift corrections, max drift
 with one callback of silence; gapless loop reads are a v1.x item), video
 0 missed / 0 late (the frame metrics ring holds the last 16 384 ticks, so
 those cover the final 4.5 min; the audio counters cover the whole hour).
-Acceptance "drift < 20 ms over 1 h at 1×" met.
+Acceptance "drift < 20 ms over 1 h at 1×" met (2026-10-23; missed by 0.1 ms
+on 2026-11-21, B393).
 
 ## Phase 4 (2026-10-23): ingest during a show
 

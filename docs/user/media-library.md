@@ -303,7 +303,7 @@ does not see the path.
 All numbers are from the reference MacBook Pro M1 Pro (32 GB), release
 build. "Headless" is the engine's own clock with no display; "display" is a
 real output. Pass means no missed or late frame and no texture miss in a
-10 or 20 s window, and for the headless runs of 2026-11-18 and 19 also no
+10 or 20 s window, and for the headless runs of 2026-11-18, 19 and 21 also no
 stale frame: a layer that showed an older frame on time. Those runs replace
 the headless ones of 2026-10-23, which were made while a playing layer skipped
 frames. The runs on the built-in display were made again on 2026-11-19 with
@@ -316,10 +316,10 @@ to 24, macOS 27.2), so it says what a busy Mac manages, not a show Mac.
 | 16 layers of 1080p60 ProRes 422 HQ | Pass headless (GPU p99 9.9 ms, 2026-11-18). On the built-in display for 2 minutes: no missed or late frame in two runs, but one of them showed 101 stale frames in 7227 (2026-11-19). A later run with 69 stale frames was traced: for 1.6 s the engine was slow to read frames from the file, while decoding them was not slow; why is not known. Pass under load on the 4K display (2026-11-03) |
 | 16 layers of 1080p60 HAP Q | Pass headless (2026-11-18) and on the built-in display for 2 minutes (2026-11-19) |
 | 16 layers of 4K30 ProRes 422 HQ or HAP Q | Pass headless (GPU p99 14 to 15 ms, 2026-11-18); no display run |
-| 4K60 ProRes 422 HQ | 5 layers pass headless, 6 show a late frame (2026-11-18); 4 and 5 layers pass on the built-in display (2026-11-19); 4 layers pass on the 4K display under load, 7 showed late GPU frames (2026-11-03). Treat 4 as the safe number |
+| 4K60 ProRes 422 HQ | 5 layers pass headless, 6 show a late frame (2026-11-18); 6 pass and 7 show late frames on a quieter Mac (2026-11-19); 4 and 5 layers pass on the built-in display (2026-11-19); 4 layers pass on the 4K display under load, 7 showed late GPU frames (2026-11-03). Treat 4 as the safe number |
 | 4K60 HAP Q | 6 layers pass headless, 7 show late frames (2026-11-18); on the built-in display 6 showed late frames (2026-11-19); 8 fail on GPU time under load (2026-11-03) |
-| Blur and Edge on every layer at 1080p60 | 5 layers pass, ProRes or HAP Q. Above 5 it depends on the run: 16 layers passed every time, 6 to 12 showed late frames in most runs (headless, 2026-11-19). 5 layers also pass on the built-in display. Count on 5 |
-| Blur and Edge on every layer at 4K30 | 8 or 9 layers pass; 16 fail by far (headless, 2026-11-19) |
+| Blur and Edge on every layer at 1080p60 | 5 layers pass, ProRes or HAP Q (in a later run HAP Q held 8, 2026-11-21). Above 5 it depends on the run: 16 layers passed every time, 6 to 12 showed late frames in most runs (headless, 2026-11-19). 5 layers also pass on the built-in display. Count on 5 |
+| Blur and Edge on every layer at 4K30 | 8 or 9 layers pass; 16 fail by far (headless, 2026-11-19 and 21) |
 | A dissolve (Dissolve channel) | Uses a second decoder: counts as one more layer. 8 layers in permanent 2 s dissolves at 1080p60 miss no frame and show no stale frame (ProRes: 9 runs headless with the decoder warm-up, 2026-11-19 and 21; HAP Q showed none in single runs before it either). Before the warm-up most ProRes runs showed 1 to 6 stale frames at their first dissolve (26 in one): the Mac's video decoder stalls for about 60 ms, once, when the engine first holds about 1 GB of decoded ProRes frames (14 layers of 1080p, or 7 in dissolves, since a dissolve counts double; 4 of 4K, by the size of their frames). The engine now passes that mark by itself when it starts, if its library holds a ProRes movie: half a second longer to start, in which it uses 1.5 GB of memory more. A Mac with less than 16 GB is left alone and plays as before (M1 Pro). One run per codec on the built-in display showed none (2026-11-19) |
 
 Rules of thumb:

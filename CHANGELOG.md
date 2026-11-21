@@ -21,6 +21,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   and in those 1.6 s every slow decode (686, most of them on 12 of the 16 decoders) spent its time inside the call
   that reads the sample from the file, not in the VideoToolbox decode. What holds that call up is not measured (PR
   #428).
+- Docs: the benchmark rows that had not been measured since the playback fixes (B390): the six headless ramps again
+  (16 layers at 1080p60 and 4K30, 6 at 4K60 for both codecs), blur + edge, the GPU cost per effect, both effect slots
+  on 16 layers, dissolves, ingest and audio with the one-hour drift soak. New row B393: a layer with sound runs 18 to
+  20 ms off its clock in most runs and is corrected 4 to 6 times. The runs on a 4K display and DMX→photon stay open
+  (PR #429).
 - Docs: what the block behind the stale frames of a first dissolve goes with (B389): the number of ProRes decoders in
   use at once, the first time it is 14. 22 traced bench steps on a quiet Mac: none with up to 13 (4 to 6 layers in
   dissolves, 9 to 13 layers started together), the block with 14 to 16 (7 and 8 layers at their first dissolve and at

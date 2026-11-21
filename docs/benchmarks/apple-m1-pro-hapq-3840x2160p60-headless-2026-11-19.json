@@ -1,0 +1,236 @@
+{
+  "chip" : "Apple M1 Pro",
+  "codec" : "hapq",
+  "date" : "2026-11-19T16:28:14Z",
+  "fps" : 60,
+  "frameLatency" : 1,
+  "gpu" : "Apple M1 Pro",
+  "height" : 2160,
+  "maxLayers" : 6,
+  "media" : "hapq_3840x2160p60.mov",
+  "memoryGB" : 32,
+  "os" : "Version 27.2.1 (Build 26B131)",
+  "ringCapacity" : 8,
+  "soakSeconds" : 0,
+  "steps" : [
+    {
+      "audioCorrections" : 0,
+      "audioMaxDriftMillis" : 0,
+      "audioUnderruns" : 0,
+      "compositorMallocs" : 4808,
+      "cpuMax" : 0.69,
+      "cpuP50" : 0.125,
+      "cpuP99" : 0.383,
+      "dmxSamples" : 0,
+      "dmxToPhotonP50" : 0,
+      "dmxToPhotonP99" : 0,
+      "frames" : 1203,
+      "gpuMax" : 2.444,
+      "gpuP50" : 1.611,
+      "gpuP99" : 2.388,
+      "late" : 0,
+      "layers" : 1,
+      "missed" : 0,
+      "passed" : true,
+      "staleByLayer" : [
+        0
+      ],
+      "staleFrames" : 0,
+      "staleRuns" : [
+
+      ],
+      "textureMisses" : 0
+    },
+    {
+      "audioCorrections" : 0,
+      "audioMaxDriftMillis" : 0,
+      "audioUnderruns" : 0,
+      "compositorMallocs" : 4939,
+      "cpuMax" : 0.572,
+      "cpuP50" : 0.114,
+      "cpuP99" : 0.444,
+      "dmxSamples" : 0,
+      "dmxToPhotonP50" : 0,
+      "dmxToPhotonP99" : 0,
+      "frames" : 1234,
+      "gpuMax" : 4.646,
+      "gpuP50" : 3.127,
+      "gpuP99" : 4.294,
+      "late" : 0,
+      "layers" : 2,
+      "missed" : 0,
+      "passed" : true,
+      "staleByLayer" : [
+        0,
+        0
+      ],
+      "staleFrames" : 0,
+      "staleRuns" : [
+
+      ],
+      "textureMisses" : 0
+    },
+    {
+      "audioCorrections" : 0,
+      "audioMaxDriftMillis" : 0,
+      "audioUnderruns" : 0,
+      "compositorMallocs" : 4916,
+      "cpuMax" : 0.257,
+      "cpuP50" : 0.092,
+      "cpuP99" : 0.131,
+      "dmxSamples" : 0,
+      "dmxToPhotonP50" : 0,
+      "dmxToPhotonP99" : 0,
+      "frames" : 1230,
+      "gpuMax" : 6.928,
+      "gpuP50" : 6.907,
+      "gpuP99" : 6.922,
+      "late" : 0,
+      "layers" : 3,
+      "missed" : 0,
+      "passed" : true,
+      "staleByLayer" : [
+        0,
+        0,
+        0
+      ],
+      "staleFrames" : 0,
+      "staleRuns" : [
+
+      ],
+      "textureMisses" : 0
+    },
+    {
+      "audioCorrections" : 0,
+      "audioMaxDriftMillis" : 0,
+      "audioUnderruns" : 0,
+      "compositorMallocs" : 4852,
+      "cpuMax" : 0.136,
+      "cpuP50" : 0.094,
+      "cpuP99" : 0.123,
+      "dmxSamples" : 0,
+      "dmxToPhotonP50" : 0,
+      "dmxToPhotonP99" : 0,
+      "frames" : 1214,
+      "gpuMax" : 9.187,
+      "gpuP50" : 5.927,
+      "gpuP99" : 9.177,
+      "late" : 0,
+      "layers" : 4,
+      "missed" : 0,
+      "passed" : true,
+      "staleByLayer" : [
+        0,
+        0,
+        0,
+        0
+      ],
+      "staleFrames" : 0,
+      "staleRuns" : [
+
+      ],
+      "textureMisses" : 0
+    },
+    {
+      "audioCorrections" : 0,
+      "audioMaxDriftMillis" : 0,
+      "audioUnderruns" : 0,
+      "compositorMallocs" : 4804,
+      "cpuMax" : 0.137,
+      "cpuP50" : 0.091,
+      "cpuP99" : 0.121,
+      "dmxSamples" : 0,
+      "dmxToPhotonP50" : 0,
+      "dmxToPhotonP99" : 0,
+      "frames" : 1201,
+      "gpuMax" : 11.925,
+      "gpuP50" : 7.644,
+      "gpuP99" : 11.205,
+      "late" : 0,
+      "layers" : 5,
+      "missed" : 0,
+      "passed" : true,
+      "staleByLayer" : [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "staleFrames" : 0,
+      "staleRuns" : [
+
+      ],
+      "textureMisses" : 0
+    },
+    {
+      "audioCorrections" : 0,
+      "audioMaxDriftMillis" : 0,
+      "audioUnderruns" : 0,
+      "compositorMallocs" : 4840,
+      "cpuMax" : 0.148,
+      "cpuP50" : 0.088,
+      "cpuP99" : 0.12,
+      "dmxSamples" : 0,
+      "dmxToPhotonP50" : 0,
+      "dmxToPhotonP99" : 0,
+      "frames" : 1211,
+      "gpuMax" : 13.473,
+      "gpuP50" : 8.103,
+      "gpuP99" : 12.924,
+      "late" : 0,
+      "layers" : 6,
+      "missed" : 0,
+      "passed" : true,
+      "staleByLayer" : [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "staleFrames" : 0,
+      "staleRuns" : [
+
+      ],
+      "textureMisses" : 0
+    },
+    {
+      "audioCorrections" : 0,
+      "audioMaxDriftMillis" : 0,
+      "audioUnderruns" : 0,
+      "compositorMallocs" : 5007,
+      "cpuMax" : 0.372,
+      "cpuP50" : 0.088,
+      "cpuP99" : 0.125,
+      "dmxSamples" : 0,
+      "dmxToPhotonP50" : 0,
+      "dmxToPhotonP99" : 0,
+      "frames" : 1241,
+      "gpuMax" : 15.659,
+      "gpuP50" : 10.917,
+      "gpuP99" : 15.469,
+      "late" : 119,
+      "layers" : 7,
+      "missed" : 0,
+      "passed" : false,
+      "staleByLayer" : [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "staleFrames" : 0,
+      "staleRuns" : [
+
+      ],
+      "textureMisses" : 0
+    }
+  ],
+  "width" : 3840,
+  "windowSeconds" : 20
+}
