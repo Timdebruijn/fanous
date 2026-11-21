@@ -204,20 +204,29 @@ Traced on 2026-11-19 (the trace build of B389, which timestamps every decode
 and splits it into reading the sample, the VideoToolbox call and wrapping the
 texture): two more 2-minute runs of the 16 ProRes layers on the built-in
 display. The first drew no stale frame and has no decode over 12 ms in its
-window. The second drew 69 (7206 frames, 0 missed, 0 late), on layers 12, 14,
-15 and 16, one or two frames behind, in two runs of ticks at 94.5 to 94.7 s and
-95.1 to 95.8 s. In those 1.6 s, and but for one decode nowhere else in the run,
-692 decodes take over 12 ms (119 over 25 ms) on all 16 decoders, and every one
-spends over four fifths of its time reading the sample from the file
-(`AVSampleBufferGenerator.makeSampleBuffer`, up to 62 ms where a read takes
-about half a millisecond); the VideoToolbox call takes under 1 ms in each. So
-behind those stale frames is a spell of slow reads, not decoding and not the
-compositor. The same came once more in a headless step of 16 layers (103
-decodes over 12 ms within 0.25 s, all in the read, up to 54 ms, no stale
-frame). The run with 101 has no trace, so that it was the same is likely, not
-shown. Not measured: what holds the reads up (the disk, the file cache,
-AVFoundation, another process), and whether layers that read different files
-meet it together: here all 16 read one file.
+window. The second drew 69 (7206 frames, 0 missed, 0 late): 1 on layer 12 and
+20, 25 and 23 on layers 14, 15 and 16, one or two frames behind, in eight runs
+of consecutive ticks (the longest 7) within two spells at 94.45 to 94.71 s and
+95.06 to 95.78 s. Of the 692 decodes that take over 12 ms in the window (119
+over 25 ms), 686 fall between 94.3 and 95.9 s and the other six, of 12 to 19
+ms, at 82.1 s. They are on all 16 decoders but unevenly: 1 to 7 on layers 1 to
+4, 29 to 71 on the others. In every one over four fifths of the time is inside
+the call that reads the sample (`sampleBuffer(at:)`, which steps the cursor and
+asks `AVSampleBufferGenerator` for the sample; wall-clock, up to 62 ms where it
+takes about half a millisecond, median 0.46 to 0.53 ms in these runs), and the
+VideoToolbox call takes at most 0.9 ms. So the time behind those stale frames
+is in the read call, not in the VideoToolbox decode, the texture wrap or the
+compositor. The rings did not run empty: the decoders of layers 12, 14, 15 and
+16 spent 1.35 to 1.43 s of those 1.6 s in slow decodes, their rings fell to 3
+frames, and the frames in them lagged the clock (layer 13, with 1.34 s, kept 5
+and drew none). The same came once more in a headless step of 16 layers: 98 of
+its 103 decodes over 12 ms within 0.25 s at the end of the window (up to 54 ms
+in the read, no stale frame; the window may have cut the spell short). The run
+with 101 has no trace: that it was the same is possible, not shown. Not
+measured: what holds the call up (the disk, the file cache, a lock in
+AVFoundation shared by the generators of one file, the decode thread not being
+scheduled, another process), and whether layers that read different files meet
+it together: here all 16 read one file.
 
 ## Results of 2026-10-23 (MacBook Pro M1 Pro, 32 GB, macOS 27.0.1)
 
