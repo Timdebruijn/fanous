@@ -1,0 +1,202 @@
+{
+  "chip" : "Apple M1 Pro",
+  "codec" : "prores422hq",
+  "date" : "2026-11-21T16:06:38Z",
+  "fps" : 60,
+  "frameLatency" : 1,
+  "gpu" : "Apple M1 Pro",
+  "height" : 1080,
+  "maxLayers" : 5,
+  "media" : "prores422hq_1920x1080p60.mov",
+  "memoryGB" : 32,
+  "os" : "Version 27.2.1 (Build 26B131)",
+  "ringCapacity" : 8,
+  "soakSeconds" : 0,
+  "steps" : [
+    {
+      "audioCorrections" : 0,
+      "audioMaxDriftMillis" : 0,
+      "audioUnderruns" : 0,
+      "compositorMallocs" : 13321,
+      "cpuMax" : 5.386,
+      "cpuP50" : 0.098,
+      "cpuP99" : 2.572,
+      "dmxSamples" : 0,
+      "dmxToPhotonP50" : 0,
+      "dmxToPhotonP99" : 0,
+      "frames" : 1212,
+      "gpuMax" : 5.354,
+      "gpuP50" : 2.115,
+      "gpuP99" : 4.615,
+      "late" : 0,
+      "layers" : 1,
+      "missed" : 0,
+      "passed" : true,
+      "staleByLayer" : [
+        0
+      ],
+      "staleFrames" : 0,
+      "staleRuns" : [
+
+      ],
+      "textureMisses" : 0
+    },
+    {
+      "audioCorrections" : 0,
+      "audioMaxDriftMillis" : 0,
+      "audioUnderruns" : 0,
+      "compositorMallocs" : 20032,
+      "cpuMax" : 1.108,
+      "cpuP50" : 0.104,
+      "cpuP99" : 0.509,
+      "dmxSamples" : 0,
+      "dmxToPhotonP50" : 0,
+      "dmxToPhotonP99" : 0,
+      "frames" : 1253,
+      "gpuMax" : 6.769,
+      "gpuP50" : 4.353,
+      "gpuP99" : 5.885,
+      "late" : 0,
+      "layers" : 2,
+      "missed" : 0,
+      "passed" : true,
+      "staleByLayer" : [
+        0,
+        0
+      ],
+      "staleFrames" : 0,
+      "staleRuns" : [
+
+      ],
+      "textureMisses" : 0
+    },
+    {
+      "audioCorrections" : 0,
+      "audioMaxDriftMillis" : 0,
+      "audioUnderruns" : 0,
+      "compositorMallocs" : 25704,
+      "cpuMax" : 5.519,
+      "cpuP50" : 0.128,
+      "cpuP99" : 3.612,
+      "dmxSamples" : 0,
+      "dmxToPhotonP50" : 0,
+      "dmxToPhotonP99" : 0,
+      "frames" : 1225,
+      "gpuMax" : 11.067,
+      "gpuP50" : 5.564,
+      "gpuP99" : 9.397,
+      "late" : 0,
+      "layers" : 3,
+      "missed" : 0,
+      "passed" : true,
+      "staleByLayer" : [
+        0,
+        0,
+        0
+      ],
+      "staleFrames" : 0,
+      "staleRuns" : [
+
+      ],
+      "textureMisses" : 0
+    },
+    {
+      "audioCorrections" : 0,
+      "audioMaxDriftMillis" : 0,
+      "audioUnderruns" : 0,
+      "compositorMallocs" : 32708,
+      "cpuMax" : 5.227,
+      "cpuP50" : 0.132,
+      "cpuP99" : 2.484,
+      "dmxSamples" : 0,
+      "dmxToPhotonP50" : 0,
+      "dmxToPhotonP99" : 0,
+      "frames" : 1259,
+      "gpuMax" : 13.522,
+      "gpuP50" : 6.235,
+      "gpuP99" : 12.234,
+      "late" : 0,
+      "layers" : 4,
+      "missed" : 0,
+      "passed" : true,
+      "staleByLayer" : [
+        0,
+        0,
+        0,
+        0
+      ],
+      "staleFrames" : 0,
+      "staleRuns" : [
+
+      ],
+      "textureMisses" : 0
+    },
+    {
+      "audioCorrections" : 0,
+      "audioMaxDriftMillis" : 0,
+      "audioUnderruns" : 0,
+      "compositorMallocs" : 37231,
+      "cpuMax" : 3.679,
+      "cpuP50" : 0.138,
+      "cpuP99" : 2.032,
+      "dmxSamples" : 0,
+      "dmxToPhotonP50" : 0,
+      "dmxToPhotonP99" : 0,
+      "frames" : 1202,
+      "gpuMax" : 11.837,
+      "gpuP50" : 6.759,
+      "gpuP99" : 9.325,
+      "late" : 0,
+      "layers" : 5,
+      "missed" : 0,
+      "passed" : true,
+      "staleByLayer" : [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "staleFrames" : 0,
+      "staleRuns" : [
+
+      ],
+      "textureMisses" : 0
+    },
+    {
+      "audioCorrections" : 0,
+      "audioMaxDriftMillis" : 0,
+      "audioUnderruns" : 0,
+      "compositorMallocs" : 45000,
+      "cpuMax" : 0.83,
+      "cpuP50" : 0.145,
+      "cpuP99" : 0.506,
+      "dmxSamples" : 0,
+      "dmxToPhotonP50" : 0,
+      "dmxToPhotonP99" : 0,
+      "frames" : 1250,
+      "gpuMax" : 16.143,
+      "gpuP50" : 7.44,
+      "gpuP99" : 15.285,
+      "late" : 90,
+      "layers" : 6,
+      "missed" : 0,
+      "passed" : false,
+      "staleByLayer" : [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "staleFrames" : 0,
+      "staleRuns" : [
+
+      ],
+      "textureMisses" : 0
+    }
+  ],
+  "width" : 1920,
+  "windowSeconds" : 20
+}
