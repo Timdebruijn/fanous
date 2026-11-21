@@ -65,6 +65,11 @@ public struct LibrarySnapshot: Codable, Sendable, Equatable {
     public var fileCount: Int
     public var invalidCount: Int
 
+    /// A ProRes movie the engine can play is in the library (B389: the decoder warm-up is for those).
+    var holdsProRes: Bool {
+        folders.contains { $0.items.contains { $0.status == .playable && MovieSource.proResCodecs.contains(makeFourCC($0.metadata?.codec ?? "")) } }
+    }
+
     public static let empty = LibrarySnapshot(root: "", rootExists: false, folders: [], scannedAt: 0, fileCount: 0, invalidCount: 0)
 
     /// For clients below operator (B25): no root, and paths relative to it (still unique, so UI keys keep working).
@@ -115,6 +120,13 @@ public final class LibraryIndex: @unchecked Sendable {
     private let probeExited = DispatchSemaphore(value: 0)
     private let running = Atomic<Bool>(false)
     private var probeThread: Thread?
+    /// B389: a scan or a probe that shows a ProRes movie that plays starts the decoder warm-up (once per process). The
+    /// engine sets it; a test's index leaves the decoder alone. A `replacement(root:)` takes it over.
+    public var warmsDecoders: Bool {
+        get { warms.load(ordering: .relaxed) }
+        set { warms.store(newValue, ordering: .relaxed) }
+    }
+    private let warms = Atomic<Bool>(false)  // set on the engine's thread, read on the scan and probe threads
     /// How long `stop()` waits for a probe in flight; shortened by a test only.
     var joinTimeout: DispatchTimeInterval = .seconds(10)
     private var stream: FSEventStreamRef?
@@ -207,6 +219,12 @@ public final class LibraryIndex: @unchecked Sendable {
         }
     }
 
+    /// After a scan or a probe pass, on the thread that made it.
+    private func changed() {
+        if warmsDecoders, !DecoderWarmUp.hasStarted, snapshot.holdsProRes { DecoderWarmUp.startOnce(logger: logger) }
+        onChange?()
+    }
+
     /// B51: an index on another root with this one's cache, thumbnailer and change hook, started (scanned). This one
     /// keeps running until the caller has swapped them and calls `stop()` (FSEvents released, probe thread joined).
     /// The cache is keyed by absolute path and shared, so switching back to a root probed before needs no new probes.
@@ -214,6 +232,7 @@ public final class LibraryIndex: @unchecked Sendable {
         let next = LibraryIndex(root: root, cacheDirectory: cacheDirectory, logger: logger, readsStopMarker: false)
         next.thumbnailer = thumbnailer
         next.onChange = onChange
+        next.warmsDecoders = warmsDecoders
         next.start()
         return next
     }
@@ -311,7 +330,7 @@ public final class LibraryIndex: @unchecked Sendable {
             s.pendingProbes = probes
         }
         logger.info("library scanned", metadata: ["root": "\(root.path)", "folders": "\(folders.count)", "files": "\(fileCount)", "invalid": "\(invalidCount)", "toProbe": "\(probes.count)"])
-        onChange?()
+        changed()
         if !probes.isEmpty { probeWake.signal() }
     }
 
@@ -422,7 +441,7 @@ public final class LibraryIndex: @unchecked Sendable {
         // a probe that outlived stop() (the join timed out): the cache file and the hook belong to the next index (B51)
         guard running.load(ordering: .relaxed) else { return }
         saveCache()
-        onChange?()
+        changed()
     }
 
     static func probeStill(_ url: URL) -> MediaMetadata? {

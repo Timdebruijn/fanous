@@ -369,6 +369,20 @@ display link's `targetTimestamp`:
   output rate deterministic. `[OPEN-4]` optional frame blending later.
 - Media of any frame rate is supported; the clock is in media frames so
   speed 100 % always means native rate.
+- **Decoder warm-up (B389).** The first time a process holds about 1 GB of
+  ProRes decoder output (measured: 1.04 GB on an M1 Pro), VideoToolbox blocks
+  every ProRes decode in flight for about 60 ms, once. `DecoderWarmUp` passes
+  that mark on purpose: one encoded black 1080p frame decoded through one
+  hardware session, every output buffer kept, until 1.5 GB is held; then all
+  of it is let go. The engine runs it at its start, after the library's first
+  scan when that shows a ProRes movie that plays, and goes on when it is done
+  (about half a second). A library that shows its first ProRes movie later
+  (a probe, an upload, another root) starts it from the index on a thread of
+  its own, also in a show: nothing ProRes plays yet at that moment, and
+  leaving it to the first open would put the block next to that picture. The
+  loader starts it for a ProRes movie the library had not shown. Once per
+  process, and not on a Mac with less than 16 GB of memory
+  (`docs/benchmarks/README.md`; what it does not reach is B392).
 
 ### 4.3 Compositing pass (per canvas)
 
@@ -558,7 +572,7 @@ labelled "not yet benchmarked".
 | Tier | Chips | Media engines (Apple spec) | Expected max layers, canvas 1080p60 | Expected max layers, canvas 4K60 | Notes |
 |---|---|---|---|---|---|
 | **1 Base** | M2, M3, M4, M5, M6 | 1 | 6 × 1080p60 ProRes 422 HQ · 8 × 1080p60 HAP Q | 2 × 4K60 ProRes HQ · 3 × 4K60 HAP Q | 8 GB/16 GB memory limits ring depth; 2 external displays (3 on the M6 Mac mini) |
-| **2 Pro** (reference: M1 Pro) | M1 Pro, M2 Pro, M3 Pro, M4 Pro, (M5 Pro) | 1 | **Measured 2026-11-18 (M1 Pro, 32 GB, headless, ring 8, a busy Mac):** 16 × 1080p60 ProRes 422 HQ (cap) · 16 × 1080p60 HAP Q (cap) | **Measured:** 16 × 4K30 ProRes HQ (cap) · 16 × 4K30 HAP Q (cap) · 5 × 4K60 ProRes HQ · 6 × 4K60 HAP Q (the next layer shows late GPU frames) | all v1 acceptance criteria are defined on this tier first; details in `docs/benchmarks/README.md`. **Phase 3:** the caps hold with both effect slots on every layer for the per-pixel effects; blur and edge cost ≈ 1.6–1.9 ms per 1080p layer each (2026-10-23, before the scratch pass of B2); with both on every layer 5 layers pass at 1080p60 and 8–9 at 4K30, and above 5 the 1080p60 result depends on the run (2026-11-19, B388); a dissolve costs one extra layer, and 8 layers in permanent dissolves now and then draw a stale frame (B389) |
+| **2 Pro** (reference: M1 Pro) | M1 Pro, M2 Pro, M3 Pro, M4 Pro, (M5 Pro) | 1 | **Measured 2026-11-18 (M1 Pro, 32 GB, headless, ring 8, a busy Mac):** 16 × 1080p60 ProRes 422 HQ (cap) · 16 × 1080p60 HAP Q (cap) | **Measured:** 16 × 4K30 ProRes HQ (cap) · 16 × 4K30 HAP Q (cap) · 5 × 4K60 ProRes HQ · 6 × 4K60 HAP Q (the next layer shows late GPU frames) | all v1 acceptance criteria are defined on this tier first; details in `docs/benchmarks/README.md`. **Phase 3:** the caps hold with both effect slots on every layer for the per-pixel effects; blur and edge cost ≈ 1.6–1.9 ms per 1080p layer each (2026-10-23, before the scratch pass of B2); with both on every layer 5 layers pass at 1080p60 and 8–9 at 4K30, and above 5 the 1080p60 result depends on the run (2026-11-19, B388); a dissolve costs one extra layer, and 8 layers in permanent dissolves drew a stale frame at their first dissolve until the decoder warm-up of §4.2 (B389) |
 | **3 Max** | M1 Max, M2 Max, M3 Max, M4 Max, (M5 Max) | 2 | 16 (cap) | 8 × 4K60 ProRes HQ · 8 × 4K60 HAP Q | 4 external displays |
 | **4 Ultra** | M1 Ultra, M2 Ultra, M3 Ultra | 4 | 16 (cap) | 16 (cap) | 5+ displays |
 

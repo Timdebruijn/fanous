@@ -81,6 +81,8 @@ enum Benchmark {
         let file = mediaDirectory.appending(path: "\(codec)_\(width)x\(height)p\(Int(fps)).mov")
         guard FileManager.default.fileExists(atPath: file.path) else { throw RenderError.pipeline("missing \(file.path); run `fanous-bench media` first") }
         let useDisplay = headless ? nil : (display ?? 0)
+        // as an engine whose library holds ProRes does at its start (B389), and done before the first step
+        if codec.hasPrefix("prores") { DecoderWarmUp.runOnce(logger: logger) }
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         let context = try MetalContext()

@@ -104,7 +104,8 @@ switch after the start; the four later switches of every window drew none. So
 in these six runs it is the first dissolve of a freshly started bench that
 draws a picture with an older frame for a few ticks, which also fits the clean
 ramp (B389); the four single steps of the table above have no such detail.
-The report file of the single step is the one with 6.
+The report file of the single step of 2026-11-19 is the one with 6; the one
+of 2026-11-21 is a step with the decoder warm-up (below), a pass.
 
 Traced on 2026-11-19: a build of main `4835a6f7` with timestamps in the
 decoder, the loader and the compositor (the trace points are not in main), 13
@@ -173,7 +174,70 @@ that count, which of session, thread and ring it counts, whether the count is
 this chip's (M1 Pro), other sizes and ProRes kinds, whether it comes again at a
 higher count (16 layers with dissolves are 32 decoders) or after a longer time
 below 14, and whether decoders opened and used once at engine start would take
-it away from the first switch.
+it away from the first switch. The paragraphs below answer the count and the
+last.
+
+What it counts, measured the same day from 16:20 to 16:50 (load average 2.7 to
+7.5): bytes of decoder output held, not sessions, threads or frames. One
+session that decodes one black ProRes 422 frame over and over and keeps every
+output buffer has exactly one slow decode, of 61 to 63 ms: the one after 121
+buffers at 1080p (three runs; 8.55 MB each, 1.035 GB held), after 30 at 4K (two
+runs; 34.1 MB each, 1.023 GB) and after 271 at 720p (two runs; 3.83 MB each,
+1.037 GB; sizes as `CVPixelBufferGetDataSize` gives them). No other decode
+takes over 15 ms up to 400, 120 and 800 buffers (3.4, 4.1 and 3.1 GB), and none
+at all when at most 60 buffers (0.5 GB) are held over 400 decodes. So the mark
+is between 1.037 and 1.041 GB of held output, and the 14 decoders above are 112
+ring frames of 8.55 MB plus what each holds beside its ring. Passing it before
+the service starts takes the block away from the first switch of an 8-layer
+step with dissolves: with 16 decoders of the bench file decoding 32 frames each
+(three steps), with 16 sessions of the black frame holding 8 buffers each
+(two), and with one session holding 140 (two, and one more that waited 61 s
+before the service started). It stays at the first switch when the 16 sessions
+hold nothing (three steps; in a fourth, which waited 60 s, the bench's switch
+timer fired during the wait and the block fell at the start) and when the 16
+file decoders decode 2 frames each (two).
+
+The engine passes the mark itself since PR #427 (`DecoderWarmUp`): one black
+1080p ProRes frame is encoded and decoded through one hardware session, every
+buffer kept, until 1.5 GB is held, and all of it is let go. The engine runs it
+at its start, right after the library's first scan when that shows a ProRes
+movie that plays, and goes on only when it is done; `fanous-bench` does the
+same before its first ProRes step. Not on a Mac with less than 16 GB of memory.
+In 19 runs it took 0.46 to 0.52 s (release bench) or 0.36 to 0.48 s (test
+engine), and its longest decode, 57 to 60 ms, began every time with 1034 MB
+held: the mark. With it, nine steps of 8 ProRes layers in permanent dissolves
+(seven of the branch's bench, two of the trace build) pass with 0 stale frames,
+where most failed on the first switch before (1 to 6 stale frames, 26 in one
+step); traced, no decode at the start or at a switch takes over 19 ms. Six
+steps of 16 layers without dissolves pass too, but their start lies 2 s before
+the measured window, so a pass does not see it. Traced (two steps), that start
+has 3 and 2 decodes of 25 to 44 ms inside VideoToolbox and 0 and 2 stale
+frames, against 4 to 8 stale frames in the four steps of 16:00 on 2026-11-19,
+without the warm-up; why those few decodes are slow is not measured (B392). On
+a test engine with a ProRes clip in its library, started twice on one home, the
+second start (the index cached) logs `library scanned`, then `decoder warm-up
+heldMB=1505 longestAtMB=1034 longestDecodeMs=60 ms=481`, then its start steps
+and the listener; the clip then plays on a layer. The memory is the system's
+wired memory, not the process's footprint (`footprint` showed a peak of 43 MB):
+2.61 GB before an engine started, 3.38 GB in the last sample taken during the
+warm-up (its peak was not caught), 2.68 GB two seconds later.
+
+A library that shows its first ProRes movie later (files the first scan could
+not read from the cache and that are still being probed: the first start on a
+home, a file that changed, a release that probes everything again; an upload;
+another root) starts the same warm-up from the index on a thread of its own,
+and the loader does for a ProRes movie the library had not shown (a scene's
+file). Pictures may play then. Measured with the loader as the only trigger, in
+nine steps of 8 layers in dissolves (six of the bench, three traced): all pass
+with 0 stale frames, and the block falls 0.14 to 0.16 s after the first
+hand-over on the 8 decoders that play (58 to 62 ms each), whose rings are full
+by then. A picture swapped in during those 0.2 s would meet the block, and 16
+layers started together pass the mark by themselves 70 ms after their start,
+before the warm-up gets there (7 and 8 stale frames in two steps); both are
+B392. Not measured: the mark on another Mac or macOS (the log line gives the
+longest decode and where it began; at 0 MB it is the session's first decode and
+there was no block), what VideoToolbox does there, 4K layers in the engine (4
+of them hold 1 GB), an engine start that restores ProRes layers, and a cut.
 
 Display runs, 2026-11-19: main `cc1c002b`, `--display 0` (the built-in 120 Hz
 panel, the only display attached), the same criterion, load about 3 to 6.
