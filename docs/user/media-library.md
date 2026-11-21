@@ -303,7 +303,7 @@ does not see the path.
 All numbers are from the reference MacBook Pro M1 Pro (32 GB), release
 build. "Headless" is the engine's own clock with no display; "display" is a
 real output. Pass means no missed or late frame and no texture miss in a
-10 or 20 s window, and for the headless runs of 2026-11-18 and 19 also no
+10 or 20 s window, and for the headless runs of 2026-11-18, 19 and 21 also no
 stale frame: a layer that showed an older frame on time. Those runs replace
 the headless ones of 2026-10-23, which were made while a playing layer skipped
 frames. The runs on the built-in display were made again on 2026-11-19 with
