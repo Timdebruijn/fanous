@@ -222,7 +222,10 @@ or 3 frames, and the frames in them lagged the clock (layer 13, with 1.34 s,
 kept 5 and drew none). The same came once more in a headless step of 16 layers:
 98 of its 103 decodes over 12 ms within 0.25 s at the end of the window (up to
 54 ms in the read, no stale frame; the window may have cut the spell short).
-The run with 101 has no trace: that it was the same is possible, not shown. Not
+One more headless step of 16 layers that day drew 45 stale frames in six runs
+of ticks (the longest 8, at 16.8 s) with 72 decodes over 25 ms outside its
+start; its trace was overwritten, so where their time went is not known. The
+run with 101 has no trace: that it was the same is possible, not shown. Not
 measured: what holds the call up (the disk, the file cache, a lock in
 AVFoundation shared by the generators of one file, the decode thread not being
 scheduled, another process), and whether layers that read different files meet
