@@ -11,7 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Release: 1.0.0-rc.16 is on GitHub as a pre-release with the signed, notarized dmg, built from main dddebc3
-  (PR #NNN).
+  (PR #432).
 
 ## 1.0.0-rc.16 — 2026-11-21
 
