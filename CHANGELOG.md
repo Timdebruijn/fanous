@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+## 1.0.0-rc.16 — 2026-11-21
+
 - Engine: ProRes decoding stalls once, for about 60 ms inside VideoToolbox, the first time the process holds about 1
   GB of decoded frames; a picture swapped in at that moment drew an older frame for a few ticks. The engine now passes
   that mark by itself at its start when its library holds a ProRes movie (a decoder warm-up: half a second longer to
