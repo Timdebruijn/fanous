@@ -210,14 +210,14 @@ of consecutive ticks (the longest 7) within two spells at 94.45 to 94.71 s and
 95.06 to 95.78 s. Of the 692 decodes that take over 12 ms in the window (119
 over 25 ms), 686 fall between 94.3 and 95.9 s and the other six, of 12 to 19
 ms, at 82.1 s. They are on all 16 decoders but unevenly: 1 to 7 on layers 1 to
-4, 29 to 71 on the others. In every one over four fifths of the time is inside
+4, 29 to 70 on the others. In every one over four fifths of the time is inside
 the call that reads the sample (`sampleBuffer(at:)`, which steps the cursor and
 asks `AVSampleBufferGenerator` for the sample; wall-clock, up to 62 ms where it
 takes about half a millisecond, median 0.46 to 0.53 ms in these runs), and the
 VideoToolbox call takes at most 0.9 ms. So the time behind those stale frames
 is in the read call, not in the VideoToolbox decode, the texture wrap or the
 compositor. The rings did not run empty: the decoders of layers 12, 14, 15 and
-16 spent 1.35 to 1.43 s of those 1.6 s in slow decodes, their rings fell to 3
+16 spent 1.35 to 1.43 s of those 1.6 s in slow decodes, their rings fell to 2 or 3
 frames, and the frames in them lagged the clock (layer 13, with 1.34 s, kept 5
 and drew none). The same came once more in a headless step of 16 layers: 98 of
 its 103 decodes over 12 ms within 0.25 s at the end of the window (up to 54 ms
