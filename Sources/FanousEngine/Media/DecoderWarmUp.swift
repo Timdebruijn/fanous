@@ -18,7 +18,7 @@ import VideoToolbox
 /// it is let go. The process stays past the mark afterwards.
 public enum DecoderWarmUp {
     public struct Report: Sendable, Equatable {
-        /// Why it did not run; nil when it did.
+        /// Why it did not run, or that it stopped short of the target; nil when it reached it.
         public var skipped: String?
         /// Bytes of decoder output held at the end.
         public var heldBytes = 0
@@ -58,16 +58,13 @@ public enum DecoderWarmUp {
     }
 
     private static func log(_ report: Report, logger: Logger) {
-        if let skipped = report.skipped {
-            logger.info("decoder warm-up skipped", metadata: ["reason": "\(skipped)"])
-        } else {
-            logger.info(
-                "decoder warm-up",
-                metadata: [
-                    "ms": "\(Int(report.seconds * 1000))", "heldMB": "\(report.heldBytes / 1_000_000)",
-                    "longestDecodeMs": "\(Int(report.longestDecode * 1000))", "longestAtMB": "\(report.longestAtBytes / 1_000_000)",
-                ])
-        }
+        // the same fields whether it reached the target or stopped short: where the longest decode began is the mark
+        var metadata: Logger.Metadata = [
+            "ms": "\(Int(report.seconds * 1000))", "heldMB": "\(report.heldBytes / 1_000_000)",
+            "longestDecodeMs": "\(Int(report.longestDecode * 1000))", "longestAtMB": "\(report.longestAtBytes / 1_000_000)",
+        ]
+        if let skipped = report.skipped { metadata["reason"] = "\(skipped)" }
+        logger.info(report.skipped == nil ? "decoder warm-up" : report.heldBytes > 0 ? "decoder warm-up stopped short" : "decoder warm-up skipped", metadata: metadata)
     }
 
     /// Decodes and holds until `target` bytes are held.
@@ -97,9 +94,12 @@ public enum DecoderWarmUp {
         while report.heldBytes < target, held.count < most {
             let before = held.count
             let t0 = ContinuousClock.now
-            status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { _, _, buffer, _, _ in
+            nonisolated(unsafe) var decoded = noErr
+            status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { status, _, buffer, _, _ in
+                decoded = status
                 if let buffer { held.append(buffer) }
             }
+            if status == noErr { status = decoded }  // a failure the decoder reports through the handler
             guard status == noErr, held.count > before, let buffer = held.last else { break }
             let seconds = (ContinuousClock.now - t0) / .seconds(1)
             if seconds > report.longestDecode { (report.longestDecode, report.longestAtBytes) = (seconds, report.heldBytes) }

@@ -334,8 +334,11 @@ public final class Engine: @unchecked Sendable {
         // B389: the first scan is done. ProRes in it: the decoder's one block is passed here, about half a second in
         // which nothing plays yet. A library that shows its first ProRes later (files still being probed, an upload,
         // another root) starts the same warm-up from the index, on a thread of its own.
-        if library.snapshot.holdsProRes { DecoderWarmUp.runOnce(logger: logger) }
+        // The setting first: a probe pass that ends in between then starts it from the index, and one of the two runs.
+        // ponytail: the decodes here have no time limit on the start path; a decoder that hangs keeps the engine from
+        // listening. A session the hardware refuses throws and is skipped; a watchdog thread if one ever hangs.
         library.warmsDecoders = true
+        if library.snapshot.holdsProRes { DecoderWarmUp.runOnce(logger: logger) }
         libraryBox.withLock { $0 = library }
 
         // Ingest queue (DESIGN.md §8.3): one job at a time at utility priority; yields while the compositor is busy.

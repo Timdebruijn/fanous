@@ -122,7 +122,11 @@ public final class LibraryIndex: @unchecked Sendable {
     private var probeThread: Thread?
     /// B389: a scan or a probe that shows a ProRes movie that plays starts the decoder warm-up (once per process). The
     /// engine sets it; a test's index leaves the decoder alone. A `replacement(root:)` takes it over.
-    public var warmsDecoders = false
+    public var warmsDecoders: Bool {
+        get { warms.load(ordering: .relaxed) }
+        set { warms.store(newValue, ordering: .relaxed) }
+    }
+    private let warms = Atomic<Bool>(false)  // set on the engine's thread, read on the scan and probe threads
     /// How long `stop()` waits for a probe in flight; shortened by a test only.
     var joinTimeout: DispatchTimeInterval = .seconds(10)
     private var stream: FSEventStreamRef?

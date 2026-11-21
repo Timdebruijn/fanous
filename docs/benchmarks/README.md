@@ -212,31 +212,32 @@ step); traced, no decode at the start or at a switch takes over 19 ms. Six
 steps of 16 layers without dissolves pass too, but their start lies 2 s before
 the measured window, so a pass does not see it. Traced (two steps), that start
 has 3 and 2 decodes of 25 to 44 ms inside VideoToolbox and 0 and 2 stale
-frames, against 4 to 8 stale frames in four steps without the warm-up; why
-those few decodes are slow is not measured (B392). On a test engine with a
-ProRes clip in its library, started twice on one home, the second start (the
-index cached) logs `library scanned`, then `decoder warm-up heldMB=1505
-longestAtMB=1034 longestDecodeMs=60 ms=481`, then its start steps and the
-listener; the clip then plays on a layer. The memory is the system's wired
-memory, not the process's footprint (`footprint` showed a peak of 43 MB): 2.61
-GB before an engine started, 3.38 GB in the last sample taken during the
+frames, against 4 to 8 stale frames in the four steps of 16:00 on 2026-11-19,
+without the warm-up; why those few decodes are slow is not measured (B392). On
+a test engine with a ProRes clip in its library, started twice on one home, the
+second start (the index cached) logs `library scanned`, then `decoder warm-up
+heldMB=1505 longestAtMB=1034 longestDecodeMs=60 ms=481`, then its start steps
+and the listener; the clip then plays on a layer. The memory is the system's
+wired memory, not the process's footprint (`footprint` showed a peak of 43 MB):
+2.61 GB before an engine started, 3.38 GB in the last sample taken during the
 warm-up (its peak was not caught), 2.68 GB two seconds later.
 
-A library that shows its first ProRes movie later (files still being probed at
-the first start on a home, an upload, another root) starts the same warm-up
-from the index on a thread of its own, and the loader does for a ProRes movie
-the library had not shown (a scene's file). Pictures may play then. Measured
-with the loader as the only trigger, in nine steps of 8 layers in dissolves
-(six of the bench, three traced): all pass with 0 stale frames, and the block
-falls 0.14 to 0.16 s after the first hand-over on the 8 decoders that play (58
-to 62 ms each), whose rings are full by then. A picture swapped in during those
-0.2 s would meet the block, and 16 layers started together pass the mark by
-themselves 70 ms after their start, before the warm-up gets there (7 and 8
-stale frames in two steps); both are B392. Not measured: the mark on another
-Mac or macOS (the log line gives the longest decode and where it began; at 0 MB
-it is the session's first decode and there was no block), what VideoToolbox
-does there, 4K layers in the engine (4 of them hold 1 GB), an engine start that
-restores ProRes layers, and a cut.
+A library that shows its first ProRes movie later (files the first scan could
+not read from the cache and that are still being probed: the first start on a
+home, a file that changed, a release that probes everything again; an upload;
+another root) starts the same warm-up from the index on a thread of its own,
+and the loader does for a ProRes movie the library had not shown (a scene's
+file). Pictures may play then. Measured with the loader as the only trigger, in
+nine steps of 8 layers in dissolves (six of the bench, three traced): all pass
+with 0 stale frames, and the block falls 0.14 to 0.16 s after the first
+hand-over on the 8 decoders that play (58 to 62 ms each), whose rings are full
+by then. A picture swapped in during those 0.2 s would meet the block, and 16
+layers started together pass the mark by themselves 70 ms after their start,
+before the warm-up gets there (7 and 8 stale frames in two steps); both are
+B392. Not measured: the mark on another Mac or macOS (the log line gives the
+longest decode and where it began; at 0 MB it is the session's first decode and
+there was no block), what VideoToolbox does there, 4K layers in the engine (4
+of them hold 1 GB), an engine start that restores ProRes layers, and a cut.
 
 Display runs, 2026-11-19: main `cc1c002b`, `--display 0` (the built-in 120 Hz
 panel, the only display attached), the same criterion, load about 3 to 6.
