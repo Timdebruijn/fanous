@@ -210,8 +210,9 @@ is of 2026-11-21, 17:06 to 18:33, on its final code (`b6115fb7`, the soak
 `2a86eaff`). In all of them the decoder warm-up of B389 is done before the
 first measured window. The load average over one minute at the start of a step
 was 1.4 to 6.1 (the HAP Q dissolve steps 7.4, 9.7 and 12.3, the hour's soak
-7.6), over 15 minutes 2.9 to 6.0. The 4K ramps of 2026-11-19 ran at 1.4 to 2.6,
-quieter than the 3 to 6 of the section above; the series of 2026-11-21 was not
+7.6), over 15 minutes 2.9 to 6.0. The two 4K60 ramps and the HAP Q ramps of
+2026-11-19 ran at 1.4 to 2.6, quieter than the 3 to 6 of the section above, the
+ProRes 1080p60 and 4K30 ramps at 4.4 to 6.0; the series of 2026-11-21 was not
 clearly quieter: the system's photo analysis and Spotlight ran during parts of
 both days, and the desktop app this was run from used several cores when the
 second series started. Pass = 0 missed, 0 late, 0 texture misses, 0 stale
