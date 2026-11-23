@@ -416,6 +416,22 @@ build of main before the rc.16 version bump (the audio path is unchanged since)
 read 16 corrections and 50.2 ms: a larger lag than the bench's, not traced. The
 report file of 2026-11-23 is one of the four release-bench runs (2.8 ms).
 
+A correction used to stop at the window's edge (B394, PR #436): a lag or lead
+of 20 to 100 ms that was not a new segment was nudged 2 ms per callback until
+it was just inside ±20 ms, and the 18 to 20 ms left stayed for the clip.
+Measured with a double GO on a test engine (two retriggers 50 ms apart, 3 s
+into the clip above, two runs per build): main's build read 16 corrections
+after the second retrigger and the 50 ms jump as its largest drift, and the
+lag it left is below what `/metrics` shows (the peak is never reset there);
+with the fix the second retrigger reseeks like the first (the compositor tells
+the decoder about a retrigger; a first version inferred it from a clock more
+than 20 ms behind the ring, which the review showed fires between normal
+callbacks), and six such runs read 0 corrections and a largest drift of 0.79
+to 1.31 ms, with one more underrun for the second drain.
+A correction that starts during playback now runs until the audio is on the
+clock; measured only in the unit tests (30 ms of lag or lead: 15 corrections,
+then under 0.1 ms).
+
 Not repeated: the runs on a 4K display and DMX→photon (B390), and the 8-hour
 soak (B333). The report files of this section are the `…-2026-11-19` ramps and
 the `…-2026-11-21` steps; a step that ran three times has the last one's, and

@@ -785,7 +785,7 @@ public final class Compositor: @unchecked Sendable {
             {
                 loop = (Double(inFrame) / playback.frameRate, Double(outFrame + 1) / playback.frameRate)
             }
-            channel.setState(wantedPTS: playback.clock.position / max(1, playback.frameRate), active: active, volume: p.audioVolume * weight, pan: p.audioPan, loop: loop)
+            channel.setState(wantedPTS: playback.clock.position / max(1, playback.frameRate), active: active, volume: p.audioVolume * weight, pan: p.audioPan, loop: loop, jumped: retrigger && master == nil)
         }
         guard let frameIndex else { return }  // once-then-black has finished
         let intensity = p.intensity * weight

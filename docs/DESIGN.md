@@ -3557,15 +3557,28 @@ groundwork and small engine pieces first):
   crossfades audio with the video.
 - Sync: the layer clock is master. The render callback compares the ring's
   head pts with the clock; drift beyond ±20 ms is corrected by dropping or
-  repeating up to 2 ms per callback (inaudible for programme material), and
-  logged if it recurs. The first callback of a segment (a start, a retrigger,
-  a seek), and the first after the channel was inactive (a resume), drop
-  straight to the clock when the audio is behind it: nothing of it has been
-  heard yet, and the 28 to 35 ms between the decoder's seek at the clock and
-  the first render callback (the output device still starting) otherwise
-  stayed as a lag inside the ±20 ms window for the whole clip (B393). The
-  frames skipped there are never heard: a hit on a clip's first frame loses
-  its first 30 ms rather than coming late. "Resync audio" on the Control
+  repeating up to 2 ms per callback (inaudible for programme material) until
+  the audio is on the clock or the drift changes sign, not only back inside
+  the window (B394: a correction that stopped at the window's edge left 18 to
+  20 ms for the rest of the clip); an underrun starts the same correction for
+  the frames it missed. A layer's own retrigger reaches the decoder as a
+  signal from the compositor, so it reseeks whatever the size of the jump
+  (also within 100 ms of a start), a new segment, rather than repeating frames
+  towards the clock (a slave whose master was retriggered is not signalled,
+  B395); between two callbacks the ring's head runs up to one callback ahead
+  of the clock, so a clock a little behind the ring is normal and is never
+  inferred to be a jump. Corrections and the largest drift are counted in
+  `/metrics`. The first callback of a segment (a start, a retrigger,
+  a seek), and the first after the channel was inactive (a resume), land on
+  the clock: when the audio is behind it they drop straight to it, since
+  nothing of it has been heard yet, and the 28 to 35 ms between the decoder's
+  seek at the clock and the first render callback (the output device still
+  starting) otherwise stayed as a lag inside the ±20 ms window for the whole
+  clip (B393); when it is ahead (a resume, where the last callback before the
+  pause ran past the pause point) they wait, silent until the clock reaches
+  the first frame. The frames skipped there are never heard: a hit on a
+  clip's first frame loses its first 30 ms rather than coming late. "Resync
+  audio" on the Control
   channel forces a re-seek.
 - Stills and live inputs have no audio in v1. Audio metering per layer and
   master (live state, Layers screen) is not built; `/metrics` has engine-wide

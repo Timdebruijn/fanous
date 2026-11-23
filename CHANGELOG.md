@@ -10,6 +10,14 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine: a sound that drifted from its clock is corrected onto the clock, not only back inside the ±20 ms window.
+  A lag of 20 to 100 ms (a stall, an output device that restarted while the layer played) was dropped 2 ms per
+  callback until it was just inside the window and then kept 18 to 20 ms of it for the rest of the clip; the
+  correction now runs until the audio is on the clock, an underrun starts one for the frames it missed, a resume
+  that finds the sound ahead of the clock waits for it instead of keeping the lead, and a retrigger within 100 ms of
+  a start reseeks like any retrigger (the compositor tells the decoder), so its sound starts on time instead of
+  being repeated towards the clock (B394; found with it, open: B395 a sync slave's master retrigger, B396 a channel
+  that keeps the previous file's ring, B397 two producers on one channel during a dissolve) (PR #436).
 - Release: 1.0.0-rc.17 is on GitHub as a pre-release with the signed, notarized dmg, built from main f32b202
   (PR #435).
 
