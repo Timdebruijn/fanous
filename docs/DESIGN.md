@@ -3558,8 +3558,12 @@ groundwork and small engine pieces first):
 - Sync: the layer clock is master. The render callback compares the ring's
   head pts with the clock; drift beyond ±20 ms is corrected by dropping or
   repeating up to 2 ms per callback (inaudible for programme material), and
-  logged if it recurs. "Resync audio" on the Control channel forces a
-  re-seek.
+  logged if it recurs. The first callback of a segment (a start, a retrigger,
+  a seek) drops straight to the clock when the audio is behind it: nothing of
+  the segment has been heard yet, and the output device takes about 30 ms to
+  start after the decoder seeked at the clock, which inside the ±20 ms window
+  stayed as a lag for the whole clip (B393). "Resync audio" on the Control
+  channel forces a re-seek.
 - Stills and live inputs have no audio in v1. Audio metering per layer and
   master (live state, Layers screen) is not built; `/metrics` has engine-wide
   counters only (callbacks, underruns, corrections, max drift).

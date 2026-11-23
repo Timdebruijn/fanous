@@ -298,38 +298,74 @@ extension LayerAudioChannel {
         let channel = LayerAudioChannel()
         channel.setState(wantedPTS: 0, active: true, volume: 1, pan: -1)
         channel.fill(source, wanted: 0)  // ring: source frames 0 ..< 12000
-
         let frames = 480
-        let lead = 1440  // the layer clock runs 30 ms ahead of the audio
-        var consumedTotal = 0
+        Self.pull(channel, frames: frames, wanted: 0)  // the segment's first pull, on the clock: head 480
+        #expect(channel.statistics.corrections == 0)
+
+        let lead = 1440  // from here the layer clock runs 30 ms ahead of the audio (a drift during playback)
+        var consumedTotal = frames
         var previous = channel.bufferedFrames
         var firstPeak = 0.0
-        for k in 0..<10 {
+        for k in 1..<11 {
             let wanted = Double(lead + k * frames) / 48_000
             channel.setState(wantedPTS: wanted, active: true, volume: 1, pan: -1)
             let out = Self.pull(channel, frames: frames, wanted: wanted)
             let consumed = previous - channel.bufferedFrames
             previous = channel.bufferedFrames
             #expect(consumed >= frames && consumed - frames <= LayerAudioChannel.maxCorrectionFrames, "pull \(k) consumed \(consumed)")
-            if k > 0 {  // gain is steady after the first pull: the output is the source ramp, starting after the dropped frames
-                #expect(out.left[0] == Float(consumedTotal + consumed - frames))
-                #expect(out.left[frames - 1] == Float(consumedTotal + consumed - 1))
-            }
-            if k == 0 { firstPeak = channel.statistics.maxDriftMillis }
+            // gain is steady after the first pull: the output is the source ramp, starting after the dropped frames
+            #expect(out.left[0] == Float(consumedTotal + consumed - frames))
+            #expect(out.left[frames - 1] == Float(consumedTotal + consumed - 1))
+            if k == 1 { firstPeak = channel.statistics.maxDriftMillis }
             consumedTotal += consumed
         }
-        #expect(abs(firstPeak - 30) < 0.01, "first pull saw \(firstPeak) ms")
+        #expect(abs(firstPeak - 30) < 0.01, "first drifted pull saw \(firstPeak) ms")
         // 30 ms -> 20 ms at 2 ms per pull: five corrections, then the drift stays inside the window.
         #expect(channel.statistics.corrections == 5)
-        #expect(consumedTotal == 10 * frames + 5 * LayerAudioChannel.maxCorrectionFrames)
+        #expect(consumedTotal == 11 * frames + 5 * LayerAudioChannel.maxCorrectionFrames)
         channel.resetPeakDrift()
-        for k in 10..<14 {
+        for k in 11..<15 {
             let wanted = Double(lead + k * frames) / 48_000
             Self.pull(channel, frames: frames, wanted: wanted)
         }
         #expect(channel.statistics.maxDriftMillis <= 20.0)
         #expect(channel.statistics.corrections == 5)
         #expect(channel.statistics.underruns == 0)
+    }
+
+    /// B393: the output device starts about 30 ms after the producer seeked at the clock, so the segment's first
+    /// pull finds the audio behind. It lands on the clock at once, also inside the ±20 ms window, where the old code
+    /// left the lag for the whole clip; and a seek later in the clip does the same.
+    @Test(arguments: [15, 35]) func theFirstPullOfASegmentLandsOnTheClock(lagMillis: Int) {
+        let source = RampSource()
+        let channel = LayerAudioChannel()
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: -1)
+        channel.fill(source, wanted: 0)  // ring: source frames 0 ..< 12000
+        let frames = 480
+        let lag = lagMillis * 48
+        var wanted = Double(lag) / 48_000  // the clock ran on while the device started
+        var out = Self.pull(channel, frames: frames, wanted: wanted)  // the gain ramps up over this pull: the ring position says where it landed
+        #expect(channel.bufferedFrames == LayerAudioChannel.capacity - lag - frames)
+        #expect(abs(channel.nextFramePTS - Double(lag + frames) / 48_000) < 1e-9)
+        #expect(channel.statistics.corrections == 0)
+        #expect(channel.statistics.maxDriftMillis < 0.1)
+        for k in 1..<6 {
+            wanted = Double(lag + k * frames) / 48_000
+            channel.setState(wantedPTS: wanted, active: true, volume: 1, pan: -1)
+            out = Self.pull(channel, frames: frames, wanted: wanted)
+            #expect(out.left[0] == Float(lag + k * frames))
+        }
+        #expect(channel.statistics.corrections == 0)
+        #expect(channel.statistics.maxDriftMillis < 0.1)
+
+        // A seek to 1.0 s (the producer restarts the segment) with the clock 10 ms past it by the next pull.
+        channel.setState(wantedPTS: 1.0, active: true, volume: 1, pan: -1)
+        channel.fill(source, wanted: 1.0)  // drains next pull
+        Self.pull(channel, frames: frames, wanted: 1.0)
+        channel.fill(source, wanted: 1.0)  // the new segment, at 1.0 s
+        out = Self.pull(channel, frames: frames, wanted: 1.010)
+        #expect(out.left[0] == Float(48_000 + 480))
+        #expect(channel.statistics.corrections == 0)
     }
 
     @Test func staysSilentWhenTheAudioIsFarFromTheClock() {
@@ -343,9 +379,15 @@ extension LayerAudioChannel {
         #expect(channel.bufferedFrames == LayerAudioChannel.capacity)
         let stats = channel.statistics
         #expect(stats.underruns == 1 && stats.corrections == 0 && stats.maxDriftMillis == 0)
-        // 90 ms off is nudged instead (inside the 100 ms window).
-        let nudged = Self.pull(channel, frames: 480, wanted: 0.090)
+        // 90 ms off at the segment's first audible pull: it lands on the clock (B393), no nudge.
+        let landed = Self.pull(channel, frames: 480, wanted: 0.090)
+        #expect(landed.left.contains { $0 != 0 })
+        #expect(channel.bufferedFrames == LayerAudioChannel.capacity - 4320 - 480)
+        #expect(channel.statistics.corrections == 0)
+        // 90 ms off during playback (inside the 100 ms window) is nudged, 2 ms per pull.
+        let nudged = Self.pull(channel, frames: 480, wanted: 0.190)
         #expect(nudged.left.contains { $0 != 0 })
+        #expect(channel.bufferedFrames == LayerAudioChannel.capacity - 4320 - 480 - 480 - LayerAudioChannel.maxCorrectionFrames)
         #expect(channel.statistics.corrections == 1)
     }
 

@@ -75,6 +75,9 @@ public final class LayerAudioChannel: @unchecked Sendable {
     private let underrunCount = Atomic<Int>(0)
     private let correctionCount = Atomic<Int>(0)
     private let peakDriftMicros = Atomic<Int>(0)
+    /// B393: counts the segments the producer started; the consumer's first pull of a segment lands on the clock exactly.
+    private let segmentGeneration = Atomic<Int>(0)
+    private var alignedGeneration = 0  // consumer only
 
     // Consumer thread only.
     private var appliedGeneration = 0
@@ -264,6 +267,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
             if startNewSegment {  // ring is empty here, so the consumer is not using the pair
                 baseIndex.store(t, ordering: .relaxed)
                 basePTSBits.store(firstPTS.bitPattern, ordering: .relaxed)
+                segmentGeneration.wrappingAdd(1, ordering: .relaxed)  // published by the tail's release below
                 startNewSegment = false
                 segmentValid = true
             }
@@ -292,9 +296,14 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// Adds `frames` frames to `left` / `right`, scaled by volume and pan, and consumes them from the ring.
     /// Follows the layer clock (`wantedPTS`): beyond ±20 ms it drops frames (audio behind) or repeats the first
     /// frame (audio ahead), at most 96 frames per call. Beyond ±100 ms it stays silent until the producer has
-    /// resynced. Silent and consuming nothing while inactive.
+    /// resynced. The first pull of a segment (a start, a retrigger, a seek) drops straight to the clock when the
+    /// audio is behind it, whatever the distance: nothing of the segment has been heard yet, and the time the
+    /// output device takes to start (about 30 ms measured) would otherwise stay as a lag inside the window for the
+    /// whole clip (B393). Silent and consuming nothing while inactive.
     /// Real-time safe: no allocation, no locks, no logging.
     /// ponytail: hard drop/repeat as DESIGN.md §10 specifies; interpolating over the callback would be click-free.
+    /// ponytail: a segment that starts ahead of the clock (the producer seeks at the clock, so only by rounding) takes
+    /// the repeat path like any other callback.
     public func pull(into left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>, frames: Int, wantedPTS: Double) {
         let generation = flushGeneration.load(ordering: .acquiring)
         if generation != appliedGeneration {
@@ -318,12 +327,20 @@ public final class LayerAudioChannel: @unchecked Sendable {
         var skip = 0
         var repeats = 0
         if available > 0 {
-            let drift = Self.frames(from: wrapped(pts(ofFrame: h) - wantedPTS) * Self.rate)  // < 0: audio is behind the clock
+            var drift = Self.frames(from: wrapped(pts(ofFrame: h) - wantedPTS) * Self.rate)  // < 0: audio is behind the clock
             if abs(drift) > Self.resyncThresholdFrames {  // a seek or retrigger the producer has not caught up with yet
                 previousGainL = targetL
                 previousGainR = targetR
                 underrunCount.add(1, ordering: .relaxed)
                 return
+            }
+            let generation = segmentGeneration.load(ordering: .relaxed)  // ordered by the tail load above
+            if generation != alignedGeneration {
+                alignedGeneration = generation
+                if drift < 0 {  // the first frames of a new segment: land on the clock, not counted as a correction
+                    skip = min(-drift, available)
+                    drift = 0
+                }
             }
             peakDriftMicros.max(abs(drift) * 1_000_000 / Self.sampleRate, ordering: .relaxed)
             if drift < -Self.driftToleranceFrames {
@@ -331,7 +348,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
             } else if drift > Self.driftToleranceFrames {
                 repeats = min(Self.maxCorrectionFrames, drift, frames - 1)
             }
-            if skip > 0 || repeats > 0 { correctionCount.add(1, ordering: .relaxed) }
+            if skip > 0 || repeats > 0, drift != 0 { correctionCount.add(1, ordering: .relaxed) }
         }
 
         // Gains ramp linearly over the callback so fades and pan moves do not zipper.
