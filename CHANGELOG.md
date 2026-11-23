@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+## 1.0.0-rc.17 — 2026-11-23
+
 - Engine: a layer's sound starts on its clock. The first render callback came 28 to 35 ms after the decoder seeked at
   the clock (the output device was still starting), and the ±20 ms sync window then kept 18 to 20 ms of that lag for
   the whole clip, with 4 to 8 corrections at the start; the first callback of a segment (a start, a retrigger, a
