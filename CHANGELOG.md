@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Release: 1.0.0-rc.17 is on GitHub as a pre-release with the signed, notarized dmg, built from main f32b202
+  (PR #NNN).
+
 ## 1.0.0-rc.17 — 2026-11-23
 
 - Engine: a layer's sound starts on its clock. The first render callback came 28 to 35 ms after the decoder seeked at
