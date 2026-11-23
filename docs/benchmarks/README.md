@@ -401,13 +401,15 @@ device is started then and takes 19 to 25 ms, and its first callback comes 9 to
 10 ms after that; in those 28 to 35 ms the clock runs on. The callback then
 dropped 2 ms per call until the lag was inside the ±20 ms window, 5 to 8
 corrections, and the 18 to 20 ms left stayed for the whole run. Since that PR
-the first callback of a segment drops straight to the clock: five 20 s runs had
-0 corrections and a largest drift of 1.4 to 4.0 ms, with every pull after the
-start within ±4 ms of the clock (traced at 1 ms resolution; the excursions of 2
-to 4 ms sit anywhere in the run, not at the loop wraps). On a test engine
+the first callback of a segment drops straight to the clock: eight 20 s runs
+(six of a trace build, two of the release bench) had 0 corrections and a
+largest drift of 1.4 to 6.1 ms; in the three runs traced at 1 ms resolution
+every pull after the start was within ±4 ms of the clock, and the excursions of
+2 to 4 ms sit anywhere in the run, not at the loop wraps. On a test engine
 playing the clip on one layer `/metrics` read 0 corrections and 1.6 ms after 20
 s, where the main build read 16 corrections and 50.2 ms (the debug build starts
-the device more slowly). The report file of 2026-11-23 is one of the five.
+the device more slowly). The report file of 2026-11-23 is one of the two
+release-bench runs (2.5 ms).
 
 Not repeated: the runs on a 4K display and DMX→photon (B390), and the 8-hour
 soak (B333). The report files of this section are the `…-2026-11-19` ramps and
