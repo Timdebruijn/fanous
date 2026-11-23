@@ -396,6 +396,7 @@ extension LayerAudioChannel {
         let out = Self.pull(channel, frames: 480, wanted: 2.020)
         #expect(out.left[0] == Float(96_000 + 960))  // landed: the clock's frame, not 860 frames behind it
         #expect(channel.statistics.corrections == 0)
+        #expect(channel.statistics.maxDriftMillis < 0.1)  // the short ring's 100 frames were taken, not played as a 10 ms lag
     }
 
     /// B393: a resume after a pause. The clock ran on while the output device started again; the first pull lands.

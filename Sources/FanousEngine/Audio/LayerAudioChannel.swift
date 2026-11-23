@@ -300,7 +300,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// Follows the layer clock (`wantedPTS`): beyond ±20 ms it drops frames (audio behind) or repeats the first
     /// frame (audio ahead), at most 96 frames per call. Beyond ±100 ms it stays silent until the producer has
     /// resynced. The first pull of a segment (a start, a retrigger, a seek), and the first after the channel was
-    /// inactive (a resume), drop straight to the clock when the audio is behind it, whatever the distance: nothing
+    /// inactive (a resume), drop straight to the clock when the audio is behind it by up to 100 ms: nothing
     /// of it has been heard yet, and the 28 to 35 ms between the producer's seek at the clock and the first render
     /// callback (the output device still starting) would otherwise stay as a lag inside the window for the whole
     /// clip (B393). The frames dropped there are never heard. Silent and consuming nothing while inactive.
@@ -314,10 +314,11 @@ public final class LayerAudioChannel: @unchecked Sendable {
             appliedGeneration = generation
             head.store(flushTarget.load(ordering: .relaxed), ordering: .releasing)
         }
-        guard activeFlag.load(ordering: .acquiring), frames > 0 else {
+        let active = activeFlag.load(ordering: .acquiring)
+        guard active, frames > 0 else {
             previousGainL = 0
             previousGainR = 0
-            alignNext = true
+            if !active { alignNext = true }
             return
         }
         pullCount.add(1, ordering: .relaxed)
