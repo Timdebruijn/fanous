@@ -3559,10 +3559,13 @@ groundwork and small engine pieces first):
   head pts with the clock; drift beyond ±20 ms is corrected by dropping or
   repeating up to 2 ms per callback (inaudible for programme material), and
   logged if it recurs. The first callback of a segment (a start, a retrigger,
-  a seek) drops straight to the clock when the audio is behind it: nothing of
-  the segment has been heard yet, and the output device takes about 30 ms to
-  start after the decoder seeked at the clock, which inside the ±20 ms window
-  stayed as a lag for the whole clip (B393). "Resync audio" on the Control
+  a seek), and the first after the channel was inactive (a resume), drop
+  straight to the clock when the audio is behind it: nothing of it has been
+  heard yet, and the 28 to 35 ms between the decoder's seek at the clock and
+  the first render callback (the output device still starting) otherwise
+  stayed as a lag inside the ±20 ms window for the whole clip (B393). The
+  frames skipped there are never heard: a hit on a clip's first frame loses
+  its first 30 ms rather than coming late. "Resync audio" on the Control
   channel forces a re-seek.
 - Stills and live inputs have no audio in v1. Audio metering per layer and
   master (live state, Layers screen) is not built; `/metrics` has engine-wide

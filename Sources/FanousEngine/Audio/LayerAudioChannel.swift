@@ -13,10 +13,12 @@ public struct AudioStatistics: Sendable, Equatable {
     /// or that stayed silent because the audio was more than 100 ms off the clock. Includes the short gap after a
     /// seek or retrigger while the producer resyncs.
     public var underruns: UInt64 = 0
-    /// Pulls that dropped or repeated frames to follow the layer clock.
+    /// Pulls that dropped or repeated frames to follow the layer clock. The first pull of a segment, and the first
+    /// after the channel was inactive, land on the clock and are not counted (B393).
     public var corrections: UInt64 = 0
     /// Largest |ring head PTS - wanted PTS| seen since the last `resetPeakDrift()`, in milliseconds. Drift beyond
-    /// 100 ms is a pending resync (seek, retrigger) and is not recorded here; it counts as an underrun.
+    /// 100 ms is a pending resync (seek, retrigger) and is not recorded here; it counts as an underrun. The lag a
+    /// pull that lands on the clock removes (B393) is not recorded either: nothing of it was heard.
     public var maxDriftMillis: Double = 0
 
     public init() {}
@@ -27,8 +29,8 @@ public struct AudioStatistics: Sendable, Equatable {
 /// tells both what the layer clock wants (`setState`). DESIGN.md §10, ADR-0019.
 ///
 /// Invariants behind `@unchecked Sendable`:
-/// - `tail` and the producer-only vars belong to the producer thread; `head`, `appliedGeneration` and the gain
-///   state belong to the consumer thread; everything else is an atomic. The producer never writes `head`.
+/// - `tail` and the producer-only vars belong to the producer thread; `head`, `appliedGeneration`,
+///   `alignedGeneration`, `alignNext` and the gain state belong to the consumer thread; everything else is an atomic. The producer never writes `head`.
 /// - Frame indices only grow. The PTS of frame `i` is `basePTS + (i - baseIndex) / 48000`: one PTS pair per
 ///   contiguous segment. The producer rewrites the pair only while the ring is empty (first fill, or after the
 ///   consumer has acknowledged a flush), and publishes it before the `tail` release that makes the first frame
@@ -77,10 +79,11 @@ public final class LayerAudioChannel: @unchecked Sendable {
     private let peakDriftMicros = Atomic<Int>(0)
     /// B393: counts the segments the producer started; the consumer's first pull of a segment lands on the clock exactly.
     private let segmentGeneration = Atomic<Int>(0)
-    private var alignedGeneration = 0  // consumer only
 
     // Consumer thread only.
     private var appliedGeneration = 0
+    private var alignedGeneration = 0  // the segment whose first pull landed on the clock (B393)
+    private var alignNext = true  // the channel was inactive: the next pull lands on the clock (B393)
     private var previousGainL: Float = 0
     private var previousGainR: Float = 0
 
@@ -296,14 +299,15 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// Adds `frames` frames to `left` / `right`, scaled by volume and pan, and consumes them from the ring.
     /// Follows the layer clock (`wantedPTS`): beyond ±20 ms it drops frames (audio behind) or repeats the first
     /// frame (audio ahead), at most 96 frames per call. Beyond ±100 ms it stays silent until the producer has
-    /// resynced. The first pull of a segment (a start, a retrigger, a seek) drops straight to the clock when the
-    /// audio is behind it, whatever the distance: nothing of the segment has been heard yet, and the time the
-    /// output device takes to start (about 30 ms measured) would otherwise stay as a lag inside the window for the
-    /// whole clip (B393). Silent and consuming nothing while inactive.
+    /// resynced. The first pull of a segment (a start, a retrigger, a seek), and the first after the channel was
+    /// inactive (a resume), drop straight to the clock when the audio is behind it, whatever the distance: nothing
+    /// of it has been heard yet, and the 28 to 35 ms between the producer's seek at the clock and the first render
+    /// callback (the output device still starting) would otherwise stay as a lag inside the window for the whole
+    /// clip (B393). The frames dropped there are never heard. Silent and consuming nothing while inactive.
     /// Real-time safe: no allocation, no locks, no logging.
     /// ponytail: hard drop/repeat as DESIGN.md §10 specifies; interpolating over the callback would be click-free.
-    /// ponytail: a segment that starts ahead of the clock (the producer seeks at the clock, so only by rounding) takes
-    /// the repeat path like any other callback.
+    /// ponytail: a segment that starts ahead of the clock (by rounding, or a clock that jumped back less than 100 ms
+    /// before the first pull) takes the repeat path like any other callback and settles at the window's edge (B394).
     public func pull(into left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>, frames: Int, wantedPTS: Double) {
         let generation = flushGeneration.load(ordering: .acquiring)
         if generation != appliedGeneration {
@@ -313,6 +317,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
         guard activeFlag.load(ordering: .acquiring), frames > 0 else {
             previousGainL = 0
             previousGainR = 0
+            alignNext = true
             return
         }
         pullCount.add(1, ordering: .relaxed)
@@ -335,11 +340,14 @@ public final class LayerAudioChannel: @unchecked Sendable {
                 return
             }
             let generation = segmentGeneration.load(ordering: .relaxed)  // ordered by the tail load above
-            if generation != alignedGeneration {
-                alignedGeneration = generation
-                if drift < 0 {  // the first frames of a new segment: land on the clock, not counted as a correction
+            if alignNext || generation != alignedGeneration {
+                if drift < 0 {  // the first frames heard of a segment, or after a pause: land on the clock, no correction
                     skip = min(-drift, available)
                     drift = 0
+                }
+                if skip < available {  // landed; a ring that held less than the lag is tried again at the next pull
+                    alignedGeneration = generation
+                    alignNext = false
                 }
             }
             peakDriftMicros.max(abs(drift) * 1_000_000 / Self.sampleRate, ordering: .relaxed)

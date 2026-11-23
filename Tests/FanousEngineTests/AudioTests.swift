@@ -368,6 +368,54 @@ extension LayerAudioChannel {
         #expect(channel.statistics.corrections == 0)
     }
 
+    /// B393: a pull that falls between the two reads of a new segment's first fill finds less in the ring than the
+    /// lag. It must not spend the alignment on that: the next pull lands.
+    @Test func aSegmentWhoseFirstReadIsShortStillLandsOnTheClock() {
+        let source = RampSource()
+        let channel = LayerAudioChannel()
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: -1)
+        channel.fill(source, wanted: 0)
+        Self.pull(channel, frames: 11_900, wanted: 0)  // head 11 900
+        channel.setState(wantedPTS: 11_900.0 / 48_000, active: true, volume: 1, pan: -1)
+        channel.fill(source, wanted: 11_900.0 / 48_000)  // tail 23 900: the next segment's first contiguous run is 100 frames
+        #expect(channel.bufferedFrames == LayerAudioChannel.capacity)
+        channel.setState(wantedPTS: 2.0, active: true, volume: 1, pan: -1)
+        channel.fill(source, wanted: 2.0)  // the producer asks for a drain
+        Self.pull(channel, frames: 480, wanted: 2.0)  // drained, silent
+        #expect(channel.bufferedFrames == 0)
+        // The refill: the first read is the 100 frames to the end of the storage. The callback comes right after it,
+        // 10 ms behind the clock, before the second read; then the clock has moved one callback on.
+        var reads = 0
+        var between: (buffered: Int, corrections: UInt64)?
+        channel.fill(wanted: 2.0, read: { buffer, n in
+            reads += 1
+            if reads == 2 { Self.pull(channel, frames: 480, wanted: 2.010); between = (channel.bufferedFrames, channel.statistics.corrections) }
+            return source.read(buffer, n)
+        }, seek: { source.seek($0) })
+        #expect(between?.buffered == 0 && between?.corrections == 0)  // it took the 100 frames and played nothing
+        let out = Self.pull(channel, frames: 480, wanted: 2.020)
+        #expect(out.left[0] == Float(96_000 + 960))  // landed: the clock's frame, not 860 frames behind it
+        #expect(channel.statistics.corrections == 0)
+    }
+
+    /// B393: a resume after a pause. The clock ran on while the output device started again; the first pull lands.
+    @Test func theFirstPullAfterAPauseLandsOnTheClock() {
+        let source = RampSource()
+        let channel = LayerAudioChannel()
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: -1)
+        channel.fill(source, wanted: 0)
+        Self.pull(channel, frames: 480, wanted: 0)
+        channel.setState(wantedPTS: 0.010, active: false, volume: 1, pan: -1)  // paused at 10 ms
+        Self.pull(channel, frames: 480, wanted: 0.010)  // silent
+        channel.setState(wantedPTS: 0.060, active: true, volume: 1, pan: -1)  // resumed; the device took 50 ms to come back
+        Self.pull(channel, frames: 480, wanted: 0.060)
+        #expect(abs(channel.nextFramePTS - 0.070) < 1e-9)  // landed on the clock
+        let out = Self.pull(channel, frames: 480, wanted: 0.070)
+        #expect(out.left[0] == Float(3360))
+        #expect(channel.statistics.corrections == 0)
+        #expect(channel.statistics.maxDriftMillis < 0.1)
+    }
+
     @Test func staysSilentWhenTheAudioIsFarFromTheClock() {
         let source = RampSource()
         let channel = LayerAudioChannel()
