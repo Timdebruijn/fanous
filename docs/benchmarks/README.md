@@ -416,7 +416,7 @@ build of main before the rc.16 version bump (the audio path is unchanged since)
 read 16 corrections and 50.2 ms: a larger lag than the bench's, not traced. The
 report file of 2026-11-23 is one of the four release-bench runs (2.8 ms).
 
-A correction used to stop at the window's edge (B394, PR #NNN): a lag or lead
+A correction used to stop at the window's edge (B394, PR #436): a lag or lead
 of 20 to 100 ms that was not a new segment was nudged 2 ms per callback until
 it was just inside ±20 ms, and the 18 to 20 ms left stayed for the clip.
 Measured with a double GO on a test engine (two retriggers 50 ms apart, 3 s
