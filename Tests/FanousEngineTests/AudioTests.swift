@@ -355,7 +355,7 @@ extension LayerAudioChannel {
         #expect(out.left[0] == Float(2880))  // the clock's frame, landed
         #expect(channel.statistics.corrections == 0)
         #expect(channel.statistics.maxDriftMillis < 0.1)
-        // Without the signal a 50 ms jump back is nudged, not reseeked (and converges onto the clock, B394).
+        // Without the signal a 50 ms jump back is not reseeked: the ring is topped up, not drained.
         channel.setState(wantedPTS: 0.020, active: true, volume: 1, pan: -1)
         channel.fill(source, wanted: 0.020)
         #expect(channel.bufferedFrames == LayerAudioChannel.capacity)
@@ -451,24 +451,40 @@ extension LayerAudioChannel {
     }
 
     /// B394: a segment that starts ahead of the clock (a clock that jumped back less than the window before the
-    /// first pull) is nudged onto the clock, not to the window's edge.
-    @Test func aSegmentThatStartsAheadIsNudgedOntoTheClock() {
+    /// first pull) waits for the clock: silent until it reaches the first frame, then exact, no correction.
+    @Test func aSegmentThatStartsAheadWaitsForTheClock() {
         let source = RampSource()
         let channel = LayerAudioChannel()
         channel.setState(wantedPTS: 0.015, active: true, volume: 1, pan: -1)
-        channel.fill(source, wanted: 0.015)  // ring from 15 ms; the clock is then found at 0
-        var previous = channel.bufferedFrames
-        for k in 0..<10 {
-            let wanted = Double(k * 480) / 48_000
-            channel.setState(wantedPTS: wanted, active: true, volume: 1, pan: -1)
-            Self.pull(channel, frames: 480, wanted: wanted)
-            let consumed = previous - channel.bufferedFrames
-            previous = channel.bufferedFrames
-            #expect(consumed <= 480 && 480 - consumed <= LayerAudioChannel.maxCorrectionFrames, "pull \(k) consumed \(consumed)")
-        }
-        #expect(channel.statistics.corrections == 8)  // 720 frames: seven of 96, one of 48
-        channel.resetPeakDrift()
-        Self.pull(channel, frames: 480, wanted: 10 * 480.0 / 48_000)
+        channel.fill(source, wanted: 0.015)  // ring from 15 ms (frame 720); the clock is then found at 0
+        var out = Self.pull(channel, frames: 480, wanted: 0)  // a whole callback ahead: silent, nothing consumed
+        #expect(out.left.allSatisfy { $0 == 0 })
+        #expect(channel.bufferedFrames == LayerAudioChannel.capacity)
+        out = Self.pull(channel, frames: 480, wanted: 480.0 / 48_000)  // 240 frames ahead: 240 of silence, then the ring
+        #expect(out.left[239] == 0 && out.left[240] == Float(720))
+        #expect(channel.bufferedFrames == LayerAudioChannel.capacity - 240)
+        out = Self.pull(channel, frames: 480, wanted: 960.0 / 48_000)
+        #expect(out.left[0] == Float(960))  // on the clock
+        #expect(channel.statistics.corrections == 0 && channel.statistics.underruns == 0)
+        #expect(channel.statistics.maxDriftMillis < 0.1)
+    }
+
+    /// B394: a resume where the pull before the pause ran past the pause point (it consumes a whole callback at the
+    /// clock of its start): the audio is ahead on the resume and waits for the clock instead of being repeated.
+    @Test func aResumeAheadOfTheClockWaitsForIt() {
+        let source = RampSource()
+        let channel = LayerAudioChannel()
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: -1)
+        channel.fill(source, wanted: 0)
+        Self.pull(channel, frames: 480, wanted: 0)  // frames 0 ..< 480 heard; the head is at 10 ms
+        channel.setState(wantedPTS: 0.005, active: false, volume: 1, pan: -1)  // paused at 5 ms
+        Self.pull(channel, frames: 480, wanted: 0.005)
+        channel.setState(wantedPTS: 0.005, active: true, volume: 1, pan: -1)  // resumed at 5 ms: the ring is 240 frames ahead
+        let out = Self.pull(channel, frames: 480, wanted: 0.005)
+        #expect(out.left[239] == 0 && out.left[240] != 0)
+        #expect(abs(out.left[479] - Float(480 + 239)) < 0.01)  // the ramp continues from frame 480 (the gain has ramped to 1 by the last frame)
+        #expect(abs(channel.nextFramePTS - 0.015) < 1e-9)
+        #expect(channel.statistics.corrections == 0 && channel.statistics.underruns == 0)
         #expect(channel.statistics.maxDriftMillis < 0.1)
     }
 
@@ -579,18 +595,20 @@ extension LayerAudioChannel {
         #expect(channel.statistics.corrections == 1)
     }
 
-    /// The consumer alone (no producer fill, so no reseek): audio 30 ms ahead of the clock is repeated 2 ms per
-    /// pull until it is on the clock, 15 corrections (B394: the old code stopped at the window's edge after 5).
+    /// The consumer alone (no producer fill, so no reseek): a clock that steps back 30 ms during playback leaves the
+    /// audio ahead; it is repeated 2 ms per pull until it is on the clock, 15 corrections (B394: the old code stopped
+    /// at the window's edge after 5).
     @Test func repeatsFramesWhenAudioIsAheadUntilItIsOnTheClock() {
         let source = RampSource()
         let channel = LayerAudioChannel()
         channel.setState(wantedPTS: 0.050, active: true, volume: 1, pan: -1)
         channel.fill(source, wanted: 0.050)  // ring starts at 50 ms
+        Self.pull(channel, frames: 480, wanted: 0.050)  // landed; the head is at 60 ms
 
         let frames = 480
         var previous = channel.bufferedFrames
         for k in 0..<17 {
-            let wanted = 0.020 + Double(k * frames) / 48_000  // the clock is 30 ms behind the audio
+            let wanted = 0.030 + Double(k * frames) / 48_000  // the clock stepped back: 30 ms behind the audio
             channel.setState(wantedPTS: wanted, active: true, volume: 1, pan: -1)
             Self.pull(channel, frames: frames, wanted: wanted)
             let consumed = previous - channel.bufferedFrames
@@ -600,7 +618,7 @@ extension LayerAudioChannel {
         }
         #expect(channel.statistics.corrections == 15)
         channel.resetPeakDrift()
-        Self.pull(channel, frames: frames, wanted: 0.020 + 17 * Double(frames) / 48_000)
+        Self.pull(channel, frames: frames, wanted: 0.030 + 17 * Double(frames) / 48_000)
         #expect(channel.statistics.maxDriftMillis < 0.1)
     }
 
