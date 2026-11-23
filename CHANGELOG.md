@@ -13,7 +13,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Engine: a layer's sound starts on its clock. The output device takes about 30 ms to start after the decoder seeked
   at the clock, and the ±20 ms sync window then kept 18 to 20 ms of that lag for the whole clip, with 4 to 8
   corrections at the start; the first render callback of a segment (a start, a retrigger, a seek) now drops straight
-  to the clock. Measured: 0 corrections and a drift within ±4 ms (B393) (PR #NNN).
+  to the clock. Measured: 0 corrections and a drift within ±4 ms (B393) (PR #433).
 - Release: 1.0.0-rc.16 is on GitHub as a pre-release with the signed, notarized dmg, built from main dddebc3
   (PR #432).
 

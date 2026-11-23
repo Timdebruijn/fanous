@@ -394,7 +394,7 @@ twice on the same file. So 10 of these 11 runs have a largest drift of 18.2 to
 20.1 ms and corrections, and one has neither; what decides it is not measured
 (B393). The soak's report shows 52.7 allocations per tick: an hour's count over
 the ticks the metrics ring still holds; over the hour it is 4.0. Traced on
-2026-11-23 (PR #NNN): at the first render callback the audio was 29 to 35 ms
+2026-11-23 (PR #433): at the first render callback the audio was 29 to 35 ms
 behind the clock in three runs, the seek itself landing within 0.02 ms of the
 clock. The decoder seeks at the clock when the layer turns active, the output
 device is started then and takes 19 to 25 ms, and its first callback comes 9 to
@@ -519,7 +519,7 @@ with one callback of silence; gapless loop reads are a v1.x item), video
 0 missed / 0 late (the frame metrics ring holds the last 16 384 ticks, so
 those cover the final 4.5 min; the audio counters cover the whole hour).
 Acceptance "drift < 20 ms over 1 h at 1×" met (2026-10-23; missed by 0.1 ms
-on 2026-11-21 through a start lag, fixed in PR #NNN, B393).
+on 2026-11-21 through a start lag, fixed in PR #433, B393).
 
 ## Phase 4 (2026-10-23): ingest during a show
 
