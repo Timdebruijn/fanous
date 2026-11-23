@@ -393,7 +393,28 @@ corrections and 13.2 ms once and 6 and 4 corrections with 19.2 and 19.9 ms
 twice on the same file. So 10 of these 11 runs have a largest drift of 18.2 to
 20.1 ms and corrections, and one has neither; what decides it is not measured
 (B393). The soak's report shows 52.7 allocations per tick: an hour's count over
-the ticks the metrics ring still holds; over the hour it is 4.0.
+the ticks the metrics ring still holds; over the hour it is 4.0. Traced on
+2026-11-23 (PR #433): at the first render callback the audio was 29 to 35 ms
+behind the clock in three runs, the seek itself landing within 0.02 ms of the
+clock. The output device is started when the movie opens and reports started 49
+to 56 ms later; the decoder seeks at the clock at its first fill after the
+layer turns active, 10 to 13 ms after that and 29 to 33 ms after the open, and
+the device's first callback comes 8 to 10 ms after it started: 28 to 35 ms
+after the seek, in which the clock runs on. The callback then dropped 2 ms per
+call until the lag was inside the ±20 ms window, 5 to 8 corrections, and the 18
+to 20 ms left stayed for the whole run. Since that PR the first callback of a
+segment, and the first after a pause, drop straight to the clock (the frames
+skipped are never heard: a clip's sound starts on time and without its first 30
+ms, where it used to come 20 ms late): ten 20 s runs (six of a trace build,
+four of the release bench, two of them before the second review's rework, which
+changes nothing at a clean start) had 0 corrections and a largest drift of 1.4
+to 6.1 ms; in the three runs traced at 1 ms resolution every pull after the
+start was within ±4 ms of the clock, and the excursions of 2 to 4 ms sit
+anywhere in the run, not at the loop wraps. On a test engine playing the clip
+on one layer `/metrics` read 0 corrections and 2.1 ms after 20 s, where a debug
+build of main before the rc.16 version bump (the audio path is unchanged since)
+read 16 corrections and 50.2 ms: a larger lag than the bench's, not traced. The
+report file of 2026-11-23 is one of the four release-bench runs (2.8 ms).
 
 Not repeated: the runs on a 4K display and DMX→photon (B390), and the 8-hour
 soak (B333). The report files of this section are the `…-2026-11-19` ramps and
@@ -505,7 +526,7 @@ with one callback of silence; gapless loop reads are a v1.x item), video
 0 missed / 0 late (the frame metrics ring holds the last 16 384 ticks, so
 those cover the final 4.5 min; the audio counters cover the whole hour).
 Acceptance "drift < 20 ms over 1 h at 1×" met (2026-10-23; missed by 0.1 ms
-on 2026-11-21, B393).
+on 2026-11-21 through a start lag, fixed in PR #433, B393).
 
 ## Phase 4 (2026-10-23): ingest during a show
 
