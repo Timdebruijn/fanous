@@ -15,7 +15,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   callback until it was just inside the window and then kept 18 to 20 ms of it for the rest of the clip; the
   correction now runs until the audio is on the clock, an underrun starts one for the frames it missed, and a clock
   that jumped back by more than 20 ms (a retrigger within 100 ms of a start) reseeks like any retrigger, so its sound
-  starts on time instead of being repeated towards the clock (B394) (PR #NNN).
+  starts on time instead of being repeated towards the clock (B394) (PR #436).
 - Release: 1.0.0-rc.17 is on GitHub as a pre-release with the signed, notarized dmg, built from main f32b202
   (PR #435).
 
