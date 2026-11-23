@@ -461,7 +461,8 @@ extension LayerAudioChannel {
         #expect(out.left.allSatisfy { $0 == 0 })
         #expect(channel.bufferedFrames == LayerAudioChannel.capacity)
         out = Self.pull(channel, frames: 480, wanted: 480.0 / 48_000)  // 240 frames ahead: 240 of silence, then the ring
-        #expect(out.left[239] == 0 && out.left[240] == Float(720))
+        #expect(out.left[239] == 0 && abs(out.left[240] - 720.0 / 240) < 0.01)  // frame 720, the gain ramping from 0 over the 240 audible frames
+        #expect(abs(out.left[479] - 959) < 0.01)
         #expect(channel.bufferedFrames == LayerAudioChannel.capacity - 240)
         out = Self.pull(channel, frames: 480, wanted: 960.0 / 48_000)
         #expect(out.left[0] == Float(960))  // on the clock
@@ -481,7 +482,7 @@ extension LayerAudioChannel {
         Self.pull(channel, frames: 480, wanted: 0.005)
         channel.setState(wantedPTS: 0.005, active: true, volume: 1, pan: -1)  // resumed at 5 ms: the ring is 240 frames ahead
         let out = Self.pull(channel, frames: 480, wanted: 0.005)
-        #expect(out.left[239] == 0 && out.left[240] != 0)
+        #expect(out.left[239] == 0 && abs(out.left[240] - 480.0 / 240) < 0.01)  // frame 480 at the first step of the fade-in: no click
         #expect(abs(out.left[479] - Float(480 + 239)) < 0.01)  // the ramp continues from frame 480 (the gain has ramped to 1 by the last frame)
         #expect(abs(channel.nextFramePTS - 0.015) < 1e-9)
         #expect(channel.statistics.corrections == 0 && channel.statistics.underruns == 0)

@@ -322,8 +322,8 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// Adds `frames` frames to `left` / `right`, scaled by volume and pan, and consumes them from the ring.
     /// Follows the layer clock (`wantedPTS`): beyond ±20 ms it starts dropping frames (audio behind) or repeating the
     /// first frame (audio ahead), at most 96 frames per call, and keeps doing so until the audio is on the clock or
-    /// the drift has changed sign, not only until it is inside the window (B394); an underrun, and a segment that
-    /// starts ahead of the clock, start the same correction. Beyond ±100 ms it stays silent until the producer has
+    /// the drift has changed sign, not only until it is inside the window (B394); an underrun starts the same
+    /// correction for the frames it missed. Beyond ±100 ms it stays silent until the producer has
     /// resynced. The first pull of a segment (a start, a retrigger, a seek), and the first after the channel was
     /// inactive (a resume), land on the clock: when the audio is behind it by up to 100 ms they drop straight to it,
     /// since nothing of it has been heard yet, and the 28 to 35 ms between the producer's seek at the clock and the
@@ -395,16 +395,14 @@ public final class LayerAudioChannel: @unchecked Sendable {
             if skip > 0 || repeats > 0, drift != 0 { correctionCount.add(1, ordering: .relaxed) }
         }
 
-        // Gains ramp linearly over the callback so fades and pan moves do not zipper.
+        // Gains ramp linearly over the audible part of the callback so fades, pan moves and a resume do not zipper.
         var gainL = previousGainL
         var gainR = previousGainR
-        let stepL = (targetL - gainL) / Float(frames)
-        let stepR = (targetR - gainR) / Float(frames)
+        let stepL = (targetL - gainL) / Float(max(1, frames - lead))
+        let stepR = (targetR - gainR) / Float(max(1, frames - lead))
         let usable = available - skip
         var position = (h + skip) % Self.capacity
         var written = lead  // the silence of a landing that waits for the clock (the output is mixed into, so nothing to write)
-        gainL += stepL * Float(lead)
-        gainR += stepR * Float(lead)
         if repeats > 0 && usable > 0 {
             let l = storage[2 * position]
             let r = storage[2 * position + 1]
@@ -430,8 +428,10 @@ public final class LayerAudioChannel: @unchecked Sendable {
             remaining -= run
             position = (position + run) % Self.capacity
         }
-        previousGainL = targetL
-        previousGainR = targetR
+        if lead < frames {  // a whole callback of waiting leaves the ramp for the pull that plays
+            previousGainL = targetL
+            previousGainR = targetR
+        }
         head.store(h + skip + toMix, ordering: .releasing)
         if written < frames && !reachedEnd.load(ordering: .relaxed) {
             underrunCount.add(1, ordering: .relaxed)
