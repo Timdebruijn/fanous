@@ -14,7 +14,8 @@ public struct AudioStatistics: Sendable, Equatable {
     /// seek or retrigger while the producer resyncs.
     public var underruns: UInt64 = 0
     /// Pulls that dropped or repeated frames to follow the layer clock. The first pull of a segment, and the first
-    /// after the channel was inactive, land on the clock and are not counted (B393).
+    /// after the channel was inactive, land on the clock and are not counted (B393); one that finds the audio ahead
+    /// of the clock by more than 2 ms nudges it back and is counted.
     public var corrections: UInt64 = 0
     /// Largest |ring head PTS - wanted PTS| seen since the last `resetPeakDrift()`, in milliseconds. Drift beyond
     /// 100 ms is a pending resync (seek, retrigger) and is not recorded here; it counts as an underrun. The lag a
@@ -31,6 +32,7 @@ public struct AudioStatistics: Sendable, Equatable {
 /// Invariants behind `@unchecked Sendable`:
 /// - `tail` and the producer-only vars belong to the producer thread; `head`, `appliedGeneration`,
 ///   `alignedGeneration`, `alignNext`, `correcting` and the gain state belong to the consumer thread; everything else is an atomic. The producer never writes `head`.
+///   The compositor's retrigger reaches the producer as `jumpGeneration` (B394).
 /// - Frame indices only grow. The PTS of frame `i` is `basePTS + (i - baseIndex) / 48000`: one PTS pair per
 ///   contiguous segment. The producer rewrites the pair only while the ring is empty (first fill, or after the
 ///   consumer has acknowledged a flush), and publishes it before the `tail` release that makes the first frame
@@ -42,8 +44,8 @@ public final class LayerAudioChannel: @unchecked Sendable {
     public static let sampleRate = 48_000
     /// 250 ms.
     public static let capacity = 12_000
-    /// ±20 ms: beyond this the consumer starts nudging the audio towards the clock (and keeps nudging until it is
-    /// on it, B394); a clock more than this behind the ring is a jump back, which the producer reseeks.
+    /// ±20 ms: beyond this the consumer starts nudging the audio towards the clock, and keeps nudging until it is
+    /// on it (B394).
     public static let driftToleranceFrames = 960
     /// 2 ms: the most one pull drops or repeats.
     public static let maxCorrectionFrames = 96
@@ -85,7 +87,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
     private var appliedGeneration = 0
     private var alignedGeneration = 0  // the segment whose first pull landed on the clock (B393)
     private var alignNext = true  // the channel was inactive: the next pull lands on the clock (B393)
-    private var correcting = false  // a correction is under way: it runs until the audio is on the clock, not only inside the window (B394)
+    private var correcting = 0  // -1: dropping frames, 1: repeating, until the audio is on the clock or the drift changes sign, not only until inside the window (B394)
     private var previousGainL: Float = 0
     private var previousGainR: Float = 0
 
@@ -95,6 +97,12 @@ public final class LayerAudioChannel: @unchecked Sendable {
     private var flushPending = false
     private var pendingFlushTarget = 0
     private var producerPTS = 0.0  // media time of the next frame the producer reads (loop wrap bookkeeping)
+    private var seenJump = 0  // the `jumpGeneration` the producer last reseeked for
+
+    /// Bumped by `setState(jumped: true)`: the compositor retriggered the layer, so its clock jumped back. The producer
+    /// reseeks at its next fill, also when the jump is smaller than `resyncThresholdFrames` (B394): the new segment's
+    /// first pull lands on the clock, where nudging would repeat frames towards it.
+    private let jumpGeneration = Atomic<Int>(0)
 
     public init() {
         storage = .allocate(capacity: Self.capacity * 2)
@@ -110,13 +118,16 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// `loop` is the media range [start, end) in seconds a forward loop plays; the producer then reads across the
     /// wrap (the ring holds the unwrapped timeline) and `wantedPTS` is compared modulo the loop length. Ignored
     /// when shorter than 0.5 s.
+    /// `jumped` says the layer was retriggered this tick (its clock jumped back): the producer reseeks, whatever the
+    /// size of the jump.
     /// Between ticks the audio side extrapolates the clock with the host clock (`wantedPTS(atHostNanos:)`), so the
     /// up to 16.7 ms age of the value does not eat into the ±20 ms window.
-    public func setState(wantedPTS: Double, active: Bool, volume: Float, pan: Float, loop: (start: Double, end: Double)? = nil) {
-        setState(wantedPTS: wantedPTS, active: active, volume: volume, pan: pan, loop: loop, atHostNanos: Self.hostNanos())
+    public func setState(wantedPTS: Double, active: Bool, volume: Float, pan: Float, loop: (start: Double, end: Double)? = nil, jumped: Bool = false) {
+        setState(wantedPTS: wantedPTS, active: active, volume: volume, pan: pan, loop: loop, jumped: jumped, atHostNanos: Self.hostNanos())
     }
 
-    func setState(wantedPTS: Double, active: Bool, volume: Float, pan: Float, loop: (start: Double, end: Double)? = nil, atHostNanos nanos: UInt64) {
+    func setState(wantedPTS: Double, active: Bool, volume: Float, pan: Float, loop: (start: Double, end: Double)? = nil, jumped: Bool = false, atHostNanos nanos: UInt64) {
+        if jumped { jumpGeneration.wrappingAdd(1, ordering: .relaxed) }
         // B264: a loop that is no whole number of frames in 32 bits (NaN, or longer than ~25 h) is no loop; `Int(_:)` trapped
         let frames = loop.flatMap { Int(exactly: (($0.end - $0.start) * Self.rate).rounded()) } ?? 0
         let start = loop.flatMap { Int(exactly: ($0.start * Self.rate).rounded()) } ?? -1
@@ -169,10 +180,10 @@ public final class LayerAudioChannel: @unchecked Sendable {
 
     // MARK: Producer (the layer's decode thread)
 
-    /// Tops the ring up to capacity from `reader`. If the ring content is too far from the wanted PTS to be nudged
-    /// back (more than `resyncThresholdFrames` behind the clock, the clock more than `driftToleranceFrames` behind
-    /// the ring, or run dry more than 20 ms behind: a seek, retrigger or loop wrap), starts over: drains (a handshake
-    /// with the consumer, see the type comment), seeks the reader and refills.
+    /// Tops the ring up to capacity from `reader`. If the layer was retriggered (`setState(jumped:)`), or the ring
+    /// content is too far from the wanted PTS to be nudged back (more than `resyncThresholdFrames` off, or run dry
+    /// more than 20 ms behind: a seek or loop wrap), starts over: drains (a handshake with the consumer, see the type
+    /// comment), seeks the reader and refills.
     /// Does nothing while the channel is inactive.
     /// The ring's PTS is tracked per contiguous segment (base index and base PTS); `nextFramePTS` is that line
     /// evaluated at the head.
@@ -190,13 +201,16 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// `n` interleaved frames and returns how many it wrote (fewer only at the end of the media) and the PTS of the first.
     func fill(wanted: Double, read: (UnsafeMutablePointer<Float>, Int) -> (framesRead: Int, firstFramePTS: Double), seek: (Double) -> Void) {
         guard activeFlag.load(ordering: .acquiring) else { return }
+        let jump = jumpGeneration.load(ordering: .relaxed)
+        let jumped = jump != seenJump
+        seenJump = jump  // a restart below starts at `wanted`, so every branch answers the jump
         if flushPending {
             guard head.load(ordering: .acquiring) >= pendingFlushTarget else { return }  // consumer has not drained yet
             flushPending = false
             restart(at: wanted, seek)
         } else if !segmentValid {
             restart(at: wanted, seek)
-        } else if needsReseek(wanted) {
+        } else if jumped || needsReseek(wanted) {
             let t = tail.load(ordering: .relaxed)
             if head.load(ordering: .acquiring) == t {
                 restart(at: wanted, seek)  // already empty: nothing to drain
@@ -225,15 +239,14 @@ public final class LayerAudioChannel: @unchecked Sendable {
         reachedEnd.store(false, ordering: .relaxed)
     }
 
-    /// The audio is too far behind the layer clock for the consumer to nudge it back (`resyncThresholdFrames`), the
-    /// clock is more than the tolerance behind the ring, or the ring has run dry more than the tolerance behind it.
+    /// The audio is too far from the layer clock for the consumer to nudge it back (`resyncThresholdFrames`), or the
+    /// ring has run dry more than the tolerance behind it. Between two pulls the head runs up to one callback ahead
+    /// of the clock, so a clock a little behind the ring is normal, never a reason to reseek.
     private func needsReseek(_ wanted: Double) -> Bool {
         let resync = Double(Self.resyncThresholdFrames) / Self.rate
         let ahead = wrapped(wanted - pts(ofFrame: head.load(ordering: .acquiring)))  // > 0: the clock is ahead of the head
         let pastEnd = wrapped(wanted - pts(ofFrame: tail.load(ordering: .relaxed)))
-        // The clock jumped back (a retrigger, also one within 100 ms of a start, B394): the clock never runs backwards
-        // by itself, so a new segment, whose first pull lands on the clock, beats repeating frames towards it.
-        if ahead < -Double(Self.driftToleranceFrames) / Self.rate { return true }
+        if ahead < -resync { return true }  // jumped back without a retrigger, or the audio is far ahead
         if ahead > resync || pastEnd > Double(Self.driftToleranceFrames) / Self.rate {
             // Past the end of the media there is nothing to refill; only a jump back reseeks.
             return !reachedEnd.load(ordering: .relaxed) || pastEnd <= 0
@@ -303,9 +316,9 @@ public final class LayerAudioChannel: @unchecked Sendable {
 
     /// Adds `frames` frames to `left` / `right`, scaled by volume and pan, and consumes them from the ring.
     /// Follows the layer clock (`wantedPTS`): beyond ±20 ms it starts dropping frames (audio behind) or repeating the
-    /// first frame (audio ahead), at most 96 frames per call, and keeps doing so until the audio is on the clock, not
-    /// only inside the window (B394); an underrun, and a segment that starts ahead of the clock, start the same
-    /// correction. Beyond ±100 ms it stays silent until the producer has
+    /// first frame (audio ahead), at most 96 frames per call, and keeps doing so until the audio is on the clock or
+    /// the drift has changed sign, not only until it is inside the window (B394); an underrun, and a segment that
+    /// starts ahead of the clock, start the same correction. Beyond ±100 ms it stays silent until the producer has
     /// resynced. The first pull of a segment (a start, a retrigger, a seek), and the first after the channel was
     /// inactive (a resume), drop straight to the clock when the audio is behind it by up to 100 ms: nothing
     /// of it has been heard yet, and the 28 to 35 ms between the producer's seek at the clock and the first render
@@ -354,18 +367,20 @@ public final class LayerAudioChannel: @unchecked Sendable {
                 if skip < available {  // landed; a ring that held less than the lag is tried again at the next pull
                     alignedGeneration = generation
                     alignNext = false
-                    correcting = drift > Self.maxCorrectionFrames  // a segment that starts ahead of the clock by more than one nudge is nudged onto it
+                    correcting = drift > Self.maxCorrectionFrames ? 1 : 0  // a segment that starts ahead of the clock by more than one nudge is nudged onto it
                 }
             }
             peakDriftMicros.max(abs(drift) * 1_000_000 / Self.sampleRate, ordering: .relaxed)
-            if abs(drift) > Self.driftToleranceFrames { correcting = true }
-            if correcting {
-                if drift < 0 {
+            if abs(drift) > Self.driftToleranceFrames { correcting = drift < 0 ? -1 : 1 }
+            if correcting != 0 {
+                if (drift < 0) != (correcting < 0) {
+                    correcting = 0  // the drift changed sign (a nudge overshot by the clock's jitter): done, no nudging back
+                } else if correcting < 0 {
                     skip = min(Self.maxCorrectionFrames, -drift, available)
                 } else {
                     repeats = min(Self.maxCorrectionFrames, drift, frames - 1)
                 }
-                if abs(drift) <= Self.maxCorrectionFrames { correcting = false }  // this pull puts the audio on the clock
+                if abs(drift) <= Self.maxCorrectionFrames { correcting = 0 }  // this pull puts the audio on the clock
             }
             if skip > 0 || repeats > 0, drift != 0 { correctionCount.add(1, ordering: .relaxed) }
         }
@@ -408,7 +423,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
         head.store(h + skip + toMix, ordering: .releasing)
         if written < frames && !reachedEnd.load(ordering: .relaxed) {
             underrunCount.add(1, ordering: .relaxed)
-            correcting = true  // the frames that were not there are a lag now: nudged out, however short (B394)
+            correcting = -1  // the frames that were not there are a lag now: nudged out, however short (B394)
         }
     }
 

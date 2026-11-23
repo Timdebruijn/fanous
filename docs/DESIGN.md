@@ -3558,13 +3558,16 @@ groundwork and small engine pieces first):
 - Sync: the layer clock is master. The render callback compares the ring's
   head pts with the clock; drift beyond ±20 ms is corrected by dropping or
   repeating up to 2 ms per callback (inaudible for programme material) until
-  the audio is on the clock, not only back inside the window (B394: a
-  correction that stopped at the window's edge left 18 to 20 ms for the rest
-  of the clip); an underrun starts the same correction for the frames it
-  missed. A clock more than 20 ms behind the ring has jumped back (a retrigger
-  within 100 ms of a start): the decoder reseeks, a new segment, rather than
-  repeating frames towards it. Recurring drift is logged. The first callback
-  of a segment (a start, a retrigger,
+  the audio is on the clock or the drift changes sign, not only back inside
+  the window (B394: a correction that stopped at the window's edge left 18 to
+  20 ms for the rest of the clip); an underrun starts the same correction for
+  the frames it missed. A retrigger reaches the decoder as a signal from the
+  compositor, so it reseeks whatever the size of the jump (also within 100 ms
+  of a start), a new segment, rather than repeating frames towards the clock;
+  between two callbacks the ring's head runs up to one callback ahead of the
+  clock, so a clock a little behind the ring is normal and is never inferred
+  to be a jump. Corrections and the largest drift are counted in `/metrics`.
+  The first callback of a segment (a start, a retrigger,
   a seek), and the first after the channel was inactive (a resume), drop
   straight to the clock when the audio is behind it: nothing of it has been
   heard yet, and the 28 to 35 ms between the decoder's seek at the clock and

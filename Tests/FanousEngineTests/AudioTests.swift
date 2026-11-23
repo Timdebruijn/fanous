@@ -336,16 +336,16 @@ extension LayerAudioChannel {
         #expect(channel.statistics.underruns == 0)
     }
 
-    /// B394: a clock that jumps back by more than the window (a retrigger within 100 ms of a start; the old producer
-    /// reseeked only beyond 100 ms) is a new segment: the reader seeks, and the first pull lands on the clock
-    /// instead of repeating frames until the window's edge.
-    @Test func aClockThatJumpsBackLessThanTheResyncThresholdReseeks() {
+    /// B394: a retrigger within 100 ms of a start (the compositor says so with `jumped`) is a new segment: the
+    /// reader seeks, and the first pull lands on the clock instead of repeating frames until the window's edge. The
+    /// old producer reseeked only beyond 100 ms.
+    @Test func aRetriggerWithinTheResyncThresholdReseeks() {
         let source = RampSource()
         let channel = LayerAudioChannel()
         channel.setState(wantedPTS: 0, active: true, volume: 1, pan: -1)
         channel.fill(source, wanted: 0)
         for k in 0..<10 { Self.pull(channel, frames: 480, wanted: Double(k * 480) / 48_000) }  // played to 100 ms
-        channel.setState(wantedPTS: 0.050, active: true, volume: 1, pan: -1)  // the clock jumped back 50 ms
+        channel.setState(wantedPTS: 0.050, active: true, volume: 1, pan: -1, jumped: true)  // retriggered: the clock is at 50 ms
         channel.fill(source, wanted: 0.050)  // asks for a drain
         Self.pull(channel, frames: 480, wanted: 0.050)  // drains, silent
         #expect(channel.bufferedFrames == 0)
@@ -355,6 +355,59 @@ extension LayerAudioChannel {
         #expect(out.left[0] == Float(2880))  // the clock's frame, landed
         #expect(channel.statistics.corrections == 0)
         #expect(channel.statistics.maxDriftMillis < 0.1)
+        // Without the signal a 50 ms jump back is nudged, not reseeked (and converges onto the clock, B394).
+        channel.setState(wantedPTS: 0.020, active: true, volume: 1, pan: -1)
+        channel.fill(source, wanted: 0.020)
+        #expect(channel.bufferedFrames == LayerAudioChannel.capacity)
+    }
+
+    /// B394, from the review: between two pulls the head runs up to one callback ahead of the clock, and the
+    /// consumer leaves a lead inside the window alone. A fill right after a pull, with 1024-frame callbacks, and a
+    /// clock that steps back 12 ms (a sync slave's packet jitter) must not drain the ring: an inferred jump-back
+    /// reseek at 20 ms did.
+    @Test func aFillBetweenPullsDoesNotReseek() {
+        let source = RampSource()
+        let channel = LayerAudioChannel()
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: -1)
+        channel.fill(source, wanted: 0)
+        for k in 0..<20 {
+            let wanted = Double(k * 1024) / 48_000
+            channel.setState(wantedPTS: wanted, active: true, volume: 1, pan: -1)
+            Self.pull(channel, frames: 1024, wanted: wanted)  // the head is now 21 ms past the clock
+            channel.fill(source, wanted: wanted + 0.001)
+            #expect(channel.bufferedFrames == LayerAudioChannel.capacity, "pull \(k)")  // topped up, not drained
+        }
+        let stepped = Double(20 * 1024) / 48_000 - 0.012
+        channel.setState(wantedPTS: stepped, active: true, volume: 1, pan: -1)
+        channel.fill(source, wanted: stepped)
+        #expect(channel.bufferedFrames == LayerAudioChannel.capacity)
+        Self.pull(channel, frames: 1024, wanted: stepped)
+        #expect(channel.statistics.underruns == 0)
+    }
+
+    /// B394: a correction keeps its direction. When the clock's jitter makes a nudge overshoot, the drift changes
+    /// sign and the correction ends there; it does not nudge back and forth, counting each step.
+    @Test func aCorrectionEndsWhenTheDriftChangesSign() {
+        let source = RampSource()
+        let channel = LayerAudioChannel()
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: -1)
+        channel.fill(source, wanted: 0)
+        Self.pull(channel, frames: 480, wanted: 0)
+        let lead = 1440  // the clock runs 30 ms ahead: a correction starts
+        var previous = channel.bufferedFrames
+        for k in 1..<14 {
+            Self.pull(channel, frames: 480, wanted: Double(lead + k * 480) / 48_000)
+            previous = channel.bufferedFrames
+        }
+        #expect(channel.statistics.corrections == 13)  // 192 frames of lag left
+        // The clock reads 300 frames early on this pull (jitter): the audio is 108 frames ahead now.
+        Self.pull(channel, frames: 480, wanted: Double(lead + 14 * 480 - 300) / 48_000)
+        #expect(previous - channel.bufferedFrames == 480)  // neither dropped nor repeated
+        #expect(channel.statistics.corrections == 13)
+        previous = channel.bufferedFrames
+        Self.pull(channel, frames: 480, wanted: Double(lead + 15 * 480) / 48_000)  // the clock is back on its line
+        #expect(previous - channel.bufferedFrames == 480)  // 192 frames inside the window: left alone
+        #expect(channel.statistics.corrections == 13)
     }
 
     /// B394: a landing that empties the ring (it held the lag plus less than one callback) underruns for the rest of

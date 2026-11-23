@@ -423,9 +423,11 @@ Measured with a double GO on a test engine (two retriggers 50 ms apart, 3 s
 into the clip above, two runs per build): main's build read 16 corrections
 after the second retrigger and the 50 ms jump as its largest drift, and the
 lag it left is below what `/metrics` shows (the peak is never reset there);
-with the fix the second retrigger reseeks like the first (a clock more than 20
-ms behind the ring is a jump back), and the same runs read 0 corrections and a
-largest drift of 0.85 to 1.04 ms, with one more underrun for the second drain.
+with the fix the second retrigger reseeks like the first (the compositor tells
+the decoder about a retrigger; a first version inferred it from a clock more
+than 20 ms behind the ring, which the review showed fires between normal
+callbacks), and the same runs read 0 corrections and a largest drift of 0.85
+to 1.04 ms, with one more underrun for the second drain.
 A correction that starts during playback now runs until the audio is on the
 clock; measured only in the unit tests (30 ms of lag or lead: 15 corrections,
 then under 0.1 ms).
