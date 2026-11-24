@@ -576,9 +576,10 @@ extension LayerAudioChannel {
     }
 
     /// B396: a layer's channel goes to the next file (the loader alternates two per layer). The ring still holds the
-    /// previous file, stopped 10 ms into its clip, and the new file starts at 0: within 100 ms, so the old producer
-    /// rule saw no reason to reseek, appended the new file's frames to the old PTS line, and the old frames played
-    /// first. After `handOver()` nothing of the old ring is heard and the new file starts over at the clock.
+    /// previous file, stopped 10 ms into its clip, and the new file starts at 10 ms, where the old ring's head is:
+    /// within 100 ms, so the old producer rule saw no reason to reseek, appended the new file's frames to the old
+    /// PTS line, and the old frames played first. After `handOver()` nothing of the old ring is heard and the new
+    /// file starts over at the clock.
     @Test func aChannelHandedToAnotherFileStartsOver() {
         let old = RampSource()
         let channel = LayerAudioChannel()

@@ -107,8 +107,9 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// Bumped by `setState(jumped: true)` (the compositor retriggered the layer, so its clock jumped back) and by
     /// `handOver()` (the channel goes to another file). The producer reseeks at its next active fill, also when the
     /// jump is smaller than `resyncThresholdFrames` (B394): the new segment's first pull lands on the clock, where
-    /// nudging would repeat frames towards it. Stored after the clock (release) and read before the producer takes
-    /// its clock (acquire), so a reseek never starts at the clock from before the jump.
+    /// nudging would repeat frames towards it. A retrigger stores it after the clock (release), and the producer
+    /// reads it (acquire) after it has seen the channel active and before it takes its clock, so a reseek never
+    /// starts at the clock from before the jump, nor, after a hand-over, at the clock the previous file left.
     private let jumpGeneration = Atomic<Int>(0)
 
     public init() {
@@ -147,9 +148,10 @@ public final class LayerAudioChannel: @unchecked Sendable {
         if active && !wasActive { onActivate?() }
     }
 
-    /// The channel goes to another file's decoder (the compositor's swap, after it released the file that had it and
-    /// before it enables the new one's audio): whatever the ring holds is the previous file's and is never heard; the
-    /// new producer starts over at the clock (B396).
+    /// The channel goes to another file's decoder (the compositor's swap, after the file that had it was released, at
+    /// an earlier swap, the end of a dissolve or this swap's retire of the outgoing, and before it enables the new
+    /// one's audio): whatever the ring holds is the previous file's and is never heard; the new producer starts over
+    /// at the clock (B396).
     public func handOver() { jump() }
 
     private func jump() {
@@ -207,6 +209,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// A forward loop (`setState(loop:)`) is read across the wrap: the reader seeks back to the loop start when the
     /// loop end is reached and the ring just keeps filling, so a wrap is not a reseek and the consumer never runs dry.
     public func fill(from reader: AudioTrackReader) {
+        guard activeFlag.load(ordering: .acquiring) else { return }  // the clock read below is then at least the one that activated the channel
         let jump = jumpGeneration.load(ordering: .acquiring)  // before the clock, see `jumpGeneration`
         fill(wanted: wantedPTS(atHostNanos: Self.hostNanos()), jump: jump, read: { reader.read(into: $0, frameCount: $1) }, seek: { reader.seek(toSeconds: $0) })
     }
