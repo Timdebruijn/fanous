@@ -573,6 +573,43 @@ extension LayerAudioChannel {
         #expect(channel.statistics.maxDriftMillis < 0.1)
     }
 
+    /// B396: a layer's channel goes to the next file (the loader alternates two per layer). The ring still holds the
+    /// previous file, stopped 10 ms into its clip, and the new file starts at 0: within 100 ms, so the old producer
+    /// rule saw no reason to reseek, appended the new file's frames to the old PTS line, and the old frames played
+    /// first. After `handOver()` nothing of the old ring is heard and the new file starts over at the clock.
+    @Test func aChannelHandedToAnotherFileStartsOver() {
+        let old = RampSource()
+        let channel = LayerAudioChannel()
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: -1)
+        channel.fill(old, wanted: 0)  // the old file: frames 0 ..< 12000 at 0 ... 0.25 s
+        Self.pull(channel, frames: 480, wanted: 0)  // 10 ms of it heard
+        channel.setState(wantedPTS: 0.010, active: false, volume: 0, pan: 0)  // the old file is stopped (releaseAudio)
+        Self.pull(channel, frames: 480, wanted: 0.010)
+
+        channel.handOver()
+        // The new file's frames are its frame number plus a million, so the two files cannot be confused.
+        var next = 0
+        let read: (UnsafeMutablePointer<Float>, Int) -> (framesRead: Int, firstFramePTS: Double) = { buffer, n in
+            for i in 0..<n { buffer[2 * i] = Float(1_000_000 + next + i); buffer[2 * i + 1] = 0 }
+            defer { next += n }
+            return (n, Double(next) / 48_000)
+        }
+        let seek: (Double) -> Void = { next = Int(($0 * 48_000).rounded()) }
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: -1)  // the new file starts at 0
+        channel.fill(wanted: 0, read: read, seek: seek)  // sees the hand-over: asks for a drain, reads nothing yet
+        #expect(next == 0)
+        var out = Self.pull(channel, frames: 480, wanted: 0)  // drains; the old segment is never heard
+        #expect(out.left.allSatisfy { $0 == 0 })
+        #expect(channel.bufferedFrames == 0)
+        channel.fill(wanted: 0.010, read: read, seek: seek)  // the new segment, from the clock
+        #expect(abs(channel.nextFramePTS - 0.010) < 1e-9)
+        out = Self.pull(channel, frames: 480, wanted: 0.020)  // lands: the new file's frame at 20 ms
+        #expect(out.left[0] == Float(1_000_000 + 960))
+        #expect(out.left.allSatisfy { $0 == 0 || $0 >= 1_000_000 })
+        #expect(channel.statistics.corrections == 0)
+        #expect(channel.statistics.maxDriftMillis < 0.1)
+    }
+
     @Test func staysSilentWhenTheAudioIsFarFromTheClock() {
         let source = RampSource()
         let channel = LayerAudioChannel()

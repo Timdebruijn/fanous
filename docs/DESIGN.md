@@ -3567,8 +3567,12 @@ groundwork and small engine pieces first):
   towards the clock (a slave whose master was retriggered is not signalled,
   B395); between two callbacks the ring's head runs up to one callback ahead
   of the clock, so a clock a little behind the ring is normal and is never
-  inferred to be a jump. Corrections and the largest drift are counted in
-  `/metrics`. The first callback of a segment (a start, a retrigger,
+  inferred to be a jump. From the signal until the decoder has started the new
+  segment the callback plays nothing of the old ring; the same holds when the
+  loader hands a channel to the layer's next file (a layer's two channels
+  alternate between its files, B396), so the previous file's sound is never
+  heard under the new one, nor its PTS line inherited. Corrections and the
+  largest drift are counted in `/metrics`. The first callback of a segment (a start, a retrigger,
   a seek), and the first after the channel was inactive (a resume), land on
   the clock: when the audio is behind it they drop straight to it, since
   nothing of it has been heard yet, and the 28 to 35 ms between the decoder's
