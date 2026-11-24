@@ -663,7 +663,10 @@ extension LayerAudioChannel {
         #expect(readsC > 0 && abs(channel.nextFramePTS - 0.010) < 1e-9)
         out = Self.pull(channel, frames: 480, wanted: 0.010)
         #expect(out.left.allSatisfy { $0 == 0.75 } && out.right.allSatisfy { $0 == 0.75 })
-        #expect(channel.statistics.corrections == 0 && readsA == late)
+        channel.fill(wanted: 0.020, producer: a, read: readA, seek: { _ in })  // A once more, with room in the ring: ignored
+        #expect(readsA == late)
+        out = Self.pull(channel, frames: 480, wanted: 0.020)
+        #expect(out.left.allSatisfy { $0 == 0.75 } && channel.statistics.corrections == 0)
     }
 
     @Test func staysSilentWhenTheAudioIsFarFromTheClock() {

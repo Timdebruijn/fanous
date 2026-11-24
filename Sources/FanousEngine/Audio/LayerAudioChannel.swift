@@ -240,10 +240,11 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// `jump` is the `jumpGeneration` read before `wanted` was taken (read here when nil). `producer` is the token of
     /// the caller (0 fits a channel never handed over).
     func fill(wanted: Double, jump: Int? = nil, producer: Int = 0, read: (UnsafeMutablePointer<Float>, Int) -> (framesRead: Int, firstFramePTS: Double), seek: (Double) -> Void) {
-        // B397: not the owner (any more), or the previous producer is still inside a fill: nothing, try again later
-        guard owner.load(ordering: .acquiring) == producer, !busy.exchange(true, ordering: .acquiring) else { return }
+        // B397: another producer is inside a fill: nothing, try again later. The owner check is under `busy`, so a
+        // producer that lost the channel while the new one filled cannot slip in behind it.
+        guard !busy.exchange(true, ordering: .acquiring) else { return }
         defer { busy.store(false, ordering: .releasing) }
-        guard activeFlag.load(ordering: .acquiring) else { return }
+        guard owner.load(ordering: .acquiring) == producer, activeFlag.load(ordering: .acquiring) else { return }
         let jump = jump ?? jumpGeneration.load(ordering: .acquiring)
         let jumped = jump != seenJump || producer != lastProducer  // a new producer starts the ring over (B396)
         seenJump = jump  // a restart below starts at `wanted`, so every branch answers the jump

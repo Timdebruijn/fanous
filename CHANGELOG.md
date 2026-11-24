@@ -13,9 +13,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Audio: one producer at a time on a layer's channel (B397). A file cut in, or dissolved in while a dissolve
   runs, can get the channel of the playback retired in the same swap, whose decode thread may still be inside a
   fill (a sample read can stall, B391); the two threads then wrote the same ring and the old file's samples were
-  heard as the new one's. The hand-over now names the new producer, a fill from another is ignored and waits for
-  a fill in progress, and each segment carries its producer, so the callback plays only the owner's and the new
-  file starts the ring over (PR #441).
+  heard as the new one's. The hand-over now names the new producer, a fill from any other producer is ignored, the
+  new producer's first fill is skipped until a fill in progress has returned, and each segment carries its
+  producer, so the callback plays only the owner's and the new file starts the ring over (PR #441).
 - Release: 1.0.0-rc.18 is on GitHub as a pre-release with the signed, notarized dmg, built from main 62ba63d
   (PR #440).
 
