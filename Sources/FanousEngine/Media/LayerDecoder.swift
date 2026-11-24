@@ -28,7 +28,8 @@ public final class LayerDecoder: @unchecked Sendable {
     /// Audio track of the same movie, filled from this thread between video frames (ADR-0019); set by the loader before
     /// the thread starts.
     public var audioReader: AudioTrackReader?
-    /// The layer's two mixer channels (the playing media and the one dissolving out); set by the loader with the reader.
+    /// The layer's two mixer channels (the compositor keeps a dissolve's two files on different ones); set by the loader
+    /// with the reader.
     public var audioChannels: [LayerAudioChannel] = []
     /// The channel this decoder fills: the compositor picks it from `audioChannels` at the swap, the one the layer's
     /// other playback does not hold (B399), and writes it before it sets `audioEnabled` (release); this thread reads

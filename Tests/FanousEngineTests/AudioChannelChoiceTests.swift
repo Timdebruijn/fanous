@@ -59,6 +59,7 @@ import Testing
             parameters.write { slot in
                 slot.sequence = sequence
                 slot.layers[0].intensity = 1
+                slot.layers[0].speed = 1  // 100 %: audio is active only at 1× forward
                 slot.layers[0].folder = 1
                 slot.layers[0].file = 1
                 slot.layers[0].dissolve = dissolve
@@ -113,7 +114,7 @@ import Testing
         #expect(a.decoder?.audioEnabled.load(ordering: .relaxed) == false)
 
         // A dissolve: C stays on air as the outgoing; D must take the other channel.
-        rig.dissolve = 1
+        rig.dissolve = 10  // virtual seconds: the swaps below happen while it runs
         rig.publish()
         let d = try await rig.playback()
         try await rig.load(d)
@@ -121,6 +122,20 @@ import Testing
         let channelD = try #require(d.audioChannel)
         #expect(channelD !== channelC)
         #expect(c.decoder?.audioEnabled.load(ordering: .relaxed) == true && d.decoder?.audioEnabled.load(ordering: .relaxed) == true)
+
+        // E fired while D dissolves in: C is retired, D stays on air as the outgoing; E must not take D's channel, so it
+        // gets C's (the one just retired, the only one left).
+        let e = try await rig.playback()
+        try await rig.load(e)
+        #expect(rig.layer.outgoing === d)
+        let channelE = try #require(e.audioChannel)
+        #expect(channelE !== channelD && channelE === channelC)
+        #expect(c.decoder?.audioEnabled.load(ordering: .relaxed) == false)
+        rig.tick()  // E's channel is active now (prepare)
+        #expect(channelE.isActive)
+        // The loader's late stop of the retired C must not touch the channel E plays on.
+        c.stop()
+        #expect(channelE.isActive)
     }
 
     /// From the review: a fade to no media makes the current the outgoing with no current; a file fired within the fade
@@ -128,7 +143,7 @@ import Testing
     @Test func aFileFiredDuringAFadeToNothingAvoidsTheOutgoingsChannel() async throws {
         let rig = try await Rig()
         defer { rig.stop() }
-        rig.dissolve = 1
+        rig.dissolve = 10  // virtual seconds: B lands well inside the fade, also on a slow machine
         rig.publish()
         let a = try await rig.playback()
         try await rig.load(a)
