@@ -270,7 +270,7 @@ public final class LayerPlayback: @unchecked Sendable {
     /// Lets go of the audio channel (compositor at retire, loader at stop): silence, no producer. Only the first call
     /// touches the channel: by the loader's stop of a retired playback the channel may be the next file's (B399).
     func releaseAudio() {
-        guard let decoder, let channel = decoder.audioChannel, decoder.audioEnabled.exchange(false, ordering: .acquiringAndReleasing) else { return }
+        guard let decoder, decoder.audioEnabled.exchange(false, ordering: .acquiring), let channel = decoder.audioChannel else { return }  // pairs with the swap's release
         channel.setState(wantedPTS: 0, active: false, volume: 0, pan: 0)
     }
 

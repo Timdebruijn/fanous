@@ -59,7 +59,7 @@ import Testing
             parameters.write { slot in
                 slot.sequence = sequence
                 slot.layers[0].intensity = 1
-                slot.layers[0].speed = 1  // 100 %: audio is active only at 1× forward
+                slot.layers[0].speed = 1  // explicit: the default, 100 %, the only speed with audio
                 slot.layers[0].folder = 1
                 slot.layers[0].file = 1
                 slot.layers[0].dissolve = dissolve
@@ -131,7 +131,7 @@ import Testing
         let channelE = try #require(e.audioChannel)
         #expect(channelE !== channelD && channelE === channelC)
         #expect(c.decoder?.audioEnabled.load(ordering: .relaxed) == false)
-        rig.tick()  // E's channel is active now (prepare)
+        rig.tick()  // still active one tick on (prepare set it in the swap's tick)
         #expect(channelE.isActive)
         // The loader's late stop of the retired C must not touch the channel E plays on.
         c.stop()
