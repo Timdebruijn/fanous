@@ -922,9 +922,7 @@ public final class MediaLoader: @unchecked Sendable {
             let decoder = LayerDecoder(source: source, ring: ring, logger: logger)
             if let mixer, let reader, reader.hasAudio, layer * 2 + 1 < mixer.channels.count {
                 parity[layer] ^= 1
-                let channel = mixer.channels[layer * 2 + parity[layer]]
-                channel.handOver()  // B396: the ring still holds the file before last; nothing of it plays for this one
-                decoder.audio = (reader, channel)
+                decoder.audio = (reader, mixer.channels[layer * 2 + parity[layer]])  // the compositor's swap hands the channel over (B396)
                 mixer.ensureRunning()
             }
             // B342: a file whose frames fail shows it like a failed open; a dissolve's outgoing movie leaves the new one's alone

@@ -710,6 +710,7 @@ public final class Compositor: @unchecked Sendable {
             }
         }
         layer.current = incoming
+        incoming?.audioChannel?.handOver()  // B396: the ring still holds the file that had the channel; nothing of it plays for this one
         incoming?.decoder?.audioEnabled.store(true, ordering: .relaxed)
         if incoming?.decoder?.audio != nil { incoming?.decoder?.nudge() }  // the decode thread sleeps without audio to feed
     }

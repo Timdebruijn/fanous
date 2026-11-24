@@ -32,7 +32,8 @@ public struct AudioStatistics: Sendable, Equatable {
 /// Invariants behind `@unchecked Sendable`:
 /// - `tail` and the producer-only vars belong to the producer thread; `head`, `appliedGeneration`,
 ///   `alignedGeneration`, `alignNext`, `correcting` and the gain state belong to the consumer thread; everything else is an atomic. The producer never writes `head`.
-///   The compositor's retrigger reaches the producer as `jumpGeneration` (B394).
+///   The compositor's retrigger and hand-over reach the producer as `jumpGeneration` (B394) and the consumer as
+///   `staleSegment` (B396).
 /// - Frame indices only grow. The PTS of frame `i` is `basePTS + (i - baseIndex) / 48000`: one PTS pair per
 ///   contiguous segment. The producer rewrites the pair only while the ring is empty (first fill, or after the
 ///   consumer has acknowledged a flush), and publishes it before the `tail` release that makes the first frame
@@ -146,8 +147,9 @@ public final class LayerAudioChannel: @unchecked Sendable {
         if active && !wasActive { onActivate?() }
     }
 
-    /// The channel goes to another file's decoder (the loader, before it starts that decoder): whatever the ring holds
-    /// is the previous file's and is never heard; the new producer starts over at the clock (B396).
+    /// The channel goes to another file's decoder (the compositor's swap, after it released the file that had it and
+    /// before it enables the new one's audio): whatever the ring holds is the previous file's and is never heard; the
+    /// new producer starts over at the clock (B396).
     public func handOver() { jump() }
 
     private func jump() {
