@@ -699,7 +699,9 @@ public final class Compositor: @unchecked Sendable {
 
     /// The previous frame stays until the first new one is ready, then the cut or dissolve starts.
     private func swap(in incoming: LayerPlayback?, layer: RenderLayer, p: LayerParameters, target: Double) {
+        var held: LayerAudioChannel?  // the channel the layer's other playback keeps (a dissolve), or the one just retired (its thread may still be in a fill)
         if let current = layer.current {
+            held = current.audioChannel
             if p.dissolve > 0 {
                 if let old = layer.outgoing { retire(old, from: layer) }
                 layer.outgoing = current
@@ -710,9 +712,14 @@ public final class Compositor: @unchecked Sendable {
             }
         }
         layer.current = incoming
-        incoming?.audioChannel?.handOver()  // B396: the ring still holds the file that had the channel; nothing of it plays for this one
-        incoming?.decoder?.audioEnabled.store(true, ordering: .relaxed)
-        if incoming?.decoder?.audio != nil { incoming?.decoder?.nudge() }  // the decode thread sleeps without audio to feed
+        if let decoder = incoming?.decoder, decoder.audioReader != nil {
+            // B399: the channel is chosen here, not at load, so a load that was replaced before it was shown cannot leave
+            // the next file on the channel the current one still plays on
+            decoder.audioChannel = decoder.audioChannels.first { $0 !== held } ?? decoder.audioChannels.first
+            decoder.audioChannel?.handOver()  // B396: the ring still holds the file that had the channel; nothing of it plays for this one
+            decoder.audioEnabled.store(true, ordering: .releasing)  // publishes the channel to the decode thread
+            decoder.nudge()  // the decode thread sleeps without audio to feed
+        }
     }
 
     private func retire(_ playback: LayerPlayback, from layer: RenderLayer) {
@@ -781,7 +788,7 @@ public final class Compositor: @unchecked Sendable {
             let active = playing && direction > 0 && abs(speed - 100) < 0.5
             // a forward loop plays [in, out + 1) frames; the audio reads across its wrap (not when the audio is shorter than that)
             var loop: (start: Double, end: Double)?
-            if master == nil, p.playMode == .loopForward, outFrame > inFrame, let reader = playback.decoder?.audio?.reader,
+            if master == nil, p.playMode == .loopForward, outFrame > inFrame, let reader = playback.decoder?.audioReader,
                 Double(outFrame + 1) / playback.frameRate <= reader.duration + 1 / playback.frameRate
             {
                 loop = (Double(inFrame) / playback.frameRate, Double(outFrame + 1) / playback.frameRate)

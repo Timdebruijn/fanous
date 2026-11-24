@@ -25,8 +25,15 @@ public final class LayerDecoder: @unchecked Sendable {
     private var thread: Thread?
     private var lastProduced = -1
     public let decoded = Atomic<Int>(0)
-    /// Audio track of the same movie, filled from this thread between video frames (ADR-0019).
-    public var audio: (reader: AudioTrackReader, channel: LayerAudioChannel)?
+    /// Audio track of the same movie, filled from this thread between video frames (ADR-0019); set by the loader before
+    /// the thread starts.
+    public var audioReader: AudioTrackReader?
+    /// The layer's two mixer channels (the playing media and the one dissolving out); set by the loader with the reader.
+    public var audioChannels: [LayerAudioChannel] = []
+    /// The channel this decoder fills: the compositor picks it from `audioChannels` at the swap, the one the layer's
+    /// other playback does not hold (B399), and writes it before it sets `audioEnabled` (release); this thread reads
+    /// `audioEnabled` first (acquire). Nil until then, and after the audio is released.
+    public var audioChannel: LayerAudioChannel?
     /// The compositor enables audio for the playback that owns the channel (a dissolve hands it over).
     public let audioEnabled = Atomic<Bool>(false)
 
@@ -71,10 +78,10 @@ public final class LayerDecoder: @unchecked Sendable {
         let count = source.info.frameCount
         let signpost = Signposts.id(self)
         while running.load(ordering: .relaxed) {
-            if let audio, audioEnabled.load(ordering: .relaxed) { audio.channel.fill(from: audio.reader) }
+            if audioEnabled.load(ordering: .acquiring), let audioReader, let audioChannel { audioChannel.fill(from: audioReader) }
             guard let slot = ring.slotForWriting() else {
                 // with audio to feed, keep topping it up while the video ring is full; otherwise sleep until a request changes
-                _ = wake.wait(timeout: audio != nil && audioEnabled.load(ordering: .relaxed) ? .now() + .milliseconds(10) : .distantFuture)
+                _ = wake.wait(timeout: audioReader != nil && audioEnabled.load(ordering: .relaxed) ? .now() + .milliseconds(10) : .distantFuture)
                 continue
             }
             let want = ((wanted.load(ordering: .relaxed) % count) + count) % count
@@ -177,8 +184,8 @@ public final class LayerDecoder: @unchecked Sendable {
     private func pause(_ seconds: Double) {
         let until = DispatchTime.now() + seconds
         while running.load(ordering: .relaxed), DispatchTime.now() < until {
-            let feeding = audio != nil && audioEnabled.load(ordering: .relaxed)
-            if feeding, let audio { audio.channel.fill(from: audio.reader) }
+            let feeding = audioReader != nil && audioEnabled.load(ordering: .acquiring)
+            if feeding, let audioReader, let audioChannel { audioChannel.fill(from: audioReader) }
             _ = wake.wait(timeout: feeding ? min(until, .now() + .milliseconds(10)) : until)
         }
     }

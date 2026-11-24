@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine: a layer's two audio channels are given out when a file goes on air, not when it is loaded. A loaded file that
+  was replaced before it was shown skipped a channel, so the next file could land on the channel the current file still
+  played on: in a dissolve both then fed and steered one channel, and a late stop of the retired file could silence its
+  successor for a tick (B399) (PR #NNN).
 - Engine: a layer's next file no longer plays the previous file's sound. A layer's two audio channels alternate between
   its files, and a channel kept the ring of the file before; when that file had stopped within 100 ms of where the
   new one started, its frames played first and the new file's sound ran late by up to 250 ms for the whole clip. The
