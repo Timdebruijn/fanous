@@ -14,7 +14,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   its files, and a channel kept the ring of the file before; when that file had stopped within 100 ms of where the
   new one started, its frames played first and the new file's sound ran late by up to 250 ms for the whole clip. The
   channel now starts over when it is handed to the next file, and from a retrigger or hand-over until the new segment
-  exists the callback plays nothing of the old ring (B396) (PR #NNN).
+  exists the callback plays nothing of the old ring (B396) (PR #437).
 - Engine: a sound that drifted from its clock is corrected onto the clock, not only back inside the ±20 ms window.
   A lag of 20 to 100 ms (a stall, an output device that restarted while the layer played) was dropped 2 ms per
   callback until it was just inside the window and then kept 18 to 20 ms of it for the rest of the clip; the
