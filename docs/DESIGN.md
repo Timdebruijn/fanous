@@ -3569,10 +3569,14 @@ groundwork and small engine pieces first):
   of the clock, so a clock a little behind the ring is normal and is never
   inferred to be a jump. From the signal until the decoder has started the new
   segment the callback plays nothing of the old ring; the same holds when the
-  compositor's swap hands a channel to the layer's next file (a layer's two
-  channels alternate between its files, B396), so the previous file's sound
-  is not heard under the new one, nor its PTS line inherited. Corrections and
-  the largest drift are counted in `/metrics`. The first callback of a
+  compositor's swap hands a channel to the layer's next file (B396). The swap
+  also chooses that channel: of the layer's two, never the one the outgoing
+  of a dissolve (also a fade to no media) still plays on, and not the one just
+  retired when the other is free (B399; chosen at load, a load replaced
+  before it was shown skipped a channel and the next file could share the
+  current one's). The previous file's
+  sound is thus not heard under the new one, nor its PTS line inherited.
+  Corrections and the largest drift are counted in `/metrics`. The first callback of a
   segment (a start, a retrigger, a seek), and the first after the channel was
   inactive (a resume), land on
   the clock: when the audio is behind it they drop straight to it, since

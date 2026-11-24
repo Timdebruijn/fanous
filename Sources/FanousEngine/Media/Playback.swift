@@ -166,7 +166,7 @@ public final class LayerPlayback: @unchecked Sendable {
     /// may relabel it while it is still shown (B386), so the stale count compares this. −1 = none.
     var holdFrameIndex = -1
     /// The mixer channel this playback's decoder fills (movies with an audio track only).
-    public var audioChannel: LayerAudioChannel? { decoder?.audio?.channel }
+    public var audioChannel: LayerAudioChannel? { decoder?.audioChannel }
 
     public init(key: MediaKey, movie: MovieSource, decoder: LayerDecoder, ring: FrameRing) {
         self.key = key
@@ -267,10 +267,10 @@ public final class LayerPlayback: @unchecked Sendable {
         return best
     }
 
-    /// Lets go of the audio channel (compositor at retire, loader at stop): silence, no producer.
+    /// Lets go of the audio channel (compositor at retire, loader at stop): silence, no producer. Only the first call
+    /// touches the channel: by the loader's stop of a retired playback the channel may be the next file's (B399).
     func releaseAudio() {
-        guard let decoder, let channel = decoder.audio?.channel else { return }
-        decoder.audioEnabled.store(false, ordering: .relaxed)
+        guard let decoder, decoder.audioEnabled.exchange(false, ordering: .acquiring), let channel = decoder.audioChannel else { return }  // pairs with the swap's release
         channel.setState(wantedPTS: 0, active: false, volume: 0, pan: 0)
     }
 
@@ -422,7 +422,6 @@ public final class MediaLoader: @unchecked Sendable {
     public var mixer: AudioMixer?
     /// Library lookup for keys the scene's explicit list does not cover (DESIGN.md §7.4).
     public var resolver: (@Sendable (MediaKey) -> URL?)?
-    private var parity: [Int]
 
     /// A movie's or a still's file as an open thread hands it to the loader thread (B277): no decoder made yet.
     enum OpenedFile: @unchecked Sendable {
@@ -483,7 +482,6 @@ public final class MediaLoader: @unchecked Sendable {
         self.ringCapacity = ringCapacity
         self.logger = logger
         loaded = Array(repeating: 0, count: layers.count)
-        parity = Array(repeating: 0, count: layers.count)
         syphonOpen = Array(repeating: nil, count: layers.count)
         captureOpen = Array(repeating: nil, count: layers.count)
         opening = Array(repeating: nil, count: layers.count)
@@ -921,8 +919,8 @@ public final class MediaLoader: @unchecked Sendable {
             let ring = FrameRing(capacity: ringCapacity)
             let decoder = LayerDecoder(source: source, ring: ring, logger: logger)
             if let mixer, let reader, reader.hasAudio, layer * 2 + 1 < mixer.channels.count {
-                parity[layer] ^= 1
-                decoder.audio = (reader, mixer.channels[layer * 2 + parity[layer]])  // the compositor's swap hands the channel over (B396)
+                decoder.audioReader = reader
+                decoder.audioChannels = Array(mixer.channels[layer * 2 ..< layer * 2 + 2])  // the compositor picks one at the swap (B399)
                 mixer.ensureRunning()
             }
             // B342: a file whose frames fail shows it like a failed open; a dissolve's outgoing movie leaves the new one's alone
