@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+## 1.0.0-rc.18 — 2026-11-24
+
 - Engine: a layer's two audio channels are given out when a file goes on air, not when it is loaded. A loaded file that
   was replaced before it was shown skipped a channel, so the next file could land on the channel the current file still
   played on: in a dissolve both then fed and steered one channel, and a late stop of the retired file could silence its
