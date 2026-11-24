@@ -3574,8 +3574,14 @@ groundwork and small engine pieces first):
   of a dissolve (also a fade to no media) still plays on, and not the one just
   retired when the other is free (B399; chosen at load, a load replaced
   before it was shown skipped a channel and the next file could share the
-  current one's). The previous file's
-  sound is thus not heard under the new one, nor its PTS line inherited.
+  current one's). When it is the one just retired, its decode thread may
+  still be inside a fill (a sample read can stall for tens of milliseconds,
+  B391): the hand-over names the new producer, a fill from any other is
+  ignored, a fill holds the channel until it returns, and each segment carries
+  its producer, so the callback plays only the owner's segments and the new
+  file's first fill waits for the old thread and starts the ring over (B397).
+  The previous file's sound is thus not heard under the new one, nor its PTS
+  line inherited.
   Corrections and the largest drift are counted in `/metrics`. The first callback of a
   segment (a start, a retrigger, a seek), and the first after the channel was
   inactive (a resume), land on

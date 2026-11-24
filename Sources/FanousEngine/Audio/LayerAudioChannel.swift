@@ -32,8 +32,12 @@ public struct AudioStatistics: Sendable, Equatable {
 /// Invariants behind `@unchecked Sendable`:
 /// - `tail` and the producer-only vars belong to the producer thread; `head`, `appliedGeneration`,
 ///   `alignedGeneration`, `alignNext`, `correcting` and the gain state belong to the consumer thread; everything else is an atomic. The producer never writes `head`.
-///   The compositor's retrigger and hand-over reach the producer as `jumpGeneration` (B394) and the consumer as
-///   `staleSegment` (B396).
+///   The compositor's retrigger reaches the producer as `jumpGeneration` and the consumer as `staleSegment` (B394).
+/// - One producer at a time (B397). The compositor's `handOver()` names the next producer in `owner`; a fill from
+///   any other is ignored, and a fill holds `busy` so a thread that was already inside one (a read can stall for
+///   tens of milliseconds, B391) finishes alone before the new producer's first fill. Each segment carries the token
+///   of the producer that wrote it; the consumer plays only the owner's segments (B396), and the new producer
+///   starts the ring over at its first fill.
 /// - Frame indices only grow. The PTS of frame `i` is `basePTS + (i - baseIndex) / 48000`: one PTS pair per
 ///   contiguous segment. The producer rewrites the pair only while the ring is empty (first fill, or after the
 ///   consumer has acknowledged a flush), and publishes it before the `tail` release that makes the first frame
@@ -84,9 +88,15 @@ public final class LayerAudioChannel: @unchecked Sendable {
     private let peakDriftMicros = Atomic<Int>(0)
     /// B393: counts the segments the producer started; the consumer's first pull of a segment lands on the clock exactly.
     private let segmentGeneration = Atomic<Int>(0)
-    /// The segment that was current when the clock jumped or the channel was handed to another file (`jumpGeneration`):
-    /// the consumer plays nothing of it, the producer starts a new one (B396). 0 is the empty ring before any segment.
+    /// The segment that was current when the clock jumped (`jumpGeneration`): the consumer plays nothing of it, the
+    /// producer starts a new one. 0 is the empty ring before any segment.
     private let staleSegment = Atomic<Int>(0)
+    /// The producer the channel belongs to (`handOver()`), 0 before the first; a fill from another producer is ignored.
+    private let owner = Atomic<Int>(0)
+    /// A producer is inside `fill`.
+    private let busy = Atomic<Bool>(false)
+    /// The producer that wrote the current segment, published with the segment's pair: not the owner's → not heard.
+    private let segmentOwner = Atomic<Int>(0)
 
     // Consumer thread only.
     private var appliedGeneration = 0
@@ -103,13 +113,13 @@ public final class LayerAudioChannel: @unchecked Sendable {
     private var pendingFlushTarget = 0
     private var producerPTS = 0.0  // media time of the next frame the producer reads (loop wrap bookkeeping)
     private var seenJump = 0  // the `jumpGeneration` the producer last reseeked for
+    private var lastProducer = 0  // the producer of the last fill: another one starts the ring over (B397)
 
-    /// Bumped by `setState(jumped: true)` (the compositor retriggered the layer, so its clock jumped back) and by
-    /// `handOver()` (the channel goes to another file). The producer reseeks at its next active fill, also when the
-    /// jump is smaller than `resyncThresholdFrames` (B394): the new segment's first pull lands on the clock, where
-    /// nudging would repeat frames towards it. A retrigger stores it after the clock (release), and the producer
-    /// reads it (acquire) after it has seen the channel active and before it takes its clock, so a reseek never
-    /// starts at the clock from before the jump, nor, after a hand-over, at the clock the previous file left.
+    /// Bumped by `setState(jumped: true)` (the compositor retriggered the layer, so its clock jumped back). The
+    /// producer reseeks at its next active fill, also when the jump is smaller than `resyncThresholdFrames` (B394):
+    /// the new segment's first pull lands on the clock, where nudging would repeat frames towards it. A retrigger
+    /// stores it after the clock (release), and the producer reads it (acquire) after it has seen the channel active
+    /// and before it takes its clock, so a reseek never starts at the clock from before the jump.
     private let jumpGeneration = Atomic<Int>(0)
 
     public init() {
@@ -150,9 +160,14 @@ public final class LayerAudioChannel: @unchecked Sendable {
 
     /// The channel goes to another file's decoder (the compositor's swap, after the file that had it was released, at
     /// an earlier swap, the end of a dissolve or this swap's retire of the outgoing, and before it enables the new
-    /// one's audio): whatever the ring holds is the previous file's and is never heard; the new producer starts over
-    /// at the clock (B396).
-    public func handOver() { jump() }
+    /// one's audio): answers the token the new producer passes to `fill`. Whatever the ring holds, or the previous
+    /// producer still writes from inside a fill it was in (B397), carries another token and is never heard; the new
+    /// producer starts over at the clock (B396).
+    @discardableResult public func handOver() -> Int {
+        let token = owner.load(ordering: .relaxed) + 1
+        owner.store(token, ordering: .releasing)
+        return token
+    }
 
     private func jump() {
         staleSegment.store(segmentGeneration.load(ordering: .relaxed), ordering: .relaxed)
@@ -208,25 +223,31 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// evaluated at the head.
     /// A forward loop (`setState(loop:)`) is read across the wrap: the reader seeks back to the loop start when the
     /// loop end is reached and the ring just keeps filling, so a wrap is not a reseek and the consumer never runs dry.
-    public func fill(from reader: AudioTrackReader) {
+    /// `producer` is the token `handOver()` gave this decoder; a fill with another one does nothing.
+    public func fill(from reader: AudioTrackReader, producer: Int) {
         guard activeFlag.load(ordering: .acquiring) else { return }  // the clock read below is then at least the one that activated the channel
         let jump = jumpGeneration.load(ordering: .acquiring)  // before the clock, see `jumpGeneration`
-        fill(wanted: wantedPTS(atHostNanos: Self.hostNanos()), jump: jump, read: { reader.read(into: $0, frameCount: $1) }, seek: { reader.seek(toSeconds: $0) })
+        fill(wanted: wantedPTS(atHostNanos: Self.hostNanos()), jump: jump, producer: producer, read: { reader.read(into: $0, frameCount: $1) }, seek: { reader.seek(toSeconds: $0) })
     }
 
     /// `fill` from a reader at an explicit layer clock (tests).
-    func fill(from reader: AudioTrackReader, wanted: Double) {
-        fill(wanted: wanted, read: { reader.read(into: $0, frameCount: $1) }, seek: { reader.seek(toSeconds: $0) })
+    func fill(from reader: AudioTrackReader, wanted: Double, producer: Int = 0) {
+        fill(wanted: wanted, producer: producer, read: { reader.read(into: $0, frameCount: $1) }, seek: { reader.seek(toSeconds: $0) })
     }
 
     /// `fill` against any frame source (tests use a synthetic one) and an explicit layer clock. `read` writes up to
     /// `n` interleaved frames and returns how many it wrote (fewer only at the end of the media) and the PTS of the first.
-    /// `jump` is the `jumpGeneration` read before `wanted` was taken (read here when nil).
-    func fill(wanted: Double, jump: Int? = nil, read: (UnsafeMutablePointer<Float>, Int) -> (framesRead: Int, firstFramePTS: Double), seek: (Double) -> Void) {
+    /// `jump` is the `jumpGeneration` read before `wanted` was taken (read here when nil). `producer` is the token of
+    /// the caller (0 fits a channel never handed over).
+    func fill(wanted: Double, jump: Int? = nil, producer: Int = 0, read: (UnsafeMutablePointer<Float>, Int) -> (framesRead: Int, firstFramePTS: Double), seek: (Double) -> Void) {
+        // B397: not the owner (any more), or the previous producer is still inside a fill: nothing, try again later
+        guard owner.load(ordering: .acquiring) == producer, !busy.exchange(true, ordering: .acquiring) else { return }
+        defer { busy.store(false, ordering: .releasing) }
         guard activeFlag.load(ordering: .acquiring) else { return }
         let jump = jump ?? jumpGeneration.load(ordering: .acquiring)
-        let jumped = jump != seenJump
+        let jumped = jump != seenJump || producer != lastProducer  // a new producer starts the ring over (B396)
         seenJump = jump  // a restart below starts at `wanted`, so every branch answers the jump
+        lastProducer = producer
         if flushPending {
             guard head.load(ordering: .acquiring) >= pendingFlushTarget else { return }  // consumer has not drained yet
             flushPending = false
@@ -312,6 +333,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
                 baseIndex.store(t, ordering: .relaxed)
                 basePTSBits.store(firstPTS.bitPattern, ordering: .relaxed)
                 segmentGeneration.wrappingAdd(1, ordering: .relaxed)  // published by the tail's release below
+                segmentOwner.store(lastProducer, ordering: .relaxed)  // this fill's producer, which may no longer be the owner
                 startNewSegment = false
                 segmentValid = true
             }
@@ -386,7 +408,8 @@ public final class LayerAudioChannel: @unchecked Sendable {
                 return
             }
             let generation = segmentGeneration.load(ordering: .relaxed)  // ordered by the tail load above
-            if generation == staleSegment.load(ordering: .relaxed) {  // the segment from before a jump or hand-over: not this clock's, not heard
+            // the segment from before a jump (not this clock's) or from a producer the channel was taken from (not this file's): not heard
+            if generation == staleSegment.load(ordering: .relaxed) || segmentOwner.load(ordering: .relaxed) != owner.load(ordering: .relaxed) {
                 previousGainL = targetL
                 previousGainR = targetR
                 underrunCount.add(1, ordering: .relaxed)
