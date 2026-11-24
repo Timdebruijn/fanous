@@ -10,8 +10,9 @@ public struct AudioStatistics: Sendable, Equatable {
     /// Render callbacks (mixer) or active pulls (channel).
     public var callbacks: UInt64 = 0
     /// Pulls that found fewer frames in the ring than they needed while the channel was active (end of media excluded),
-    /// or that stayed silent because the audio was more than 100 ms off the clock. Includes the short gap after a
-    /// seek or retrigger while the producer resyncs.
+    /// or that stayed silent because the audio was more than 100 ms off the clock or still the segment from before a
+    /// retrigger or a hand-over to another file (B396). Includes the short gap after a seek or retrigger while the
+    /// producer resyncs.
     public var underruns: UInt64 = 0
     /// Pulls that dropped or repeated frames to follow the layer clock. The first pull of a segment, and the first
     /// after the channel was inactive, land on the clock and are not counted (B393).
@@ -31,7 +32,8 @@ public struct AudioStatistics: Sendable, Equatable {
 /// Invariants behind `@unchecked Sendable`:
 /// - `tail` and the producer-only vars belong to the producer thread; `head`, `appliedGeneration`,
 ///   `alignedGeneration`, `alignNext`, `correcting` and the gain state belong to the consumer thread; everything else is an atomic. The producer never writes `head`.
-///   The compositor's retrigger reaches the producer as `jumpGeneration` (B394).
+///   The compositor's retrigger and hand-over reach the producer as `jumpGeneration` (B394) and the consumer as
+///   `staleSegment` (B396).
 /// - Frame indices only grow. The PTS of frame `i` is `basePTS + (i - baseIndex) / 48000`: one PTS pair per
 ///   contiguous segment. The producer rewrites the pair only while the ring is empty (first fill, or after the
 ///   consumer has acknowledged a flush), and publishes it before the `tail` release that makes the first frame
@@ -82,6 +84,9 @@ public final class LayerAudioChannel: @unchecked Sendable {
     private let peakDriftMicros = Atomic<Int>(0)
     /// B393: counts the segments the producer started; the consumer's first pull of a segment lands on the clock exactly.
     private let segmentGeneration = Atomic<Int>(0)
+    /// The segment that was current when the clock jumped or the channel was handed to another file (`jumpGeneration`):
+    /// the consumer plays nothing of it, the producer starts a new one (B396). 0 is the empty ring before any segment.
+    private let staleSegment = Atomic<Int>(0)
 
     // Consumer thread only.
     private var appliedGeneration = 0
@@ -99,11 +104,12 @@ public final class LayerAudioChannel: @unchecked Sendable {
     private var producerPTS = 0.0  // media time of the next frame the producer reads (loop wrap bookkeeping)
     private var seenJump = 0  // the `jumpGeneration` the producer last reseeked for
 
-    /// Bumped by `setState(jumped: true)`: the compositor retriggered the layer, so its clock jumped back. The producer
-    /// reseeks at its next active fill, also when the jump is smaller than `resyncThresholdFrames` (B394): the new
-    /// segment's first pull lands on the clock, where nudging would repeat frames towards it. Stored after the clock
-    /// (release) and read before the producer takes its clock (acquire), so a reseek never starts at the clock from
-    /// before the jump.
+    /// Bumped by `setState(jumped: true)` (the compositor retriggered the layer, so its clock jumped back) and by
+    /// `handOver()` (the channel goes to another file). The producer reseeks at its next active fill, also when the
+    /// jump is smaller than `resyncThresholdFrames` (B394): the new segment's first pull lands on the clock, where
+    /// nudging would repeat frames towards it. A retrigger stores it after the clock (release), and the producer
+    /// reads it (acquire) after it has seen the channel active and before it takes its clock, so a reseek never
+    /// starts at the clock from before the jump, nor, after a hand-over, at the clock the previous file left.
     private let jumpGeneration = Atomic<Int>(0)
 
     public init() {
@@ -135,11 +141,22 @@ public final class LayerAudioChannel: @unchecked Sendable {
         let fits = (Self.sampleRate / 2...Int(UInt32.max)).contains(frames) && (0...Int(UInt32.max)).contains(start)
         loopBits.store(fits ? UInt64(start) << 32 | UInt64(frames) : 0, ordering: .relaxed)
         clockOffsetBits.store((wantedPTS - Double(nanos) / 1e9).bitPattern, ordering: .relaxed)
-        if jumped { jumpGeneration.wrappingAdd(1, ordering: .releasing) }  // after the clock: a fill that sees the jump sees the new clock
+        if jumped { jump() }  // after the clock: a fill that sees the jump sees the new clock
         volumeBits.store(volume.bitPattern, ordering: .relaxed)
         panBits.store(pan.bitPattern, ordering: .relaxed)
         let wasActive = activeFlag.exchange(active, ordering: .acquiringAndReleasing)
         if active && !wasActive { onActivate?() }
+    }
+
+    /// The channel goes to another file's decoder (the compositor's swap, after the file that had it was released, at
+    /// an earlier swap, the end of a dissolve or this swap's retire of the outgoing, and before it enables the new
+    /// one's audio): whatever the ring holds is the previous file's and is never heard; the new producer starts over
+    /// at the clock (B396).
+    public func handOver() { jump() }
+
+    private func jump() {
+        staleSegment.store(segmentGeneration.load(ordering: .relaxed), ordering: .relaxed)
+        jumpGeneration.wrappingAdd(1, ordering: .releasing)
     }
 
     /// Called on the compositor thread when the channel turns active (the mixer starts its engine if it had stopped).
@@ -192,6 +209,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// A forward loop (`setState(loop:)`) is read across the wrap: the reader seeks back to the loop start when the
     /// loop end is reached and the ring just keeps filling, so a wrap is not a reseek and the consumer never runs dry.
     public func fill(from reader: AudioTrackReader) {
+        guard activeFlag.load(ordering: .acquiring) else { return }  // the clock read below is then at least the one that activated the channel
         let jump = jumpGeneration.load(ordering: .acquiring)  // before the clock, see `jumpGeneration`
         fill(wanted: wantedPTS(atHostNanos: Self.hostNanos()), jump: jump, read: { reader.read(into: $0, frameCount: $1) }, seek: { reader.seek(toSeconds: $0) })
     }
@@ -330,7 +348,8 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// first render callback (the output device still starting) would otherwise stay as a lag inside the window for
     /// the whole clip (B393); when the audio is ahead of it (a resume, where the last pull before the pause ran up to
     /// one callback past it) they wait, silent until the clock reaches the first frame (B394). The frames dropped
-    /// there are never heard. Silent and consuming nothing while inactive.
+    /// there are never heard. Silent and consuming nothing while inactive, and while the ring still holds the segment
+    /// from before a jump or a hand-over to another file (B396), until the producer has started a new one.
     /// Real-time safe: no allocation, no locks, no logging.
     /// ponytail: hard drop/repeat as DESIGN.md §10 specifies; interpolating over the callback would be click-free.
     public func pull(into left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>, frames: Int, wantedPTS: Double) {
@@ -367,6 +386,12 @@ public final class LayerAudioChannel: @unchecked Sendable {
                 return
             }
             let generation = segmentGeneration.load(ordering: .relaxed)  // ordered by the tail load above
+            if generation == staleSegment.load(ordering: .relaxed) {  // the segment from before a jump or hand-over: not this clock's, not heard
+                previousGainL = targetL
+                previousGainR = targetR
+                underrunCount.add(1, ordering: .relaxed)
+                return
+            }
             if alignNext || generation != alignedGeneration {  // the first frames heard of a segment, or after a pause: land on the clock, no correction
                 if drift < 0 {
                     skip = min(-drift, available)
