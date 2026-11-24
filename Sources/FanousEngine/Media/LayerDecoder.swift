@@ -32,9 +32,9 @@ public final class LayerDecoder: @unchecked Sendable {
     public var audioChannels: [LayerAudioChannel] = []
     /// The channel this decoder fills: the compositor picks it from `audioChannels` at the swap, the one the layer's
     /// other playback does not hold (B399), and writes it before it sets `audioEnabled` (release); this thread reads
-    /// `audioEnabled` first (acquire). Nil until then, and after the audio is released.
+    /// `audioEnabled` first (acquire). Nil until then; written once.
     public var audioChannel: LayerAudioChannel?
-    /// The compositor enables audio for the playback that owns the channel (a dissolve hands it over).
+    /// Set by the compositor at the swap once the channel is chosen, cleared when the playback is retired.
     public let audioEnabled = Atomic<Bool>(false)
 
     public init(source: MovieSource, ring: FrameRing, logger: Logger) {

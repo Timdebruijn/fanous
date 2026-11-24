@@ -699,23 +699,25 @@ public final class Compositor: @unchecked Sendable {
 
     /// The previous frame stays until the first new one is ready, then the cut or dissolve starts.
     private func swap(in incoming: LayerPlayback?, layer: RenderLayer, p: LayerParameters, target: Double) {
-        var held: LayerAudioChannel?  // the channel the layer's other playback keeps (a dissolve), or the one just retired (its thread may still be in a fill)
+        var retiredNow: LayerAudioChannel?  // its thread may still be inside a fill: avoided when the other channel is free too
         if let current = layer.current {
-            held = current.audioChannel
             if p.dissolve > 0 {
-                if let old = layer.outgoing { retire(old, from: layer) }
+                if let old = layer.outgoing { retire(old, from: layer); retiredNow = old.audioChannel }
                 layer.outgoing = current
                 layer.dissolveStart = target
                 layer.dissolveDuration = Double(p.dissolve)
             } else {
                 retire(current, from: layer)
+                retiredNow = current.audioChannel
             }
         }
         layer.current = incoming
         if let decoder = incoming?.decoder, decoder.audioReader != nil {
             // B399: the channel is chosen here, not at load, so a load that was replaced before it was shown cannot leave
-            // the next file on the channel the current one still plays on
-            decoder.audioChannel = decoder.audioChannels.first { $0 !== held } ?? decoder.audioChannels.first
+            // the next file on the channel another playback still plays on. The outgoing (a dissolve, also one that
+            // started with a fade to no media) keeps its channel, whatever this swap is.
+            let onAir = layer.outgoing?.audioChannel
+            decoder.audioChannel = decoder.audioChannels.first { $0 !== onAir && $0 !== retiredNow } ?? decoder.audioChannels.first { $0 !== onAir }
             decoder.audioChannel?.handOver()  // B396: the ring still holds the file that had the channel; nothing of it plays for this one
             decoder.audioEnabled.store(true, ordering: .releasing)  // publishes the channel to the decode thread
             decoder.nudge()  // the decode thread sleeps without audio to feed

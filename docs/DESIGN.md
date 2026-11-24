@@ -3570,10 +3570,11 @@ groundwork and small engine pieces first):
   inferred to be a jump. From the signal until the decoder has started the new
   segment the callback plays nothing of the old ring; the same holds when the
   compositor's swap hands a channel to the layer's next file (B396). The swap
-  also chooses that channel: of the layer's two, the one that the playback
-  staying on air (the outgoing of a dissolve) or the one just retired does
-  not hold, so two playbacks on air never share one (B399; chosen at load, a
-  load replaced before it was shown skipped a channel). The previous file's
+  also chooses that channel: of the layer's two, never the one the outgoing
+  of a dissolve (also a fade to no media) still plays on, and not the one just
+  retired when the other is free (B399; chosen at load, a load replaced
+  before it was shown skipped a channel and the next file could share the
+  current one's). The previous file's
   sound is thus not heard under the new one, nor its PTS line inherited.
   Corrections and the largest drift are counted in `/metrics`. The first callback of a
   segment (a start, a retrigger, a seek), and the first after the channel was
