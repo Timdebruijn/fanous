@@ -589,7 +589,7 @@ extension LayerAudioChannel {
         channel.setState(wantedPTS: 0.010, active: false, volume: 0, pan: 0)  // the old file is stopped (releaseAudio)
         Self.pull(channel, frames: 480, wanted: 0.010)
 
-        channel.handOver()
+        let token = channel.handOver()
         // The new file's frames are its frame number plus a million, so the two files cannot be confused.
         var next = 0
         let read: (UnsafeMutablePointer<Float>, Int) -> (framesRead: Int, firstFramePTS: Double) = { buffer, n in
@@ -602,18 +602,71 @@ extension LayerAudioChannel {
         var out = Self.pull(channel, frames: 480, wanted: 0.010)  // before the new producer's first fill: the old ring would land and play
         #expect(out.left.allSatisfy { $0 == 0 })  // stale segment: silent, nothing consumed
         #expect(channel.bufferedFrames == LayerAudioChannel.capacity - 480 && channel.statistics.underruns == 1)
-        channel.fill(wanted: 0.010, read: read, seek: seek)  // sees the hand-over: asks for a drain, reads nothing yet
+        channel.fill(wanted: 0.010, producer: token, read: read, seek: seek)  // sees the hand-over: asks for a drain, reads nothing yet
         #expect(next == 0)
         out = Self.pull(channel, frames: 480, wanted: 0.010)  // drains; the old segment is never heard
         #expect(out.left.allSatisfy { $0 == 0 })
         #expect(channel.bufferedFrames == 0)
-        channel.fill(wanted: 0.010, read: read, seek: seek)  // the new segment, from the clock
+        channel.fill(wanted: 0.010, producer: token, read: read, seek: seek)  // the new segment, from the clock
         #expect(abs(channel.nextFramePTS - 0.010) < 1e-9)
         out = Self.pull(channel, frames: 480, wanted: 0.020)  // lands: the new file's frame at 20 ms
         #expect(out.left[0] == Float(1_000_000 + 960))
         #expect(out.left.allSatisfy { $0 == 0 || $0 >= 1_000_000 })
         #expect(channel.statistics.corrections == 0)
         #expect(channel.statistics.maxDriftMillis < 0.1)
+    }
+
+    /// B397: the channel is handed to file C while file A's decode thread is still inside a fill (a sample read can
+    /// stall for tens of milliseconds, B391). Without the guard C's first fill ran at the same time: both wrote the
+    /// same ring, A's samples landed under C's PTS line and were heard as C. Now C's fill does nothing until A's
+    /// has returned, what A wrote is never heard, and C starts the ring over at its clock. A fill from A after the
+    /// hand-over reads nothing at all.
+    @Test func aProducerStillInsideAFillFinishesAloneBeforeTheNextFileFillsTheChannel() {
+        let channel = LayerAudioChannel()
+        let a = channel.handOver()
+        var c = 0
+        var readsA = 0
+        var readsC = 0
+        let readC: (UnsafeMutablePointer<Float>, Int) -> (framesRead: Int, firstFramePTS: Double) = { buffer, n in
+            for i in 0..<n { buffer[2 * i] = 0.75; buffer[2 * i + 1] = 0.75 }
+            readsC += 1
+            return (n, 0.010 + Double(readsC - 1) * Double(n) / 48_000)
+        }
+        let readA: (UnsafeMutablePointer<Float>, Int) -> (framesRead: Int, firstFramePTS: Double) = { buffer, n in
+            readsA += 1
+            if readsA == 1 {
+                // A's read stalls, and meanwhile the compositor swaps: A is released, C gets the channel and its clock (10 ms, where A's
+                // frames are too: within the resync window), and C's decode thread asks to fill
+                channel.setState(wantedPTS: 0, active: false, volume: 0, pan: 0)
+                c = channel.handOver()
+                channel.setState(wantedPTS: 0.010, active: true, volume: 1, pan: 0)
+                channel.fill(wanted: 0.010, producer: c, read: readC, seek: { _ in })
+                #expect(readsC == 0)  // A is still inside: nothing
+            }
+            for i in 0..<n { buffer[2 * i] = 0.25; buffer[2 * i + 1] = 0.25 }
+            return (n, Double(readsA - 1) * Double(n) / 48_000)
+        }
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: 0)
+        channel.fill(wanted: 0, producer: a, read: readA, seek: { _ in })  // A's fill, with the swap inside its first read
+        #expect(readsA > 0 && channel.bufferedFrames == LayerAudioChannel.capacity)  // A filled the whole ring after the swap
+        channel.fill(wanted: 0.010, producer: a, read: readA, seek: { _ in })  // A's thread once more before it sees its flag cleared
+        let late = readsA
+        #expect(channel.bufferedFrames == LayerAudioChannel.capacity)
+
+        var out = Self.pull(channel, frames: 480, wanted: 0.010)  // A's frames under C's clock: never heard
+        #expect(out.left.allSatisfy { $0 == 0 } && channel.statistics.underruns == 1)
+        channel.fill(wanted: 0.010, producer: c, read: readC, seek: { _ in })  // C: a new producer, asks for a drain first
+        #expect(readsC == 0)
+        out = Self.pull(channel, frames: 480, wanted: 0.010)
+        #expect(out.left.allSatisfy { $0 == 0 } && channel.bufferedFrames == 0)
+        channel.fill(wanted: 0.010, producer: c, read: readC, seek: { _ in })  // C's segment, from its clock
+        #expect(readsC > 0 && abs(channel.nextFramePTS - 0.010) < 1e-9)
+        out = Self.pull(channel, frames: 480, wanted: 0.010)
+        #expect(out.left.allSatisfy { $0 == 0.75 } && out.right.allSatisfy { $0 == 0.75 })
+        channel.fill(wanted: 0.020, producer: a, read: readA, seek: { _ in })  // A once more, with room in the ring: ignored
+        #expect(readsA == late)
+        out = Self.pull(channel, frames: 480, wanted: 0.020)
+        #expect(out.left.allSatisfy { $0 == 0.75 } && channel.statistics.corrections == 0)
     }
 
     @Test func staysSilentWhenTheAudioIsFarFromTheClock() {

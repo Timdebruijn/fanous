@@ -718,7 +718,9 @@ public final class Compositor: @unchecked Sendable {
             // started with a fade to no media) keeps its channel, whatever this swap is.
             let onAir = layer.outgoing?.audioChannel
             decoder.audioChannel = decoder.audioChannels.first { $0 !== onAir && $0 !== retiredNow } ?? decoder.audioChannels.first { $0 !== onAir }
-            decoder.audioChannel?.handOver()  // B396: the ring still holds the file that had the channel; nothing of it plays for this one
+            // B396/B397: the ring still holds the file that had the channel, and its thread may still be inside a fill;
+            // nothing of either plays for this one, and that thread finishes before this one's first fill
+            if let channel = decoder.audioChannel { decoder.audioToken = channel.handOver() }
             decoder.audioEnabled.store(true, ordering: .releasing)  // publishes the channel to the decode thread
             decoder.nudge()  // the decode thread sleeps without audio to feed
         }

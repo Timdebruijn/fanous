@@ -35,6 +35,8 @@ public final class LayerDecoder: @unchecked Sendable {
     /// other playback does not hold (B399), and writes it before it sets `audioEnabled` (release); this thread reads
     /// `audioEnabled` first (acquire). Nil until then; written once.
     public var audioChannel: LayerAudioChannel?
+    /// The channel's token for this decoder (`handOver()`), written with the channel; a fill passes it (B397).
+    public var audioToken = 0
     /// Set by the compositor at the swap once the channel is chosen, cleared when the playback is retired.
     public let audioEnabled = Atomic<Bool>(false)
 
@@ -79,7 +81,7 @@ public final class LayerDecoder: @unchecked Sendable {
         let count = source.info.frameCount
         let signpost = Signposts.id(self)
         while running.load(ordering: .relaxed) {
-            if audioEnabled.load(ordering: .acquiring), let audioReader, let audioChannel { audioChannel.fill(from: audioReader) }
+            if audioEnabled.load(ordering: .acquiring), let audioReader, let audioChannel { audioChannel.fill(from: audioReader, producer: audioToken) }
             guard let slot = ring.slotForWriting() else {
                 // with audio to feed, keep topping it up while the video ring is full; otherwise sleep until a request changes
                 _ = wake.wait(timeout: audioReader != nil && audioEnabled.load(ordering: .relaxed) ? .now() + .milliseconds(10) : .distantFuture)
@@ -186,7 +188,7 @@ public final class LayerDecoder: @unchecked Sendable {
         let until = DispatchTime.now() + seconds
         while running.load(ordering: .relaxed), DispatchTime.now() < until {
             let feeding = audioReader != nil && audioEnabled.load(ordering: .acquiring)
-            if feeding, let audioReader, let audioChannel { audioChannel.fill(from: audioReader) }
+            if feeding, let audioReader, let audioChannel { audioChannel.fill(from: audioReader, producer: audioToken) }
             _ = wake.wait(timeout: feeding ? min(until, .now() + .milliseconds(10)) : until)
         }
     }
