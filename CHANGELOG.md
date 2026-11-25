@@ -15,6 +15,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   on folder, file and modes), and under every setting but Console only a UI slider or MIDI control, lost a parameter a
   cue had set at the next frame or GO. It now keeps it until a cue that holds that parameter fires again; releasing a
   UI or MIDI value gives the parameter back to the cue (PR #462).
+- Docs: a design note for the pixel mapper in three dimensions and for pixels on winches (`docs/pixelmap-3d.md`,
+  row B407): a point list with x/y/z per LED, three sampling modes, a height map for kinetic groups, and what
+  changes on the wire when Fanous sends Art-Net/sACN (PR #481)
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
