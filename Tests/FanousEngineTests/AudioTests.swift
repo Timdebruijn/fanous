@@ -23,6 +23,28 @@ final class RampSource {
     func seek(_ seconds: Double) { next = Int((seconds * 48_000).rounded()) }
 }
 
+/// Frame source of a sine, the same on both channels: `sin(2π · frequency · n / 48 000 + phase)` for source frame n.
+final class SineSource {
+    let frequency: Double
+    let phase: Double
+    var next = 0
+    init(frequency: Double, phase: Double) {
+        self.frequency = frequency
+        self.phase = phase
+    }
+    func read(_ destination: UnsafeMutablePointer<Float>, _ count: Int) -> (framesRead: Int, firstFramePTS: Double) {
+        let first = next
+        for i in 0..<count {
+            let value = Float(sin(2 * .pi * frequency * Double(first + i) / 48_000 + phase))
+            destination[2 * i] = value
+            destination[2 * i + 1] = value
+        }
+        next += count
+        return (count, Double(first) / 48_000)
+    }
+    func seek(_ seconds: Double) { next = Int((seconds * 48_000).rounded()) }
+}
+
 extension LayerAudioChannel {
     /// `fill` with the layer clock given explicitly (the public one extrapolates it with the host clock).
     func fill(_ source: RampSource, wanted: Double) {
@@ -356,7 +378,7 @@ extension LayerAudioChannel {
     @Test func dropsFramesWhenAudioIsBehindAndConvergesToTheClock() {
         let source = RampSource()
         let channel = LayerAudioChannel()
-        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: -1)
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: 0)
         channel.fill(source, wanted: 0)  // ring: source frames 0 ..< 12000
         let frames = 480
         Self.pull(channel, frames: frames, wanted: 0)  // the segment's first pull, on the clock: head 480
@@ -368,14 +390,16 @@ extension LayerAudioChannel {
         var firstPeak = 0.0
         for k in 1..<17 {
             let wanted = Double(lead + k * frames) / 48_000
-            channel.setState(wantedPTS: wanted, active: true, volume: 1, pan: -1)
+            channel.setState(wantedPTS: wanted, active: true, volume: 1, pan: 0)
             let out = Self.pull(channel, frames: frames, wanted: wanted)
             let consumed = previous - channel.bufferedFrames
             previous = channel.bufferedFrames
             #expect(consumed >= frames && consumed - frames <= LayerAudioChannel.maxCorrectionFrames, "pull \(k) consumed \(consumed)")
-            // gain is steady after the first pull: the output is the source ramp, starting after the dropped frames
-            #expect(out.left[0] == Float(consumedTotal + consumed - frames))
+            // gain is steady after the first pull: the output is the source ramp, from the frame after the last one
+            // heard to the last one consumed (B321: the dropped frames are spread over the callback, not cut at its start)
+            #expect(out.left[0] == Float(consumedTotal))
             #expect(out.left[frames - 1] == Float(consumedTotal + consumed - 1))
+            #expect(out.right[0] == -Float(consumedTotal) && out.right[frames - 1] == -Float(consumedTotal + consumed - 1))
             if k == 1 { firstPeak = channel.statistics.maxDriftMillis }
             if k == 10 { #expect(channel.statistics.corrections == 10, "still correcting inside the window") }
             consumedTotal += consumed
@@ -775,6 +799,65 @@ extension LayerAudioChannel {
         channel.resetPeakDrift()
         Self.pull(channel, frames: frames, wanted: 0.030 + 17 * Double(frames) / 48_000)
         #expect(channel.statistics.maxDriftMillis < 0.1)
+    }
+
+    /// B321: a correction is spread over the callback, so the waveform runs on without a jump. A 750 Hz sine (96
+    /// frames are one and a half periods: the worst case for a hard drop, which turns the wave over) is played
+    /// through a whole 30 ms correction at 512-frame callbacks, from one pull on the clock before it to two after,
+    /// at eight phases. The old hard drop jumped by up to twice the amplitude between two samples, the old repeat held
+    /// one sample for 2 ms (a kink as steep as the sine's own steepest step). Checked: the largest step between
+    /// adjacent samples stays under the sine's own at the fastest playback rate of a correction (607 frames into 512),
+    /// and the largest change of that step (second difference) under half the sine's steepest step.
+    @Test(arguments: [30, -30]) func aCorrectionHasNoJumpInTheWaveform(clockAheadMillis: Int) {
+        let frames = 512
+        let omega = 2 * Double.pi * 750 / 48_000  // the sine's steepest step between two samples, at amplitude 1
+        var worst = (step: 0.0, bend: 0.0)
+        for p in 0..<8 {
+            let source = SineSource(frequency: 750, phase: Double(p) * .pi / 4)
+            let channel = LayerAudioChannel()
+            channel.setState(wantedPTS: 0.050, active: true, volume: 1, pan: 0)
+            channel.fill(wanted: 0.050, read: { source.read($0, $1) }, seek: { source.seek($0) })
+            Self.pull(channel, frames: frames, wanted: 0.050)  // landed; the gain ramps from 0 here
+            var out: [Float] = []
+            for k in 1..<19 {  // k == 1 on the clock, then the clock is 30 ms ahead (drop) or behind (repeat): 15 corrections, two pulls after
+                let wanted = 0.050 + Double(k * frames) / 48_000 + (k > 1 ? Double(clockAheadMillis) / 1000 : 0)
+                out += Self.pull(channel, frames: frames, wanted: wanted).left
+            }
+            #expect(channel.statistics.corrections == 15)
+            for i in 2..<out.count {
+                worst.step = max(worst.step, Double(abs(out[i] - out[i - 1])))
+                worst.bend = max(worst.bend, Double(abs(out[i] - 2 * out[i - 1] + out[i - 2])))
+            }
+        }
+        #expect(worst.step < omega * Double(frames + LayerAudioChannel.maxCorrectionFrames - 1) / Double(frames - 1), "step \(worst.step)")
+        #expect(worst.bend < omega / 2, "second difference \(worst.bend)")
+    }
+
+    /// B321: the resample reads across the end of the storage like the plain copy, and a drop that finds fewer frames
+    /// than the callback plus the drop plays what there is, resampled, consumes it all and leaves the rest silent.
+    @Test func aCorrectionReadsAcrossTheStorageEndAndIntoAnUnderrun() {
+        let source = RampSource()
+        let channel = LayerAudioChannel()
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: 0)
+        channel.fill(source, wanted: 0)  // tail 12 000
+        Self.pull(channel, frames: 11_800, wanted: 0)  // landed, the gain ramped: head 11 800
+        channel.fill(source, wanted: 11_800.0 / 48_000)  // tail 23 800: the head is 200 frames before the storage end
+        var out = Self.pull(channel, frames: 480, wanted: Double(11_800 + 1440) / 48_000)  // 30 ms behind: drop 96
+        #expect(channel.bufferedFrames == 12_000 - 576 && channel.statistics.corrections == 1)
+        for k in 0..<480 {  // the ramp is linear, so its interpolation is exact: 576 frames at a step of 575/479
+            let expected = 11_800 + Float(k) * 575 / 479
+            #expect(abs(out.left[k] - expected) < 0.01 && abs(out.right[k] + expected) < 0.01, "frame \(k): \(out.left[k])")
+        }
+
+        let other = LayerAudioChannel()
+        other.setState(wantedPTS: 0, active: true, volume: 1, pan: 0)
+        other.fill(source, wanted: 0)
+        Self.pull(other, frames: 480, wanted: 0)  // landed
+        Self.pull(other, frames: 11_000, wanted: 480.0 / 48_000)  // on the clock: 520 frames left
+        out = Self.pull(other, frames: 480, wanted: Double(11_480 + 1440) / 48_000)  // 30 ms behind: drop 96 of 520
+        #expect(other.bufferedFrames == 0 && other.statistics.corrections == 1 && other.statistics.underruns == 1)
+        #expect(out.left[0] == 11_480 && out.left[423] == 11_999 && out.right[423] == -11_999)  // 520 frames into 424
+        #expect(out.left[424...].allSatisfy { $0 == 0 } && out.right[424...].allSatisfy { $0 == 0 })
     }
 
     @Test func ringKeepsTheRampContinuousAcrossTheWrap() {

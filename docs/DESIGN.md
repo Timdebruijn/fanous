@@ -3564,13 +3564,16 @@ groundwork and small engine pieces first):
   point or a loop's restart starts there and the first callback waits
   silent for it. The render callback reads that clock at its own start,
   not at the time its buffer is heard: the output path's latency is not
-  compensated (B406). It compares the ring's head pts with the clock;
-  drift beyond ±20 ms is corrected by dropping or
-  repeating up to 2 ms per callback (inaudible for programme material) until
-  the audio is on the clock or the drift changes sign, not only back inside
-  the window (B394: a correction that stopped at the window's edge left 18 to
-  20 ms for the rest of the clip); an underrun starts the same correction for
-  the frames it missed. A layer's own retrigger reaches the decoder as a
+  compensated (B406). It compares the ring's head pts with the clock; drift
+  beyond ±20 ms is corrected by playing up to 2 ms more or fewer of the ring
+  per callback, resampled by linear interpolation over the whole callback
+  (up to 19 % faster or slower for one 512-frame callback, with no jump in
+  the waveform; B321 replaced a hard drop or repeat of up to 96 frames at
+  one point, which cut the wave or held it for 2 ms) until the audio is on
+  the clock or the drift changes sign, not only back inside the window
+  (B394: a correction that stopped at the window's edge left 18 to 20 ms for
+  the rest of the clip); an underrun starts the same correction for the
+  frames it missed. A layer's own retrigger reaches the decoder as a
   signal from the compositor, so it reseeks whatever the size of the jump
   (also within 100 ms of a start), a new segment, rather than repeating frames
   towards the clock; a slave gets the same signal when a locked tick sets
