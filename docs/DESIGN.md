@@ -3575,20 +3575,49 @@ groundwork and small engine pieces first):
   clock's position with the tick's target, the tick's nominal presentation
   time (B320: stamped with the time of the tick, the audio ran one tick's
   lead ahead of the picture), and the audio extrapolates it in host time;
-  the decoder never takes its clock before that target, so a seek to an in
-  point or a loop's restart starts there and the first callback waits
-  silent for it. The render callback reads that clock at its own start,
-  not at the time its buffer is heard: the output path's latency is not
-  compensated (B406). It compares the ring's head pts with the clock; drift
-  beyond ±20 ms is corrected by playing up to 2 ms more or fewer of the ring
-  per callback, resampled by linear interpolation over the whole callback
-  (up to 19 % faster or slower for one 512-frame callback, with no jump in
-  the waveform; B321 replaced a hard drop or repeat of up to 96 frames at
-  one point, which cut the wave or held it for 2 ms) until the audio is on
-  the clock or the drift changes sign, not only back inside the window
-  (B394: a correction that stopped at the window's edge left 18 to 20 ms for
-  the rest of the clip); an underrun starts the same correction for the
-  frames it missed. A layer's own retrigger reaches the decoder as a
+  the decoder never seeks to a clock before the target of the last start
+  (a retrigger, the channel turning active, a hand-over to the next file),
+  so a seek to an in point starts there; later seeks go to the callback's
+  clock. The render callback reads the
+  clock at the host time its buffer is heard (B406): the buffer's host time
+  from its `AudioTimeStamp` (already past the IO buffer and the safety
+  offset, measured: 12.1 ms after the callback at 512 + 74 frames) plus the
+  output device's latency and its first stream's, read each time the device
+  opens and logged then (`audio output opened`, 15.8 ms on MacBook Pro
+  speakers; 0 for a property a device does not have); a stamp without a
+  host time reads the clock at the callback plus that latency (the open log
+  names which of the two the callbacks used). The machine's A/V offset
+  (settings.json `audio.offsetMs`, read at start, §12.1) moves that read
+  earlier by the offset. Each callback publishes how far ahead of now it
+  read (its lead, about 28 ms on MacBook Pro speakers, negative for an
+  offset above the latency), and the decoder reads its clock as far ahead,
+  so it seeks and judges a reseek where the callback reads, whatever the
+  output's latency (AirPlay, Bluetooth, HDMI) or the offset; a segment that
+  starts at the target, ahead of that clock, is allowed to be that much
+  ahead before it counts as a jump, and the callback waits silent until its
+  clock reaches it. With a positive offset the callback reads behind the
+  picture, so after a retrigger it plays the old segment on, straight,
+  until its clock reaches the retrigger's target, where the picture
+  changes, and only then drains, so the new clip starts at the callback's
+  clock about one decoder fill later and loses its first few milliseconds
+  (an accepted trade against a silent gap of the offset); a cut to another
+  file still goes silent for about the offset less 11 ms (B472). Stamps more
+  than a second ahead of now count as one second ahead. Until the first callback after
+  launch or a device change the decoder has no (or the old) lead, so on an
+  output whose lead is above 100 ms plus the tick's lead (positive leads
+  only) the first start reseeks once: a short gap. A start whose target is
+  nearer than the lead loses the difference (about 11 ms on MacBook Pro
+  speakers at 60 Hz) rather than coming late; the first callback waits
+  silent only for a target further out. It compares the ring's head pts with the clock; drift beyond ±20 ms
+  is corrected by playing up to 2 ms more or fewer of the ring per callback,
+  resampled by linear interpolation over the whole callback (up to 19 %
+  faster or slower for one 512-frame callback, with no jump in the waveform;
+  B321 replaced a hard drop or repeat of up to 96 frames at one point, which
+  cut the wave or held it for 2 ms) until the audio is on the clock or the
+  drift changes sign, not only back inside the window (B394: a correction
+  that stopped at the window's edge left 18 to 20 ms for the rest of the
+  clip); an underrun starts the same correction for the frames it missed. A
+  layer's own retrigger reaches the decoder as a
   signal from the compositor, so it reseeks whatever the size of the jump
   (also within 100 ms of a start), a new segment, rather than repeating frames
   towards the clock; a slave gets the same signal when a locked tick sets
@@ -4460,11 +4489,17 @@ under another uid.
   the capture items, it blocks show mode until acknowledged.
 - *Latency (B4):* the mixer schedules by the device's reported latency
   (device and stream latency, safety offset, buffer), so sound leaves with the
-  picture. Offset (ms, −200…+200) covers the room: positive sends the sound
+  picture (built, B406: the buffer's host time already holds the safety offset
+  and the buffer, the device and stream latency are added; the offset is read
+  from settings.json at start, `audio.set` is not built). Offset (ms, −200…+200) covers the room: positive sends the sound
   later than the picture (a projector that processes the picture), negative
-  earlier (a PA with its own delay line). A negative offset reads ahead in the
-  layer's PCM ring (250 ms), so it cannot exceed what the ring holds ahead of
-  the clock. Measured with a loopback, as B4 says.
+  earlier (a PA with its own delay line). The decoder reads its clock with
+  the same lead as the callback, and its reseek test lets a segment started
+  at the target run ahead of that clock by the distance to the target (§10,
+  B406; a positive offset above the latency makes the lead negative), so
+  neither the ring (250 ms) nor the 100 ms resync threshold limits the
+  offset; the ±200 ms range does.
+  Measured with a loopback, as B4 says.
 - *Routing (B76):* `layerAudio: {"3": 5}` in the project, keyed by layer like
   `layerCanvas`. The value is the first channel of the layer's output pair,
   odd and from 1; absent means 1, so channels 1–2. Like `layerCanvas`, entries

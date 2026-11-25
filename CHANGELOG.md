@@ -111,6 +111,13 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Network: a WebSocket frame or message may be 4 KiB before `hello`, 64 KiB for the monitor role and 4 MiB for the
   roles behind a password (was 16 MiB), all connections
   together hold at most 64 MiB of unfinished messages, and a CITP message may be 1 MiB (was 16 MiB) (B368) (PR #484).
+- Audio: the mix reads each layer's clock at the time its buffer is heard, the buffer's host time plus the output
+  device's latency, not at the start of the render callback (B406); the audio came late by the output path, about
+  28 ms on MacBook Pro speakers. The latency is logged when the device opens (`audio output opened`). settings.json
+  `audio.offsetMs` (±200 ms, positive plays the sound later) covers a display's own lag. The decoder reads its clock
+  with the same lead, so an output with a long latency (AirPlay, Bluetooth) plays (no longer silent), compensated by
+  the latency the device reports. With a positive offset a retrigger plays the old clip on until the picture changes
+  (PR #458).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)
@@ -138,6 +145,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Audio: a drift correction is spread over the callback instead of a hard drop or repeat (B321). Up to 2 ms more or
   fewer of the ring is resampled by linear interpolation over the whole callback, so the waveform has no jump; the
   old cut of up to 96 frames clicked on every correction (PR #461).
+  clock before the target, so a cue to an in point plays nothing from before it (PR #457).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in

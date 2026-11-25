@@ -30,7 +30,7 @@ Everything below is in `~/Library/Application Support/Fanous/` (mode 0700).
 |---|---|---|
 | `project.json` | The project: patch, layer count, Who controls, canvases, outputs, walls, presets, cues, timecode and MIDI settings, universe settings | Saved 2 s after the last change, and at once when the engine stops normally (Stop Engine, Stop Engine and Quit, Restart Engine, logout); after a crash, a force quit or a power cut the last 2 s of changes can be lost. A show-lock change is written at once. A file that does not read as a project is copied to `project.json.unreadable-<time>` and the engine runs the newest version in `versions/` that can be restored, saved over `project.json`; without space for the copy the kept name is a hard link, the same file as `project.json` until a save succeeds (do not edit `project.json` in place until then). When that save fails the damaged file stays `project.json` until a later save succeeds, and a start before that falls back again. With no such version the file is moved to that name and the engine starts with the standard patch. When the file cannot be kept aside at all, the engine saves no change to `project.json` (versions are still made). `project.json.notice` holds the readiness text until the item Project file read at start is acknowledged, also after a repair by hand ([troubleshooting](../troubleshooting.md#the-project-is-gone-after-a-restart)). A MIDI map entry written by hand without an id, and a cue without a UUID id or with one an earlier cue already has, gets an id when the project loads; the file has it from the next save on. A number in a readable file that no command would accept stays in the file; the engine ignores it where it would be used (a patch address where the fixture does not fit in the universe maps nothing, a trigger hour past 2147483647 never fires) or the command that meets it refuses |
 | `versions/<time>-<name>.json` | Project versions | Automatic at every engine start (not at a start that fell back to a version), on entering show mode, every 10 minutes after a change (only when the project differs from the newest version) and before a revert; the newest 50 automatic ones are kept. Named versions never expire. See System › Project versions |
-| `settings.json` | Machine settings (mode 0600) | `passwords` (hashed, per role), `sync` (interface, port, target), `oscFeedback` (fixed OSC target). Unknown fields are kept. The engine rewrites it; see the hand-edit rule below |
+| `settings.json` | Machine settings (mode 0600) | `passwords` (hashed, per role), `sync` (interface, port, target), `oscFeedback` (fixed OSC target), `audio.offsetMs` (sound against picture, −200 to +200 ms, positive plays the sound later: for a projector or LED processor that delays the picture; read at start). Unknown fields are kept. The engine rewrites it; see the hand-edit rule below |
 | `shell-token` | The app window's programmer token (mode 0600) | 64 hex characters, made at first start. The app opens the UI with it, so the window is always programmer |
 | `install-uuid` | This install's identity | The CITP server id and the sync machine id |
 | `engine.lock` | One engine per user | Holds the engine's pid; a second `fanousd` refuses to start |
@@ -52,7 +52,8 @@ you add while the engine runs takes effect at the next such change or at the
 next start, and the file wins then: an editor that saves an older copy brings
 old records back. If `passwords` is not an object, password and sync changes
 are refused until you fix it; a single unreadable record keeps the passwords in
-use until the next start, which would leave every role open.
+use until the next start, which would leave every role open. `audio.offsetMs`
+takes effect at the next engine start only.
 
 ```json
 {
@@ -63,7 +64,7 @@ use until the next start, which would leave every role open.
 ```
 
 **Backing up a show.** Copy `project.json`, `versions/` and `settings.json`
-(passwords, sync and OSC feedback), and the library: the project and the
+(passwords, sync, OSC feedback and the audio offset), and the library: the project and the
 console only know folder and file numbers, so the spare Mac needs a library
 with the same numbers. The files are written whole, so a copy while the
 engine runs is safe. Do not copy `install-uuid` to another Mac (two Macs

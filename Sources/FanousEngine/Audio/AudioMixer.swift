@@ -18,6 +18,17 @@ public final class AudioMixer: @unchecked Sendable {
 
     private let callbackCount = Atomic<Int>(0)
     private var engine: AVAudioEngine?
+    /// The output device's latency after the buffer's host time (B406), in nanoseconds; set by `start`, 0 until then.
+    let outputLatencyNanos = Atomic<UInt64>(0)
+    /// `offsetMs` in nanoseconds: positive plays the sound later.
+    private let offsetNanos = Atomic<Int64>(0)
+
+    /// The machine's A/V offset (settings.json `audio.offsetMs`, ±200 ms): positive plays the sound later than the
+    /// picture (a projector or LED processor that delays the picture), negative earlier (a PA with its own delay).
+    public var offsetMs: Double {
+        get { Double(offsetNanos.load(ordering: .relaxed)) / 1e6 }
+        set { offsetNanos.store(Int64((min(200, max(-200, newValue.isFinite ? newValue : 0)) * 1e6).rounded()), ordering: .relaxed) }
+    }
 
     /// Plays to the system default output (device selection: B4).
     public init(channels: Int) {
@@ -41,6 +52,11 @@ public final class AudioMixer: @unchecked Sendable {
     private var lastBusy = 0.0  // control queue only (host seconds)
     /// Show mode keeps the device open: no first-sound latency during a show.
     nonisolated(unsafe) public var keepRunning: (@Sendable () -> Bool)?
+    /// The engine opened the output device, one second later: its name, the device and stream latency `start` read
+    /// (B406), and which time the callbacks read the clocks at (`clockSource`), for the log. Control queue.
+    nonisolated(unsafe) public var onOutputLatency: (@Sendable (_ device: String, _ millis: Double, _ clock: String) -> Void)?
+    /// Set by the render callback: 1 = it used the buffer's host time, 2 = the stamp had none (callback time).
+    private let stampKinds = Atomic<UInt8>(0)
     /// A failed start (no device, wrong configuration): the layers play silent until the next attempt.
     nonisolated(unsafe) public var onError: (@Sendable (Error) -> Void)?
     public var isRunning: Bool { runningFlag.load(ordering: .relaxed) }
@@ -105,12 +121,12 @@ public final class AudioMixer: @unchecked Sendable {
             }
             // unowned(unsafe): the engine owns the node owns this block; a strong capture would be a cycle. `deinit`
             // stops the engine, which ends render callbacks, before `self` goes away.
-            let node = AVAudioSourceNode(format: format) { [unowned(unsafe) self] _, _, frameCount, audioBufferList in
+            let node = AVAudioSourceNode(format: format) { [unowned(unsafe) self] _, timestamp, frameCount, audioBufferList in
                 let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
                 guard buffers.count >= 2, let left = buffers[0].mData?.assumingMemoryBound(to: Float.self),
                     let right = buffers[1].mData?.assumingMemoryBound(to: Float.self)
                 else { return noErr }
-                self.render(frames: Int(frameCount), left: left, right: right)
+                self.render(frames: Int(frameCount), left: left, right: right, atHostNanos: self.heard(timestamp.pointee))
                 return noErr
             }
             let engine = AVAudioEngine()
@@ -121,7 +137,80 @@ public final class AudioMixer: @unchecked Sendable {
             engine.connect(node, to: engine.mainMixerNode, format: format)
             self.engine = engine
         }
+        // read at every open, before the first callback (whose landing would otherwise keep a lag of the latency):
+        // the engine reopens after an idle stop, so a device changed meanwhile is read then
+        // ponytail: a route change while the engine runs keeps the old latency until the next idle stop; one to another
+        // sample rate or channel count stops AVAudioEngine itself, and nothing restarts it (B279)
+        let latency = engine.map { Self.outputLatency(device: $0.outputNode.auAudioUnit.deviceID) } ?? (0, "")
+        outputLatencyNanos.store(latency.nanos, ordering: .relaxed)
+        stampKinds.store(0, ordering: .relaxed)
         try engine?.start()
+        control.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self else { return }
+            self.onOutputLatency?(latency.name, Double(latency.nanos) / 1e6, Self.clockSource(self.stampKinds.load(ordering: .relaxed)))
+        }
+    }
+
+    /// The output latency of `device` after a render buffer's host time: device latency plus the first output stream's
+    /// latency. Not the IO buffer or the safety offset: the buffer's host time already lies that far ahead of the
+    /// callback (measured 2026-11-25 on a 512-frame buffer with a 74-frame safety offset: 12.1 ms, which is 512 + 74
+    /// frames at 48 kHz). A property the device does not have counts 0.
+    static func outputLatency(device: AudioObjectID) -> (nanos: UInt64, name: String) {
+        let output = kAudioObjectPropertyScopeOutput, global = kAudioObjectPropertyScopeGlobal
+        var deviceFrames: UInt32 = 0, streamFrames: UInt32 = 0, rate: Float64 = 0
+        var name: Unmanaged<CFString>?
+        _ = read(device, kAudioDevicePropertyLatency, output, into: &deviceFrames)
+        _ = read(device, kAudioDevicePropertyNominalSampleRate, global, into: &rate)
+        var streams = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams, mScope: output, mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        if AudioObjectGetPropertyDataSize(device, &streams, 0, nil, &size) == noErr, size >= 4 {
+            var ids = [AudioStreamID](repeating: 0, count: Int(size) / 4)
+            if AudioObjectGetPropertyData(device, &streams, 0, nil, &size, &ids) == noErr {
+                _ = read(ids[0], kAudioStreamPropertyLatency, global, into: &streamFrames)
+            }
+        }
+        let named = read(device, kAudioObjectPropertyName, global, into: &name)
+        let nanos = latencyNanos(frames: UInt64(deviceFrames) + UInt64(streamFrames), sampleRate: rate)
+        return (nanos, named ? (name?.takeRetainedValue() as String?) ?? "" : "")
+    }
+
+    /// One fixed-size HAL property into `value`; false, `value` untouched, when `object` does not have it.
+    private static func read<T>(
+        _ object: AudioObjectID, _ selector: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope, into value: inout T
+    ) -> Bool {
+        var address = AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
+        var size = UInt32(MemoryLayout<T>.size)
+        return AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value) == noErr
+    }
+
+    /// `frames` at `sampleRate` in nanoseconds; 0 without a rate.
+    static func latencyNanos(frames: UInt64, sampleRate: Double) -> UInt64 {
+        sampleRate > 0 ? UInt64((Double(frames) / sampleRate * 1e9).rounded()) : 0
+    }
+
+    /// The host time (nanoseconds) at which the layer clocks are read for the buffer stamped `stamp`: when its first
+    /// frame is heard (its host time plus the output latency; when the stamp carries no host time, now plus the output
+    /// latency, short by the IO buffer and safety offset), less the A/V offset (a sound played later is the media of an
+    /// earlier time). Real-time safe.
+    /// A host time more than 5 s from now (a bogus stamp: 0 would make the lead minus the uptime) counts as none.
+    func heard(_ stamp: AudioTimeStamp) -> UInt64 {
+        let now = LayerAudioChannel.hostNanos()
+        let host = AudioConvertHostTimeToNanos(stamp.mHostTime)
+        let distance = Int64(bitPattern: host &- now)
+        let hostTime = stamp.mFlags.contains(.hostTimeValid) && distance > -5_000_000_000 && distance < 5_000_000_000
+        stampKinds.bitwiseOr(hostTime ? 1 : 2, ordering: .relaxed)
+        let heard = (hostTime ? host : now) &+ outputLatencyNanos.load(ordering: .relaxed)
+        return UInt64(bitPattern: Int64(bitPattern: heard) &- offsetNanos.load(ordering: .relaxed))
+    }
+
+    /// What `stampKinds` says, for the log.
+    static func clockSource(_ kinds: UInt8) -> String {
+        switch kinds {
+        case 1: "buffer host time"
+        case 2: "callback time (the stamps carry no host time)"
+        case 3: "buffer host time, callback time for some buffers"
+        default: "no callback yet"
+        }
     }
 
     public func stop() { control.sync { stopLocked() } }
@@ -129,16 +218,44 @@ public final class AudioMixer: @unchecked Sendable {
     // MARK: Render
 
     /// The render callback's body (also called directly by tests, which have no audio device). Overwrites
-    /// `left` / `right` with the sum of all channels. Real-time safe.
+    /// `left` / `right` with the sum of all channels. `now`: the host time the buffer is heard at (`heard`), at which
+    /// each channel's clock is read (B406); how far that is ahead of the time of the call goes to each channel's
+    /// producer (`outputLeadNanos`), which reads its clock as far ahead. Real-time safe.
     /// ponytail: no limiter; a sum above full scale clips at the device. Add one on the master if programme material needs it.
-    func render(frames: Int, left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>) {
+    func render(
+        frames: Int, left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>,
+        atHostNanos now: UInt64
+    ) {
         callbackCount.add(1, ordering: .relaxed)
         left.update(repeating: 0, count: frames)
         right.update(repeating: 0, count: frames)
-        let now = LayerAudioChannel.hostNanos()
+        let lead = Int64(bitPattern: now &- LayerAudioChannel.hostNanos())
         for i in 0..<channels.count {
             let channel = channels[i]
-            channel.pull(into: left, right: right, frames: frames, wantedPTS: channel.wantedPTS(atHostNanos: now))
+            channel.outputLeadNanos.store(lead, ordering: .relaxed)
+            channel.pull(into: left, right: right, frames: frames, wantedPTS: channel.wantedPTS(atHostNanos: now), atHostNanos: now)
         }
+    }
+}
+
+/// `settings.json` › `audio` (DESIGN.md §12.1, Audio tab): the A/V offset, read at start. The device choice (B4) is
+/// not built.
+public struct AudioOutputSettings: Codable, Sendable, Equatable {
+    /// −200…+200 ms; positive plays the sound later than the picture.
+    public var offsetMs = 0.0
+
+    /// Fields that could not be read and kept their default; never written back.
+    public private(set) var problems: [String] = []
+
+    enum CodingKeys: String, CodingKey { case offsetMs }
+
+    public init() {}
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        do {
+            let value = try c.decodeIfPresent(Double.self, forKey: .offsetMs) ?? offsetMs
+            if (-200...200).contains(value) { offsetMs = value } else { problems.append("offsetMs: \(value) is outside -200...200") }
+        } catch { problems.append("offsetMs: \(error)") }
     }
 }

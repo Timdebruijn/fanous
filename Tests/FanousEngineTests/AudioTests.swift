@@ -364,6 +364,154 @@ extension LayerAudioChannel {
         #expect(out.left.contains { $0 != 0 }, "heard while it is nudged")
     }
 
+    /// B406 with B320: an A/V offset above the output latency makes the lead negative (here −150 ms), so the stamp
+    /// (10 ms ahead) is 160 ms ahead of the consumer's clock. The segment starts at the stamp; a fill 10 ms later must
+    /// not take that 150 ms for a jump and reseek to the stamp again (which by then has moved on: silent for ever). The
+    /// consumer waits silent, nothing consumed, and plays once its clock reaches the first stamp.
+    @Test func aNegativeLeadWaitsForTheStampWithoutReseeking() {
+        let mixer = AudioMixer(channels: 1)
+        let channel = mixer.channels[0]
+        let source = RampSource()
+        var seeks: [Double] = []
+        let t = LayerAudioChannel.hostNanos()
+        channel.setState(wantedPTS: 1, active: true, volume: 1, pan: 0, atHostNanos: t + 10_000_000)
+        var left = [Float](repeating: 0, count: 480)
+        var right = [Float](repeating: 0, count: 480)
+        let before = LayerAudioChannel.hostNanos()
+        left.withUnsafeMutableBufferPointer { l in  // a callback reading 150 ms before now publishes the lead
+            right.withUnsafeMutableBufferPointer { r in
+                mixer.render(frames: 480, left: l.baseAddress!, right: r.baseAddress!, atHostNanos: before - 150_000_000)
+            }
+        }
+        let after = LayerAudioChannel.hostNanos()
+        let lead = channel.outputLeadNanos.load(ordering: .relaxed)
+        #expect(lead <= -150_000_000 && lead >= Int64(before) - 150_000_000 - Int64(after), "\(lead)")
+        let underruns = channel.statistics.underruns  // the render above, on an empty ring
+        var firstHeard: Int?
+        for k in 0..<26 {
+            let now = t + UInt64(k) * 10_000_000
+            // the compositor's tick: the same clock, stamped 10 ms ahead of now each time
+            channel.setState(wantedPTS: 1 + Double(k) * 0.01, active: true, volume: 1, pan: 0, atHostNanos: now + 10_000_000)
+            channel.fill(now: now, read: { source.read($0, $1) }, seek: { seeks.append($0); source.seek($0) })
+            let out = AudioTests.pull(channel, frames: 480, wanted: channel.wantedPTS(atHostNanos: UInt64(Int64(now) + lead)))
+            if firstHeard == nil, out.left.contains(where: { $0 != 0 }) { firstHeard = k }
+        }
+        #expect(seeks.count == 1 && abs(seeks[0] - 1) < 1e-6, "one seek, at the stamp: \(seeks)")
+        // heard at the first pull less than one callback before the stamp: k = 16 for a lead of −150 ms
+        #expect(firstHeard == Int(-lead / 10_000_000) + 1, "heard once the clock reaches the stamp: \(String(describing: firstHeard))")
+        #expect(channel.statistics.corrections == 0)
+        #expect(channel.statistics.underruns == underruns, "a landing that waits for the clock is no underrun")
+    }
+
+    /// B406 review: with a positive A/V offset (100 ms here: lead 28 − 100 = −72 ms) the picture shows the old clip
+    /// until a retrigger's stamp, which the callback reaches about 90 ms later. It plays the old segment on until
+    /// then instead of going silent, and the new one lands on the stamp: at most one silent pull at the cut.
+    @Test func aRetriggerWithAPositiveOffsetPlaysTheOldSegmentUntilItsStamp() {
+        let channel = LayerAudioChannel()
+        let source = RampSource()
+        let lead: Int64 = -72_000_000
+        channel.outputLeadNanos.store(lead, ordering: .relaxed)
+        let t: UInt64 = 10_000_000_000
+        var silent = 0
+        var held: Float = 0
+        var last: [Float] = []
+        for k in 0..<60 {
+            let now = t + UInt64(k) * 10_000_000
+            let stamp = now + 16_700_000  // the tick's target
+            let jumped = k == 30
+            let position = k < 30 ? 2 + Double(k) * 0.01 : 0.5 + Double(k - 30) * 0.01  // retriggered to 0.5 s at k = 30
+            channel.setState(wantedPTS: position, active: true, volume: 1, pan: 0, jumped: jumped, atHostNanos: stamp)
+            channel.fill(now: now, read: { source.read($0, $1) }, seek: { source.seek($0) })
+            let heard = UInt64(Int64(now) + lead)
+            var left = [Float](repeating: 0, count: 480)
+            var right = [Float](repeating: 0, count: 480)
+            left.withUnsafeMutableBufferPointer { l in
+                right.withUnsafeMutableBufferPointer { r in
+                    channel.pull(into: l.baseAddress!, right: r.baseAddress!, frames: 480, wantedPTS: channel.wantedPTS(atHostNanos: heard), atHostNanos: heard)
+                }
+            }
+            if k > 30, k <= 50, left.allSatisfy({ $0 == 0 }) { silent += 1 }
+            if k == 33 { held = left[0] }
+            last = left
+        }
+        #expect(silent <= 1, "silent pulls after the retrigger: \(silent)")
+        #expect(held > 2 * 48_000, "the hold plays the old clip (after 2 s): \(held)")
+        #expect(last[0] > 0.5 * 48_000 && last[0] < 1 * 48_000, "the new clip by the end: \(last[0])")
+    }
+
+    /// One 480-frame pull at the heard time `now + lead`, as the mixer makes it.
+    private func pullHeard(_ channel: LayerAudioChannel, now: UInt64, lead: Int64) -> [Float] {
+        let heard = UInt64(Int64(now) + lead)
+        var left = [Float](repeating: 0, count: 480)
+        var right = [Float](repeating: 0, count: 480)
+        left.withUnsafeMutableBufferPointer { l in
+            right.withUnsafeMutableBufferPointer { r in
+                channel.pull(into: l.baseAddress!, right: r.baseAddress!, frames: 480, wantedPTS: channel.wantedPTS(atHostNanos: heard), atHostNanos: heard)
+            }
+        }
+        return left
+    }
+
+    /// B406 review: the first `setState` after a hand-over also turns the channel active; that is one start, so a
+    /// first fill that lags a tick still seeks at the in point (0.5 s), not at the next tick's stamp.
+    @Test func aHandOverIsOneStartNotTwo() {
+        let channel = LayerAudioChannel()
+        channel.outputLeadNanos.store(-72_000_000, ordering: .relaxed)
+        let token = channel.handOver()
+        let t: UInt64 = 10_000_000_000
+        channel.setState(wantedPTS: 0.5, active: true, volume: 1, pan: 0, atHostNanos: t + 16_700_000)
+        channel.setState(wantedPTS: 0.51, active: true, volume: 1, pan: 0, atHostNanos: t + 26_700_000)  // the next tick
+        let source = RampSource()
+        var seeks: [Double] = []
+        channel.fill(now: t + 10_000_000, producer: token, read: { source.read($0, $1) }, seek: { seeks.append($0); source.seek($0) })
+        #expect(seeks.count == 1 && abs(seeks[0] - 0.5) < 1e-4, "at the in point: \(seeks)")
+    }
+
+    /// B406 review: a bogus far-future target (100 s) is taken as at most 1 s ahead, so it holds the layer silent for
+    /// at most a second, not until the next start.
+    @Test func aFarFutureStampCountsAsOneSecond() {
+        let channel = LayerAudioChannel()
+        let t = LayerAudioChannel.hostNanos()
+        channel.setState(wantedPTS: 100, active: true, volume: 1, pan: 0, atHostNanos: t + 100_000_000_000)
+        let source = RampSource()
+        var seeks: [Double] = []
+        channel.fill(now: t, read: { source.read($0, $1) }, seek: { seeks.append($0); source.seek($0) })
+        #expect(seeks.count == 1 && seeks[0] >= 1 && seeks[0] < 1.5, "the clock 1 s from now, not at 100 s: \(seeks)")
+    }
+
+    /// B406 review: a cue swap (a hand-over and a retrigger in one tick) with a positive offset. The old file's segment
+    /// is never heard again, so its drain does not wait for the retrigger's stamp: the new producer seeks at once, at
+    /// the in point, and the consumer waits silent for it (no underruns for the wait).
+    @Test func aCueSwapDrainsTheHandedOverSegmentAtOnce() {
+        let channel = LayerAudioChannel()
+        let lead: Int64 = -72_000_000
+        channel.outputLeadNanos.store(lead, ordering: .relaxed)
+        let t: UInt64 = 10_000_000_000
+        let a = channel.handOver()
+        let first = RampSource()
+        for k in 0..<20 {
+            let now = t + UInt64(k) * 10_000_000
+            channel.setState(wantedPTS: 2 + Double(k) * 0.01, active: true, volume: 1, pan: 0, atHostNanos: now + 16_700_000)
+            channel.fill(now: now, producer: a, read: { first.read($0, $1) }, seek: { first.seek($0) })
+            _ = pullHeard(channel, now: now, lead: lead)
+        }
+        let b = channel.handOver()
+        let next = RampSource()
+        var seeks: [Double] = []
+        let underruns = channel.statistics.underruns
+        var heard = false
+        for k in 20..<45 {
+            let now = t + UInt64(k) * 10_000_000
+            channel.setState(
+                wantedPTS: 0.5 + Double(k - 20) * 0.01, active: true, volume: 1, pan: 0, jumped: k == 20, atHostNanos: now + 16_700_000)
+            channel.fill(now: now, producer: b, read: { next.read($0, $1) }, seek: { seeks.append($0); next.seek($0) })
+            if pullHeard(channel, now: now, lead: lead).contains(where: { $0 != 0 }) { heard = true }
+        }
+        #expect(seeks.first.map { abs($0 - 0.5) < 1e-4 } == true, "the new file from its in point: \(seeks)")
+        #expect(channel.statistics.underruns - underruns <= 2, "\(channel.statistics.underruns - underruns) underruns")
+        #expect(heard)
+    }
+
     @Test func inactiveChannelIsSilentAndConsumesNothing() {
         let source = RampSource()
         let channel = LayerAudioChannel()
@@ -1043,7 +1191,7 @@ extension LayerAudioChannel {
         func render() {
             for channel in mixer.channels { channel.setState(wantedPTS: Double(rendered) / 48_000, active: channel !== mixer.channels[2], volume: 1, pan: -1) }
             left.withUnsafeMutableBufferPointer { l in
-                right.withUnsafeMutableBufferPointer { r in mixer.render(frames: 480, left: l.baseAddress!, right: r.baseAddress!) }
+                right.withUnsafeMutableBufferPointer { r in mixer.render(frames: 480, left: l.baseAddress!, right: r.baseAddress!, atHostNanos: LayerAudioChannel.hostNanos()) }
             }
             rendered += 480
         }
@@ -1057,5 +1205,100 @@ extension LayerAudioChannel {
         #expect(stats.underruns == 0)
         mixer.resetPeakDrift()
         #expect(mixer.statistics.maxDriftMillis == 0)
+    }
+
+
+    /// B406: the output latency is the device's plus its stream's, in frames at the device rate.
+    @Test func mixerSumsTheOutputLatency() {
+        #expect(AudioMixer.outputLatency(device: 0) == (0, ""), "no device: no latency, no name")
+        #expect(AudioMixer.latencyNanos(frames: 70 + 690, sampleRate: 48_000) == 15_833_333)
+        #expect(AudioMixer.latencyNanos(frames: 0, sampleRate: 48_000) == 0)
+        #expect(AudioMixer.latencyNanos(frames: 760, sampleRate: 0) == 0, "a device without a rate counts no latency")
+    }
+
+    /// B406: the render callback reads the clocks at the host time its buffer is heard: the stamp's host time plus the
+    /// output latency; now when the stamp has no host time.
+    @Test func mixerReadsTheClockWhenItsBufferIsHeard() {
+        let mixer = AudioMixer(channels: 1)
+        mixer.outputLatencyNanos.store(15_833_333, ordering: .relaxed)
+        var stamp = AudioTimeStamp()
+        let buffer = LayerAudioChannel.hostNanos() + 12_000_000  // a buffer's host time lies ahead of its callback
+        stamp.mHostTime = AudioConvertNanosToHostTime(buffer)
+        stamp.mFlags = .hostTimeValid
+        let host = AudioConvertHostTimeToNanos(stamp.mHostTime)
+        #expect(abs(Int64(host) - Int64(buffer)) < 100, "the round trip: \(host)")
+        #expect(mixer.heard(stamp) == host + 15_833_333)
+        stamp.mFlags = .sampleTimeValid
+        let before = LayerAudioChannel.hostNanos()
+        let now = mixer.heard(stamp)
+        #expect(now >= before + 15_833_333 && now <= LayerAudioChannel.hostNanos() + 15_833_333, "no host time: now plus the latency")
+
+        // the A/V offset: positive plays the sound later, so the clock is read that much earlier; both paths
+        mixer.offsetMs = 30
+        stamp.mFlags = .hostTimeValid
+        #expect(mixer.heard(stamp) == host + 15_833_333 - 30_000_000)
+        stamp.mFlags = .sampleTimeValid
+        let early = LayerAudioChannel.hostNanos()
+        let offsetNow = mixer.heard(stamp)
+        #expect(offsetNow >= early + 15_833_333 - 30_000_000 && offsetNow <= LayerAudioChannel.hostNanos() + 15_833_333 - 30_000_000)
+        mixer.offsetMs = -12.5
+        stamp.mFlags = .hostTimeValid
+        #expect(mixer.heard(stamp) == host + 15_833_333 + 12_500_000)
+        mixer.offsetMs = 500
+        #expect(mixer.offsetMs == 200, "clamped to ±200 ms")
+        mixer.offsetMs = .nan
+        #expect(mixer.offsetMs == 0)
+
+        // a bogus host time (0, or anything more than 5 s from now) counts as none: now plus the latency
+        stamp.mFlags = .hostTimeValid
+        stamp.mHostTime = 0
+        let bogusBefore = LayerAudioChannel.hostNanos()
+        let bogus = mixer.heard(stamp)
+        #expect(bogus >= bogusBefore + 15_833_333 && bogus <= LayerAudioChannel.hostNanos() + 15_833_333, "\(bogus)")
+
+        // the pulls read the clock at the render's host time: on the clock there (1 s at host 1 s), 10 ms play from 1 s
+        let channel = mixer.channels[0]
+        let source = RampSource()
+        channel.setState(wantedPTS: 1, active: true, volume: 1, pan: 0, atHostNanos: 1_000_000_000)
+        channel.fill(source, wanted: 1)
+        var left = [Float](repeating: 0, count: 480)
+        var right = [Float](repeating: 0, count: 480)
+        left.withUnsafeMutableBufferPointer { l in
+            right.withUnsafeMutableBufferPointer { r in
+                mixer.render(frames: 480, left: l.baseAddress!, right: r.baseAddress!, atHostNanos: 1_000_000_000)
+            }
+        }
+        #expect(abs(channel.nextFramePTS - 1.01) < 1e-6, "\(channel.nextFramePTS)")
+        #expect(channel.statistics.corrections == 0 && channel.statistics.underruns == 0)
+    }
+
+    /// B406 review: the callback reads the clock an output lead ahead of now (150 ms here: AirPlay, Bluetooth, a large
+    /// offset). The producer reads it as far ahead, so its segment starts where the callback reads; at now it would
+    /// start 150 ms behind, past the resync threshold, and the callback would stay silent for ever.
+    @Test func theProducerReadsTheClockWithTheOutputLead() {
+        let mixer = AudioMixer(channels: 1)
+        let channel = mixer.channels[0]
+        let source = RampSource()
+        let t = LayerAudioChannel.hostNanos()
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: 0, atHostNanos: t)
+        var left = [Float](repeating: 0, count: 480)
+        var right = [Float](repeating: 0, count: 480)
+        func render(at host: UInt64) {
+            left.withUnsafeMutableBufferPointer { l in
+                right.withUnsafeMutableBufferPointer { r in mixer.render(frames: 480, left: l.baseAddress!, right: r.baseAddress!, atHostNanos: host) }
+            }
+        }
+        render(at: t + 150_000_000)  // a first callback publishes the lead: 150 ms less the time since t
+        let after = LayerAudioChannel.hostNanos()
+        let lead = channel.outputLeadNanos.load(ordering: .relaxed)
+        #expect(lead >= Int64(t + 150_000_000) - Int64(after) && lead <= 150_000_000, "\(lead)")
+        channel.fill(now: t, read: { source.read($0, $1) }, seek: { source.seek($0) })
+        #expect(abs(channel.nextFramePTS - Double(lead) / 1e9) < 1e-4, "seeked where the callback reads: \(channel.nextFramePTS)")
+        var heard = 0
+        for k in 0..<5 {
+            render(at: t + 150_000_000 + UInt64(k) * 10_000_000)
+            if left.contains(where: { $0 != 0 }) { heard += 1 }
+        }
+        #expect(heard >= 4, "plays after the landing: \(heard) of 5")
     }
 }

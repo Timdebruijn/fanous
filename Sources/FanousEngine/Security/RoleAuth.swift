@@ -21,13 +21,15 @@ public struct MachineSettings: Codable, Sendable, Equatable {
     public var oscFeedback: OSCFeedbackTarget?
     /// Multi-server sync interface, port and target (DESIGN.md §23.2); `sync.set` or the file. nil = defaults.
     public var sync: SyncSettings?
+    /// The A/V offset (B406); edited in the file, read at start. nil = 0.
+    public var audio: AudioOutputSettings?
 
     /// Fields that could not be read, with the reason; never written back.
     public private(set) var problems: [String] = []
     /// The fields among them that did not decode at all.
     private(set) var unreadable: Set<CodingKeys> = []
 
-    enum CodingKeys: String, CodingKey { case passwords, oscFeedback, sync }
+    enum CodingKeys: String, CodingKey { case passwords, oscFeedback, sync, audio }
 
     public init() {}
 
@@ -38,7 +40,9 @@ public struct MachineSettings: Codable, Sendable, Equatable {
         do { passwords = try c.decodeIfPresent([String: PasswordRecord].self, forKey: .passwords) ?? [:] } catch { fail(.passwords, error) }
         do { oscFeedback = try c.decodeIfPresent(OSCFeedbackTarget.self, forKey: .oscFeedback) } catch { fail(.oscFeedback, error) }
         do { sync = try c.decodeIfPresent(SyncSettings.self, forKey: .sync) } catch { fail(.sync, error) }
+        do { audio = try c.decodeIfPresent(AudioOutputSettings.self, forKey: .audio) } catch { fail(.audio, error) }
         problems += (sync?.problems ?? []).map { "sync.\($0)" }
+        problems += (audio?.problems ?? []).map { "audio.\($0)" }
     }
 
     private mutating func fail(_ key: CodingKeys, _ error: Error) {
@@ -52,6 +56,7 @@ public struct MachineSettings: Codable, Sendable, Equatable {
         if !file.unreadable.contains(.passwords) { passwords = file.passwords }
         if !file.unreadable.contains(.oscFeedback) { oscFeedback = file.oscFeedback }
         if !file.unreadable.contains(.sync) { sync = file.sync }
+        if !file.unreadable.contains(.audio) { audio = file.audio }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -59,6 +64,7 @@ public struct MachineSettings: Codable, Sendable, Equatable {
         try c.encode(passwords, forKey: .passwords)
         try c.encodeIfPresent(oscFeedback, forKey: .oscFeedback)
         try c.encodeIfPresent(sync, forKey: .sync)
+        try c.encodeIfPresent(audio, forKey: .audio)
     }
 
     public static func load(from url: URL, logger: Logger? = nil) -> MachineSettings {
