@@ -147,5 +147,7 @@ and `cue.goto` from OSC and MIDI run on the engine's command queue without
 Control: they read no project, and the cue runner's own serial queue keeps them
 after a list change that was acknowledged before them. A GO sent while 20
 clients joined waited 1.4 s on Control before; now 0.004 ms from OSC or MIDI
-and 0.05 ms from a WebSocket (its `execute` still takes Control, behind the
-welcomes' copies only).
+and 0.05 ms from another client's WebSocket (its `execute` still takes
+Control, behind the welcomes' copies only). A WebSocket GO from a client whose
+own snapshot is being encoded waits for it, behind the welcomes queued ahead of
+it on the encoding queue: no longer than on Control before.
