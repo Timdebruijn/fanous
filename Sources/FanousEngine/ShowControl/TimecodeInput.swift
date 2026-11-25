@@ -131,7 +131,7 @@ struct PeakWindow {
 
 /// LTC from a CoreAudio input device through an `AVAudioSinkNode` (real-time thread → biphase decoder).
 public final class LTCInput: @unchecked Sendable {
-    private let engine = AVAudioEngine()
+    let engine = AVAudioEngine()  // internal for the B280 test
     private let clock: TimecodeClock
     private let logger: Logger
     private let channel: Int
@@ -150,7 +150,7 @@ public final class LTCInput: @unchecked Sendable {
     /// `stop()` may come while `start()` still waits for the permission answer: the flag, taken with the attach and
     /// the engine start under one lock, keeps a stopped input from opening afterwards. The sink is kept to detach it,
     /// which breaks the input → engine → sink → closure → input cycle.
-    private let lifecycle = Mutex<(stopped: Bool, sink: AVAudioSinkNode?)>((false, nil))
+    private let lifecycle = Mutex<(stopped: Bool, sink: AVAudioSinkNode?, opened: (device: AudioDeviceID?, rate: Double)?)>((false, nil, nil))
     /// Written by `start` on a cooperative thread, read by the feed queue and Control (B273); off the audio thread.
     public private(set) var deviceName: String {
         get { report.withLock { $0.device } }
@@ -160,12 +160,50 @@ public final class LTCInput: @unchecked Sendable {
         get { report.withLock { $0.error } }
         set { report.withLock { $0.error = newValue } }
     }
-    private let report = Mutex<(device: String, error: String?)>(("", nil))
+    /// `fellBack`: a named device was missing (or could not be selected) at open, so the default input was taken (B280).
+    public private(set) var fellBack: Bool {
+        get { report.withLock { $0.fellBack } }
+        set { report.withLock { $0.fellBack = newValue } }
+    }
+    private let report = Mutex<(device: String, error: String?, fellBack: Bool)>(("", nil, false))
+    /// The input's device dropped, changed its sample rate, or the default input moved (B280): the engine stopped on
+    /// its own, or runs on another device or rate, and the decoder's sample rate may be stale, so the owner opens a
+    /// new input. Called on AVFAudio's queue with the input, after `start` opened it and until `stop`.
+    private let onConfigurationChange: @Sendable (LTCInput) -> Void
+    private var configurationObserver: (any NSObjectProtocol)?
+    public var isStopped: Bool { lifecycle.withLock { $0.stopped } }
 
-    public init(clock: TimecodeClock, channel: Int = 0, logger: Logger) {
+    public init(clock: TimecodeClock, channel: Int = 0, logger: Logger, onConfigurationChange: @escaping @Sendable (LTCInput) -> Void = { _ in }) {
         self.clock = clock
         self.channel = channel
         self.logger = logger
+        self.onConfigurationChange = onConfigurationChange
+        configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { [weak self] _ in
+            guard let self, let opened = lifecycle.withLock({ $0.stopped ? nil : $0.opened }) else { return }
+            let device = Self.currentDevice(of: engine.inputNode.audioUnit)
+            let rate = engine.inputNode.inputFormat(forBus: 0).sampleRate
+            guard !Self.isTheSameConfiguration(running: engine.isRunning, device: device, rate: rate, opened: opened) else { return }
+            logger.info("LTC input: audio configuration changed; reopening", metadata: ["running": "\(engine.isRunning)", "device": "\(device ?? 0)", "rate": "\(rate)"])
+            onConfigurationChange(self)
+        }
+    }
+
+    /// Selecting a device posts a configuration change of its own a few tenths of a second later (measured, review of
+    /// PR #495),
+    /// so a running engine on the device and rate it opened with is no change: only a stopped engine (the device
+    /// dropped, the default input moved) or another device or rate (the interface was switched) is one.
+    static func isTheSameConfiguration(running: Bool, device: AudioDeviceID?, rate: Double, opened: (device: AudioDeviceID?, rate: Double)) -> Bool {
+        running && device == opened.device && rate == opened.rate
+    }
+
+    /// `start` opened the engine on this device at this rate: configuration changes count from here. Internal for the
+    /// B280 test, which cannot open an input (the microphone).
+    func noteOpened(device: AudioDeviceID?, rate: Double) {
+        lifecycle.withLock { $0.opened = (device, rate) }
+    }
+
+    deinit {
+        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
     }
 
     /// Starts on the named input device (nil = the system default). Asks for the microphone permission once.
@@ -182,6 +220,9 @@ public final class LTCInput: @unchecked Sendable {
                 engine.inputNode.audioUnit!, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &deviceID,
                 UInt32(MemoryLayout<AudioDeviceID>.size))
             if status != noErr { logger.warning("LTC input: cannot select device \(name) (\(status)); using the default input") }
+            fellBack = status != noErr
+        } else {
+            fellBack = name != nil
         }
         let format = engine.inputNode.inputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
@@ -190,7 +231,8 @@ public final class LTCInput: @unchecked Sendable {
             return false
         }
         // the device the input unit opened: a named one that is missing falls back to the default input (B137)
-        deviceName = Self.currentDevice(of: engine.inputNode.audioUnit).flatMap(Self.name(of:)) ?? name ?? "default input"
+        let openedDevice = Self.currentDevice(of: engine.inputNode.audioUnit)
+        deviceName = openedDevice.flatMap(Self.name(of:)) ?? name ?? "default input"
         let sampleRate = format.sampleRate
         let channel = max(0, min(self.channel, Int(format.channelCount) - 1))
         decoder = LTCDecoder(sampleRate: sampleRate, nominalFrameRate: 25)
@@ -224,7 +266,11 @@ public final class LTCInput: @unchecked Sendable {
             engine.attach(sink)
             engine.connect(engine.inputNode, to: sink, format: format)
             state.sink = sink
-            return Result { try engine.start(); return true }
+            return Result {
+                try engine.start()
+                state.opened = (openedDevice, sampleRate)  // under the lock: a change during the open is not lost
+                return true
+            }
         }
         switch started {
         case .success(false):

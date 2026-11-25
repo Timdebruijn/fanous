@@ -20,6 +20,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Console: a **Timecode** fixture (8 channels, one per Mac, optional) in the channel map, the GDTF and the OSC
   address map (`/fanous/timecode/<key>`), with a resolver like the Master's, so cues and the console can set it;
   nothing reads it yet (`docs/timecode-out.md` step 2) (PR #496).
+- Timecode: an LTC input whose audio device drops, changes its sample rate or loses the default input opens again by
+  itself; an input that found no device opens when one appears, and one that fell back to the default input takes its
+  named device when it comes back; before, the chase froze and the triggers stopped until the Timecode switch was
+  turned off and on (B280) (PR #495).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)

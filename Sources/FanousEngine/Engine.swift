@@ -1228,6 +1228,27 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
+    /// The running LTC input lost its device or its rate changed (B280): a new input, on the settings queue, while
+    /// `input` is still the one in use and running (a later `timecode.set` or `stop()` may have ended it meanwhile).
+    private func reopenLTC(_ input: LTCInput) {
+        store?.queue.async { [weak self] in
+            guard let self, !commandsStopped.load(ordering: .relaxed), self.ltc === input, !input.isStopped else { return }
+            self.applyTimecodeSettings(self.lastTimecodeSettings, reopen: true)
+        }
+    }
+
+    /// CoreAudio's device list changed (B280; the listener, so with or without a web client): an LTC input that failed
+    /// (no device, the permission, the audio engine) opens again (a denied permission answers at once, no prompt), and
+    /// one that fell back to the default input because its named device was missing takes it now that it is back. One
+    /// attempt per change of the list; the check runs on the settings queue, where the settings are.
+    private func reopenLTCIfDeviceReturned(_ devices: [LTCInput.Device]) {
+        store?.queue.async { [weak self] in
+            guard let self, !commandsStopped.load(ordering: .relaxed), let input = self.ltc, !input.isStopped, !devices.isEmpty else { return }
+            let returned = input.lastError != nil || (input.fellBack && self.lastTimecodeSettings.device.map { wanted in devices.contains { $0.name == wanted } } == true)
+            if returned { self.applyTimecodeSettings(self.lastTimecodeSettings, reopen: true) }
+        }
+    }
+
     /// An offset, a layer offset or the freewheel time applies to the running input and clock; only a change of what
     /// opens the input (source, device, LTC channel, the switch) or a `reopen` restarts it and clears the clock (B289).
     private func applyTimecodeSettings(_ settings: ShowCommands.TimecodeSettings, reopen: Bool = false) {
@@ -1239,6 +1260,9 @@ public final class Engine: @unchecked Sendable {
         timecodeClock.freewheelSeconds = max(0.1, settings.freewheel)
         render?.compositor.timecodeOffsets = TimecodeOffsets(project: settings.offset, layers: settings.layerOffsetsByNumber)
         guard restart else { return }
+        // ponytail: the old input may be released by AVFAudio's own configuration-change handler (it holds `self` while
+        // it hands the change over, B280), which the AVAudioEngine header warns against; the window is the few
+        // microseconds between that hand-over and the handler's return. Release it late if a hang is ever seen there.
         ltc?.stop()
         mtc?.stop()
         ltc = nil
@@ -1247,7 +1271,7 @@ public final class Engine: @unchecked Sendable {
         switch opens(settings).0 {
         case .off: break
         case .ltc:
-            let input = LTCInput(clock: timecodeClock, channel: settings.channel, logger: logger)
+            let input = LTCInput(clock: timecodeClock, channel: settings.channel, logger: logger) { [weak self] input in self?.reopenLTC(input) }
             ltc = input
             Task { _ = await input.start(device: settings.device) }
         case .mtc:
@@ -1841,6 +1865,9 @@ public final class Engine: @unchecked Sendable {
             statuses.append(
                 AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, nil) { [weak self] _, _ in
                     self?.audioDevicesChanged.store(true, ordering: .relaxed)
+                    // with LTC in use the list is read off the HAL's thread (B133: it can take a second); B280's reopen follows it
+                    guard self?.ltcInUse.load(ordering: .relaxed) == true else { return }
+                    DispatchQueue.global(qos: .utility).async { [weak self] in self?.reopenLTCIfDeviceReturned(LTCInput.inputDevices()) }
                 })
         }
         audioListening.store(statuses.allSatisfy { $0 == noErr }, ordering: .relaxed)

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
+import AVFoundation
 import CoreMIDI
 import Foundation
 import FanousCore
@@ -1636,6 +1637,28 @@ struct ShowControlTests {
         #expect(!idle.stop(keepingState: true))  // restart outside show mode: nothing kept
         #expect(!FileManager.default.fileExists(atPath: url.path))
     }
+    // B280: the audio engine posts a configuration change when its device drops, changes rate or the default input
+    // moves; once opened, the input hands it to its owner (the engine opens a new input) until it is stopped. Selecting
+    // a device posts one of its own a few tenths of a second later with nothing changed (measured, review of #495): no reopen.
+    @Test func ltcInputReportsARealConfigurationChangeOnceOpenedUntilStopped() async {
+        let changes = Atomic<Int>(0)
+        let input = LTCInput(clock: TimecodeClock(), logger: Logger(label: "test")) { _ in changes.wrappingAdd(1, ordering: .relaxed) }
+        NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: input.engine)
+        #expect(changes.load(ordering: .relaxed) == 0, "not opened yet")
+        input.noteOpened(device: 7, rate: 48000)
+        NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: input.engine)  // the engine is not running: a change
+        NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: AVAudioEngine())  // another engine's
+        #expect(changes.load(ordering: .relaxed) == 1)
+        input.stop()
+        NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: input.engine)
+        #expect(changes.load(ordering: .relaxed) == 1)
+        let opened = (device: AudioDeviceID?.some(7), rate: 48000.0)
+        #expect(LTCInput.isTheSameConfiguration(running: true, device: 7, rate: 48000, opened: opened), "the device-select echo")
+        #expect(!LTCInput.isTheSameConfiguration(running: false, device: 7, rate: 48000, opened: opened), "the device dropped")
+        #expect(!LTCInput.isTheSameConfiguration(running: true, device: 9, rate: 48000, opened: opened), "the default input moved")
+        #expect(!LTCInput.isTheSameConfiguration(running: true, device: 7, rate: 44100, opened: opened), "the rate changed")
+    }
+
 }
 
 /// The ShowControlTests that need the GPU or a decoder: local and self-hosted runs only (scripts/test.sh --hosted leaves them out).
