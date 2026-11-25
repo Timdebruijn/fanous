@@ -322,7 +322,7 @@ public final class Engine: @unchecked Sendable {
         let context = try MetalContext()
         let libraryRoot = (options.scene?.library ?? loadedProject?["library"]?["root"]?.string).map { URL(fileURLWithPath: $0) } ?? AppPaths.defaultLibrary
         let library = LibraryIndex(root: libraryRoot, cacheDirectory: AppPaths.cache, logger: logger)
-        let thumbnailer = Thumbnailer(context: context, directory: AppPaths.cache.appending(path: "thumbnails"), logger: logger)
+        let thumbnailer = Thumbnailer(context: context, directory: library.thumbnailDirectory, logger: logger)
         library.thumbnailer = { url, metadata, kind in thumbnailer.make(for: url, metadata: metadata, kind: kind) }
         // a file that becomes playable (a probe after a scan or a root change) reaches layers still showing "missing", and a
         // changed image mask file is compiled again
@@ -330,6 +330,7 @@ public final class Engine: @unchecked Sendable {
             self?.render?.loader.changed(.missingLibrary)
             self?.imageMaskFilesChanged()
         }
+        if resumeShow != nil { library.paused = true }  // DESIGN.md §14, as ingest below (B328)
         library.start()
         // B389: the first scan is done. ProRes in it: the decoder's one block is passed here, about half a second in
         // which nothing plays yet. A library that shows its first ProRes later (files still being probed, an upload,
@@ -510,6 +511,7 @@ public final class Engine: @unchecked Sendable {
         showMode.onChange = { [weak self] on in
             guard let self else { return }
             self.ingest?.paused = on  // DESIGN.md §14: ingest paused in show mode
+            self.library?.paused = on  // and the library's cache writes (B328)
             if on { self.versionsQueue.async { versions.saveAutomatic(store.project, reason: .showMode) } }  // B23
             if on { self.startReadinessTimer() } else { self.stopReadinessTimer() }
             if on { self.endLeases() }  // a lease never outlives show mode or show lock (§9.10 item 4)

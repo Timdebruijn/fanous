@@ -311,6 +311,87 @@ struct LibraryIndexTests {
         #expect(try JSONDecoder().decode(LibraryIndex.CacheEntry.self, from: written).reason == "Cannot Open")
     }
 
+    // MARK: B328: cache writes
+
+    /// `count` stills that do not decode (16 zero bytes): a fast probe each, unreadable, cached.
+    private func brokenStills(_ count: Int) throws -> (root: URL, cache: URL) {
+        let root = try tempDir("fanous-library")
+        for n in 1...count { try Self.touch(root.appending(path: String(format: "%03d_Show/%03d_x.png", (n - 1) / 250 + 1, (n - 1) % 250 + 1))) }
+        return (root, try tempDir("fanous-library-cache"))
+    }
+
+    private func probed(_ index: LibraryIndex) async -> Bool {
+        await waitUntil(.seconds(30), every: .milliseconds(20)) { index.snapshot.folders.allSatisfy { $0.items.allSatisfy { $0.status != .probing } } }
+    }
+
+    /// 500 probes write the cache three times (at 200, at 400, at the drain), not 500 times; a wake with nothing new writes nothing.
+    @Test func probesWriteTheCacheInBatches() async throws {
+        let (root, cache) = try brokenStills(500)
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.saveInterval = 3600  // the count rule alone; the 2 s rule depends on the machine's speed
+        index.start()
+        defer { index.stop() }
+        #expect(await probed(index))
+        #expect(await waitUntil(every: .milliseconds(20)) { index.cacheWrites.load(ordering: .relaxed) == 3 })
+        print("B328 measure: 500 probes, \(index.cacheWrites.load(ordering: .relaxed)) writes, \(index.cacheBytes.load(ordering: .relaxed)) bytes")
+        index.rescan()  // wakes the library thread: nothing to probe, nothing to write
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(index.cacheWrites.load(ordering: .relaxed) == 3)
+        let again = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        again.rescan()
+        #expect(again.snapshot.folders.allSatisfy { $0.items.allSatisfy { $0.status == .unreadable } }, "every probe reached the file")
+    }
+
+    /// A gone file's entry goes at the next drain, with its thumbnail; the other file's stay.
+    @Test func aGoneFilesEntryAndThumbnailArePruned() async throws {
+        let root = try tempDir("fanous-library")
+        let gone = root.appending(path: "001_Show/001_gone.png"), kept = root.appending(path: "001_Show/002_kept.png")
+        try Self.png(gone)
+        try Self.png(kept)
+        let index = LibraryIndex(root: root, cacheDirectory: try tempDir("fanous-library-cache"), logger: testLogger)
+        index.saveInterval = 3600  // one write per drain, however slow the Mac
+        let directory = index.thumbnailDirectory
+        index.thumbnailer = { url, _, _ in
+            let name = url.lastPathComponent + ".jpg"
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            return (try? Data([1]).write(to: directory.appending(path: name))) != nil ? name : nil
+        }
+        index.start()
+        defer { index.stop() }
+        #expect(await probed(index))
+        #expect(await waitUntil(every: .milliseconds(20)) { index.cacheWrites.load(ordering: .relaxed) == 1 })
+        try FileManager.default.removeItem(at: gone)
+        index.rescan()
+        #expect(await waitUntil(every: .milliseconds(20)) { index.cacheWrites.load(ordering: .relaxed) == 2 })
+        let written = try JSONDecoder().decode([String: LibraryIndex.CacheEntry].self, from: Data(contentsOf: index.cacheDirectory.appending(path: "library-index.json")))
+        #expect(written.keys.map { String($0.prefix { $0 != "|" }) } == [kept.path])
+        #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "001_gone.png.jpg").path))
+        #expect(FileManager.default.fileExists(atPath: directory.appending(path: "002_kept.png.jpg").path))
+    }
+
+    /// Show mode holds the write until it is off; a stop writes what waited, also in show mode.
+    @Test func showModeHoldsTheCacheWriteAndAStopWritesIt() async throws {
+        let (root, cache) = try brokenStills(3)
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.paused = true
+        index.start()
+        defer { index.stop() }
+        #expect(await probed(index))
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(index.cacheWrites.load(ordering: .relaxed) == 0)
+        index.paused = false
+        #expect(await waitUntil(every: .milliseconds(20)) { index.cacheWrites.load(ordering: .relaxed) == 1 })
+
+        let (root2, cache2) = try brokenStills(3)
+        let stopped = LibraryIndex(root: root2, cacheDirectory: cache2, logger: testLogger)
+        stopped.paused = true
+        stopped.start()
+        #expect(await probed(stopped))
+        #expect(stopped.cacheWrites.load(ordering: .relaxed) == 0)
+        try await offPool { stopped.stop() }
+        #expect(stopped.cacheWrites.load(ordering: .relaxed) == 1)
+    }
+
     // MARK: B267: a file in work when the engine stopped
 
     /// Two stills; the cache key of the first, as a scan reads it.

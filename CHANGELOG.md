@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Library: the cache file is written every 200 probes or 2 s, when the probe queue drains and at stop, not after every
+  probe, and not in show mode (B328). Each write holds every entry, so a write per probe was quadratic: 500 new files
+  wrote 500 files and 27 MB, now 3 and 0.24 MB. Entries and thumbnails of files that left the library are pruned (PR #N).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
