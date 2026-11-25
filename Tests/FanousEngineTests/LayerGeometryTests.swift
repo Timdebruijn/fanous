@@ -4,6 +4,7 @@
 
 import FanousCore
 import Testing
+import simd
 
 @testable import FanousEngine
 
@@ -21,5 +22,23 @@ struct LayerGeometryTests {
         p.fitMode = .native
         let native = Compositor.geometry(for: p, mediaWidth: 320, mediaHeight: 176, pixelAspect: 4.0 / 3, canvasWidth: 1920, canvasHeight: 1080).1
         #expect(abs(native.z - 426.67 / 1080) < 0.001 && abs(native.w - 176.0 / 1080) < 0.001, "\(native)")
+    }
+
+    /// A combined rotation turns about X first, then Y, then Z: Rz · Ry · Rx, after the projection of an unrotated layer
+    /// (no position, scale 1). The reversed product fails.
+    @Test func aCombinedRotationTurnsXThenYThenZ() {
+        var p = LayerParameters()
+        let flat = Compositor.geometry(for: p, mediaWidth: 1920, mediaHeight: 1080, canvasWidth: 1920, canvasHeight: 1080).0
+        (p.rotationX, p.rotationY, p.rotationZ) = (0.3, -0.7, 1.1)
+        let turned = Compositor.geometry(for: p, mediaWidth: 1920, mediaHeight: 1080, canvasWidth: 1920, canvasHeight: 1080).0
+        let (cx, sx) = (cos(p.rotationX), sin(p.rotationX))
+        let (cy, sy) = (cos(p.rotationY), sin(p.rotationY))
+        let (cz, sz) = (cos(p.rotationZ), sin(p.rotationZ))
+        let rx = simd_float4x4(SIMD4(1, 0, 0, 0), SIMD4(0, cx, sx, 0), SIMD4(0, -sx, cx, 0), SIMD4(0, 0, 0, 1))
+        let ry = simd_float4x4(SIMD4(cy, 0, -sy, 0), SIMD4(0, 1, 0, 0), SIMD4(sy, 0, cy, 0), SIMD4(0, 0, 0, 1))
+        let rz = simd_float4x4(SIMD4(cz, sz, 0, 0), SIMD4(-sz, cz, 0, 0), SIMD4(0, 0, 1, 0), SIMD4(0, 0, 0, 1))
+        let expected = flat * rz * ry * rx
+        let worst = (0..<4).flatMap { c in (0..<4).map { r in abs(turned[c][r] - expected[c][r]) } }.max() ?? .infinity
+        #expect(worst < 1e-6, "\(turned) vs \(expected)")
     }
 }

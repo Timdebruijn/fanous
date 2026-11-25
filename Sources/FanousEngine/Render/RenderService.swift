@@ -19,7 +19,6 @@ public struct SceneConfig: Codable, Sendable {
     public var display: Int?  // NSScreen index; nil = headless
     /// Frames decoded ahead per layer; 8 is needed for 4K (benchmarks 2026-10-23). `fanous-bench` measures with this value.
     public var ringCapacity = 8
-    public var frameLatency = 1
     /// CAMetalDisplayLink instead of the drawable loop (stalls on macOS 27.0.1, see ADR-0006 amendment).
     public var useDisplayLink = false
     /// Publish the canvas as a Syphon server (DESIGN.md §9.8); the frame is only copied while a client is attached.
@@ -49,7 +48,6 @@ public struct SceneConfig: Codable, Sendable {
         media = try c.decodeIfPresent([MediaEntry].self, forKey: .media) ?? media
         display = try c.decodeIfPresent(Int.self, forKey: .display)
         ringCapacity = try c.decodeIfPresent(Int.self, forKey: .ringCapacity) ?? ringCapacity
-        frameLatency = try c.decodeIfPresent(Int.self, forKey: .frameLatency) ?? frameLatency
         useDisplayLink = try c.decodeIfPresent(Bool.self, forKey: .useDisplayLink) ?? useDisplayLink
         syphonOutput = try c.decodeIfPresent(Bool.self, forKey: .syphonOutput) ?? syphonOutput
         audio = try c.decodeIfPresent(Bool.self, forKey: .audio) ?? audio
@@ -104,7 +102,7 @@ public final class RenderService {
         let count = ParameterSnapshotSlot.maxLayers
         compositor = try Compositor(
             context: context, canvasWidth: scene.canvasWidth, canvasHeight: scene.canvasHeight, fps: scene.fps,
-            maxLayers: count, metrics: metrics, parameters: parameters, logger: logger)
+            maxLayers: count, metrics: metrics, parameters: parameters)
         layers = (0..<count).map { RenderLayer(index: $0) }
         loader = MediaLoader(layers: layers, media: scene.media, device: context.device, ringCapacity: scene.ringCapacity, logger: logger)
         compositor.setLayers(layers)
@@ -178,21 +176,21 @@ public final class RenderService {
             // Let the window server attach the layer to its display before the driver binds to it.
             try await Task.sleep(for: .milliseconds(250))
             if scene.useDisplayLink {
-                displayDriver = DisplayLinkDriver(layer: window.metalLayer, fps: scene.fps, compositor: compositor, frameLatency: scene.frameLatency)
+                displayDriver = DisplayLinkDriver(layer: window.metalLayer, fps: scene.fps, compositor: compositor)
             } else {
                 loopDriver = DrawableLoopDriver(layer: window.metalLayer, fps: scene.fps, compositor: compositor)
             }
             self.window = window
-            logger.info("output on display \(display)", metadata: ["size": "\(window.metalLayer.drawableSize)", "driver": "\(scene.useDisplayLink ? "CAMetalDisplayLink" : "drawable loop")", "frameLatency": "\(scene.frameLatency)"])
+            logger.info("output on display \(display)", metadata: ["size": "\(window.metalLayer.drawableSize)", "driver": "\(scene.useDisplayLink ? "CAMetalDisplayLink" : "drawable loop")"])
         } else {
             headlessDriver = HeadlessDriver(fps: scene.fps, compositor: compositor)
             logger.info("headless compositor", metadata: ["fps": "\(scene.fps)", "layers": "\(layers.count)"])
         }
     }
 
-    /// Diagnostics: display-link updates seen, compositor ticks, encoder failures, ticks that waited on a full ring (B105).
-    public var counters: (updates: Int, ticks: Int, encoderFailures: Int, completed: Int, gpuErrors: Int, outputFailures: Int, lastError: String, completionWaits: Int) {
-        (displayDriver?.updates.load(ordering: .relaxed) ?? -1, compositor.ticks.load(ordering: .relaxed), compositor.encoderFailures.load(ordering: .relaxed),
+    /// Diagnostics: compositor ticks, encoder failures, ticks that waited on a full ring (B105).
+    public var counters: (ticks: Int, encoderFailures: Int, completed: Int, gpuErrors: Int, outputFailures: Int, lastError: String, completionWaits: Int) {
+        (compositor.ticks.load(ordering: .relaxed), compositor.encoderFailures.load(ordering: .relaxed),
          compositor.completed.load(ordering: .relaxed), compositor.gpuErrors.load(ordering: .relaxed), compositor.outputEncoderFailures.load(ordering: .relaxed), compositor.lastGPUError,
          compositor.completionWaits.load(ordering: .relaxed))
     }

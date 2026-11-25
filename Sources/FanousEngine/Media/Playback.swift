@@ -293,14 +293,6 @@ public struct ScratchSet: @unchecked Sendable {
     public let levels: [MTLTexture]
 }
 
-/// A scratch texture the loader made for a playback (B2); the compositor adopts it when that playback is still its own.
-struct PendingScratch {
-    var set = false
-    var playback: LayerPlayback?
-    /// Nil: Metal refused; the playback keeps the source path.
-    var answer: ScratchSet?
-}
-
 /// One layer slot: the playing media, the outgoing one during a dissolve, and
 /// the lock-free hand-off with the media loader (compositor thread owns the
 /// `var`s).
@@ -346,8 +338,9 @@ public final class RenderLayer: @unchecked Sendable {
     let retired = Mutex<[LayerPlayback]>([])
     /// The playback the compositor wants a scratch texture for (B2); the loader takes it and answers in `pendingScratch`.
     let scratchRequest = Mutex<LayerPlayback?>(nil)
-    /// Set by the loader; the compositor takes it with `withLockIfAvailable` (never blocks).
-    let pendingScratch = Mutex(PendingScratch())
+    /// The scratch texture the loader made for a playback; the compositor takes it with `withLockIfAvailable` (never
+    /// blocks) and adopts it when that playback is still its own. A nil answer: Metal refused, the source path stays.
+    let pendingScratch = Mutex<(playback: LayerPlayback, answer: ScratchSet?)?>(nil)
     var retireLater: [LayerPlayback] = []
     /// Since start: ticks on which this layer's movie was queued with a frame other than its clock's, one per playback
     /// (a dissolve's two pictures count apart) (B371). Written by the compositor, read by `/metrics`.
@@ -656,11 +649,7 @@ public final class MediaLoader: @unchecked Sendable {
                 let asking = layer.scratchRequest.withLock { $0.take() }
                 if let asking {
                     let answer = LayerPlayback.makeScratchSet(device: device, width: asking.width, height: asking.height)
-                    layer.pendingScratch.withLock { box in
-                        box.set = true
-                        box.playback = asking
-                        box.answer = answer
-                    }
+                    layer.pendingScratch.withLock { $0 = (asking, answer) }
                 }
                 let want = layer.wanted.load(ordering: .relaxed)
                 guard want != loaded[i] else { continue }

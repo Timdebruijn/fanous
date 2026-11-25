@@ -139,12 +139,12 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// `jumped` says the layer was retriggered this tick (its clock jumped back): the producer reseeks, whatever the
     /// size of the jump.
     /// Between ticks the audio side extrapolates the clock with the host clock (`wantedPTS(atHostNanos:)`), so the
-    /// up to 16.7 ms age of the value does not eat into the ±20 ms window.
-    public func setState(wantedPTS: Double, active: Bool, volume: Float, pan: Float, loop: (start: Double, end: Double)? = nil, jumped: Bool = false) {
-        setState(wantedPTS: wantedPTS, active: active, volume: volume, pan: pan, loop: loop, jumped: jumped, atHostNanos: Self.hostNanos())
-    }
-
-    func setState(wantedPTS: Double, active: Bool, volume: Float, pan: Float, loop: (start: Double, end: Double)? = nil, jumped: Bool = false, atHostNanos nanos: UInt64) {
+    /// up to 16.7 ms age of the value does not eat into the ±20 ms window. `nanos`: the host time `wantedPTS` belongs
+    /// to (tests pass one).
+    public func setState(
+        wantedPTS: Double, active: Bool, volume: Float, pan: Float, loop: (start: Double, end: Double)? = nil, jumped: Bool = false,
+        atHostNanos nanos: UInt64 = LayerAudioChannel.hostNanos()
+    ) {
         // B264: a loop that is no whole number of frames in 32 bits (NaN, or longer than ~25 h) is no loop; `Int(_:)` trapped
         let frames = loop.flatMap { Int(exactly: (($0.end - $0.start) * Self.rate).rounded()) } ?? 0
         let start = loop.flatMap { Int(exactly: ($0.start * Self.rate).rounded()) } ?? -1
@@ -228,11 +228,6 @@ public final class LayerAudioChannel: @unchecked Sendable {
         guard activeFlag.load(ordering: .acquiring) else { return }  // the clock read below is then at least the one that activated the channel
         let jump = jumpGeneration.load(ordering: .acquiring)  // before the clock, see `jumpGeneration`
         fill(wanted: wantedPTS(atHostNanos: Self.hostNanos()), jump: jump, producer: producer, read: { reader.read(into: $0, frameCount: $1) }, seek: { reader.seek(toSeconds: $0) })
-    }
-
-    /// `fill` from a reader at an explicit layer clock (tests).
-    func fill(from reader: AudioTrackReader, wanted: Double, producer: Int = 0) {
-        fill(wanted: wanted, producer: producer, read: { reader.read(into: $0, frameCount: $1) }, seek: { reader.seek(toSeconds: $0) })
     }
 
     /// `fill` against any frame source (tests use a synthetic one) and an explicit layer clock. `read` writes up to

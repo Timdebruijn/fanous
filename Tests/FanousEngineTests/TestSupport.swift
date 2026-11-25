@@ -225,8 +225,7 @@ func makeCompositor(
 ) throws -> (Compositor, TripleBuffer<ParameterSnapshotSlot>) {
     let parameters = parameters ?? TripleBuffer { ParameterSnapshotSlot(maxLayers: maxLayers) }
     let compositor = try Compositor(
-        context: context, canvasWidth: size.0, canvasHeight: size.1, fps: fps, maxLayers: maxLayers, metrics: metrics, parameters: parameters,
-        logger: testLogger)
+        context: context, canvasWidth: size.0, canvasHeight: size.1, fps: fps, maxLayers: maxLayers, metrics: metrics, parameters: parameters)
     return (compositor, parameters)
 }
 
