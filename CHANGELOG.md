@@ -16,6 +16,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   nothing before the first request; a chased or slave layer's first request is still the in point (B404) (PR #452).
 - Dependencies: swift-log 1.17.2 (two patches: `MultiplexLogHandler.metadataProvider`'s setter replaces the
   initializer's provider, raw-identifier module names in `Logger.currentModule`; neither is used here) (PR #454).
+- Dependencies (web): svelte 5.59.1, @sveltejs/vite-plugin-svelte 7.3.2, vitest 5.1.2; `npm run check`, `npm test`
+  and `npm run build` unchanged (PR #455).
 - Playback: a scratch texture answered for a playback that was retired meanwhile goes back to the loader (B402). The
   compositor dropped the answer box's reference on the render thread, which could be the playback's last: its deinit
   and the textures' release then ran there. The playback now adopts the answer and is handed back to the loader, which

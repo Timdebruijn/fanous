@@ -36,10 +36,10 @@ platform; the GPL's system-library exception covers linking against them.
 
 | Package | Version | License | GPLv3-compatible | Use |
 |---|---|---|---|---|
-| svelte | 5.57.3 (2026-10-26) | MIT | yes | UI framework (runtime ships) |
-| @sveltejs/vite-plugin-svelte | 7.3.1 (2026-09-23) | MIT | yes | build |
+| svelte | 5.59.1 (2026-11-20) | MIT | yes | UI framework (runtime ships) |
+| @sveltejs/vite-plugin-svelte | 7.3.2 (2026-11-23) | MIT | yes | build |
 | vite | 8.3.8 (2026-11-11) | MIT | yes | build/dev server |
-| vitest | 5.1.0 (2026-11-02) | MIT | yes | tests |
+| vitest | 5.1.2 (2026-11-25) | MIT | yes | tests |
 | svelte-check | 4.7.8 (2026-11-01) | MIT | yes | type checking and Svelte diagnostics (`npm run check`) |
 | @playwright/test | 1.65.1 (2026-11-13) | Apache-2.0 | yes | end-to-end tests (CI) |
 | typescript | 6.0.3 (2026-04-16) | Apache-2.0 | yes | type checking (svelte-check) |
