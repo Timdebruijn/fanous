@@ -12,7 +12,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Sync: a clock packet with a position, rate or fps no real clock has is a decode error (B316). A position near 1e300
   made a slave's offset NaN, and that one number made every live message "{}" and every live patch `ops: []`; the
-  receiver now refuses fps outside 0.01–10 000, a position beyond ±1e9 frames and a rate beyond ±1e6, and a non-finite
+  receiver now refuses an fps that is not a normal number up to 10 000, a position beyond ±1e9 frames and a rate beyond ±1e6, and a non-finite
   number in any document encodes as null. The packet layout is unchanged (PR #464).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,

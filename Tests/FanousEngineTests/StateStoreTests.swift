@@ -127,6 +127,9 @@ struct StateStoreTests {
         let welcome = try JSONDecoder().decode(JSONValue.self, from: Data(store.welcome(role: .monitor, caps: [:]).utf8))
         #expect(welcome["live"]?["metrics"]?["fps"]?.int == 60)
         #expect(welcome["live"]?["layers"]?[0]?["sync"]?["offsetMs"] == .null)
+        store.updateLive(["layers": [["sync": ["offsetMs": .number(.nan)]]], "metrics": ["fps": 60]])
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(client.patches.count == 1, "the same NaN again is no change, no patch")
     }
 
     @Test func laggingClientsDropLiveButNotProject() async throws {

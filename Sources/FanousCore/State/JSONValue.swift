@@ -16,6 +16,19 @@ public enum JSONValue: Equatable, Sendable, Codable {
     case array([JSONValue])
     case object([String: JSONValue])
 
+    /// As synthesised, except that two NaN numbers are equal: a NaN in `live` is then not a change on every update.
+    public static func == (a: JSONValue, b: JSONValue) -> Bool {
+        switch (a, b) {
+        case (.null, .null): true
+        case let (.bool(x), .bool(y)): x == y
+        case let (.number(x), .number(y)): x == y || (x.isNaN && y.isNaN)
+        case let (.string(x), .string(y)): x == y
+        case let (.array(x), .array(y)): x == y
+        case let (.object(x), .object(y)): x == y
+        default: false
+        }
+    }
+
     public init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()
         if let v = try? c.decode(Bool.self) {

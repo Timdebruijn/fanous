@@ -44,14 +44,16 @@ public struct SyncPacket: Equatable, Sendable {
     /// The engine's layer cap (DESIGN.md §6.1).
     public static let maxLayers = 32
     public static let maxSize = headerSize + maxLayers * layerSize
-    /// Bounds no real clock reaches (a day at 1000 fps is 8.64e7 frames), so a slave's `(position + rate × age) ×
-    /// slaveFps / fps` stays finite for any age (B316: a position near 1e300 made it infinite, its offset NaN).
-    public static let fpsRange: ClosedRange<Float> = 0.01...10_000
+    /// Bounds no real clock reaches (a day at 1000 fps is 8.64e7 frames). The position's keeps a slave's `(position +
+    /// rate × age) × slaveFps / fps` finite for any age and any normal fps > 0, however small (B316: a position near
+    /// 1e300 made it infinite, its offset NaN); the rate's and fps's upper bounds are sanity only. No lower bound on fps
+    /// beyond a normal number: a two-frame slideshow export can have a nominal rate under 0.01.
+    public static let maxFps: Float = 10_000
     public static let maxPosition = 1e9
     public static let maxRate: Float = 1e6
 
-    /// `badValue`: a layer field the slave clock cannot use (fps outside `fpsRange`, a position or rate beyond its
-    /// bound or not finite, group outside 1–8, direction outside −1…1).
+    /// `badValue`: a layer field the slave clock cannot use (fps not a normal number in 0…`maxFps`, a position or rate
+    /// beyond its bound or not finite, group outside 1–8, direction outside −1…1).
     public enum ParseError: Error, Equatable { case tooShort, badMagic, badVersion, badLength, badValue }
 
     /// Install UUID of the sending machine.
@@ -106,7 +108,7 @@ public struct SyncPacket: Equatable, Sendable {
                 fps: Float(bitPattern: bytes.littleEndian(at: o + 4)),
                 position: Double(bitPattern: bytes.littleEndian(at: o + 8)), direction: Int8(bitPattern: bytes[o + 16]),
                 finished: bytes[o + 17] != 0, rate: Float(bitPattern: bytes.littleEndian(at: o + 18)))
-            guard fpsRange.contains(l.fps), abs(l.position) <= maxPosition, abs(l.rate) <= maxRate,  // NaN fails each
+            guard l.fps.isNormal, l.fps > 0, l.fps <= maxFps, abs(l.position) <= maxPosition, abs(l.rate) <= maxRate,  // NaN fails each
                 (1...LayerSync.groups).contains(Int(l.group)), (-1...1).contains(l.direction)
             else { throw ParseError.badValue }
             layers.append(l)

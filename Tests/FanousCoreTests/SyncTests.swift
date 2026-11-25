@@ -123,13 +123,14 @@ import Testing
         ("direction 2", { $0.direction = 2 }), ("direction -2", { $0.direction = -2 }),
         // B316: finite, but the slave's arithmetic overflows to infinity and its offset to NaN
         ("position 1e300", { $0.position = 1e300 }), ("position -1e10", { $0.position = -1e10 }),
-        ("rate 1e30", { $0.rate = 1e30 }), ("fps 1e-30", { $0.fps = 1e-30 }), ("fps 1e30", { $0.fps = 1e30 }),
+        ("rate 1e30", { $0.rate = 1e30 }), ("fps subnormal", { $0.fps = .leastNonzeroMagnitude }), ("fps 1e30", { $0.fps = 1e30 }),
     ]
 
-    /// The bounds' edges still decode: they are far beyond any real clock, not a limit on one.
+    /// The bounds' edges still decode: they are far beyond any real clock, not a limit on one. The smallest normal fps
+    /// too: a two-frame slideshow over 400 s has 0.005 fps, and its master must not become a decode error on every slave.
     @Test func acceptsTheBoundsEdges() throws {
         var layer = Self.layer(2)
-        layer.fps = SyncPacket.fpsRange.lowerBound
+        layer.fps = .leastNormalMagnitude
         layer.position = -SyncPacket.maxPosition
         layer.rate = SyncPacket.maxRate
         var buffer: [UInt8] = []

@@ -27,7 +27,8 @@ extension JSONValue {
         return encoder
     }()
 
-    /// One-line JSON text with `wireEncoder` ("{}" if the value does not encode).
+    /// One-line JSON text with `wireEncoder`; "{}" if it does not encode, which a `JSONValue` always does since B316
+    /// (a non-finite number as null).
     static func encodeCompact(_ value: JSONValue) -> String {
         String(decoding: (try? wireEncoder.encode(value)) ?? Data("{}".utf8), as: UTF8.self)
     }
