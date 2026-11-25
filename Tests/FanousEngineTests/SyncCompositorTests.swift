@@ -251,6 +251,8 @@ struct SyncCompositorTests {
         rig.tick(3)
         #expect(rig.sender.slots.read().packet.layers.isEmpty)
         #expect(rig.receiver.table.withLock { $0.entries[0] } == nil)
+    }
+
     /// B383: a once master sends rate 0 from the tick its clock shows the out frame, before it finishes, so a remote
     /// slave does not extrapolate past an out point it cannot see. Out at frame 10 of 20 (0.5 × 19, rounded); 10 fps on
     /// 60 Hz ticks.
