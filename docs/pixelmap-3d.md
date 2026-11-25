@@ -22,7 +22,8 @@ rigs, and which inputs those products take from a media server). Sources in
    rig is flat.
 2. **One GPU pass samples the canvas for every point.** Three ways to turn
    (x, y, z) into a canvas coordinate: *extrude*, *project*, *atlas*. A flat
-   strip uses *extrude* and never sees z; a volume uses any of the three.
+   strip uses *extrude* and never sees the dropped axis (the depth axis by
+   default, settable per map); a volume uses any of the three.
 3. **A moving pixel is a point whose z is driven.** Its height is sampled from
    a height map (a canvas, luma) and sent as 16-bit DMX; its colour is sampled
    at the commanded height. Fanous sends intent, clamped and rate-limited;
@@ -73,7 +74,7 @@ A **pixel map** is a project object (`pixelMaps[]`, one per rig) holding:
 
 - `points[]`: `x y z` in metres (proposed stage frame: x right, y depth
   towards the audience, z up, origin at the stage centre line on the floor;
-  the LED tools and MADRIX use z up, PSN uses y up, see §6 Q1), `universe`,
+  the LED tools and MADRIX use z up, some 3D tools y up, see §6 Q1), `universe`,
   `address`, `footprint` (`rgb`, `rgbw`, `rgb16`, `w`), optional `group` (a
   ball, a tube, a strip) and `order` within a group. A tube of 32 LEDs is 32
   points in one group.
@@ -103,9 +104,10 @@ console patches into Fanous, they are what Fanous patches out. ADR-0008
 One compute pass per tick, encoded by the compositor thread after the
 canvas pass in the same command buffer (DESIGN §4.3): for every point, a
 canvas coordinate `(u, v)`, one texture read, and a write of the footprint's
-bytes into a shared universe buffer, which a sender thread reads at DMX
-cadence (§5). The buffers are allocated with the pixel map; the pass
-allocates nothing per tick (ADR-0002).
+bytes into a universe buffer, triple-buffered like the canvas (ADR-0007), of
+which a sender thread reads the last completed one at DMX cadence (§5). The
+buffers are allocated with the pixel map; the pass allocates nothing per tick
+and takes no lock (ADR-0002).
 
 | Mode | `(u, v)` from `(x, y, z)` | Use |
 |---|---|---|
@@ -136,8 +138,8 @@ DMX frame, before any height or safety channels.
 
 A kinetic group adds one sample per group and tick:
 
-1. `h = luma(heightMap at the group's (x, y))` in the *extrude* projection of
-   the height canvas, `0…1`.
+1. `h = luma(heightMap at the group's (x, y))`, the height canvas scaled by
+   the height map's own bounds (a top view, not the map's §3 mode), `0…1`.
 2. The commanded height: `z' = top − h × travel`, moved towards from the last
    commanded z (`top` at project load and after Home) by at most
    `rateLimit × dt`, then clamped to `[top − travel, top]` (a guard for a
@@ -185,8 +187,8 @@ the integrator's.
 
 ## 6. Questions for the owner
 
-1. Stage frame: z up (this note, MADRIX, most LED tools) or y up (PSN,
-   B53)? One choice, documented, with the CSV importer able to swap axes.
+1. Stage frame: z up (this note, MADRIX, most LED tools) or y up (several
+   3D tools)? One choice, documented, with the CSV importer able to swap axes.
 2. Is the OPC JSON import worth the day it costs, or is CSV enough for v1?
 3. Does the height map come from its own canvas, or from a named layer's luma
    on the same canvas? Own canvas is simpler to reason about and costs one
