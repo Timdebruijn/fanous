@@ -4,6 +4,7 @@
 <script lang="ts">
   import LevelMeter from './LevelMeter.svelte';
   import type { JSONValue } from '../lib/protocol';
+  import { layerNumbers } from '../lib/layers';
   import { layerOffsetText, lockTitle, offsetText, timecodeBadge, timecodeOn, timecodeSource } from '../lib/show';
   import { app, can, cmd, programmerLock } from '../lib/state.svelte';
   import { plural, typedNumber } from '../lib/system';
@@ -26,8 +27,10 @@
 
   // The layer whose own offset the Layer offset field shows; the field reads the project (`/layerOffsets/<n>`).
   let offsetLayer = $state(1);
-  const layers = $derived(Array.from({ length: Math.max(0, Math.floor(app.project.layerCount) || 0) }, (_, i) => i + 1));
-  const layerOffset = $derived(tc.layerOffsets[String(offsetLayer)] ?? 0);
+  const layers = $derived(layerNumbers(app.project.layerCount));
+  /** the selection, kept inside the layers that exist (the count can shrink) */
+  const layer = $derived(Math.max(1, Math.min(offsetLayer, layers.length)));
+  const layerOffset = $derived(tc.layerOffsets[String(layer)] ?? 0);
 
   // Draft that follows the project until edited, so quick repeated taps on the stepper add up before the engine answers.
   let offset = $derived(tc.offset);
@@ -125,7 +128,7 @@
     <div class="field" role="group" aria-labelledby="tc-layer-offset">
       <span id="tc-layer-offset">Layer offset (frames)</span>
       <div class="stepper" title={editTitle}>
-        <select class="select layer" aria-label="Layer" bind:value={offsetLayer} disabled={!editable}>
+        <select class="select layer" aria-label="Layer" value={layer} disabled={!editable || layers.length === 0} onchange={(e) => (offsetLayer = Number(e.currentTarget.value))}>
           {#each layers as n (n)}<option value={n}>Layer {n}</option>{/each}
         </select>
         <input
@@ -133,16 +136,16 @@
           step="1"
           aria-labelledby="tc-layer-offset"
           value={layerOffset}
-          disabled={!editable}
+          disabled={!editable || layers.length === 0}
           onchange={(e) => {
             const el = e.currentTarget;
             const n = typedNumber(el);
             if (n === null) el.value = String(layerOffset);
-            else void set(`/layerOffsets/${offsetLayer}`, Math.round(n), () => (el.value = String(layerOffset)));
+            else void set(`/layerOffsets/${layer}`, Math.round(n), () => (el.value = String(layerOffset)));
           }}
         />
       </div>
-      <span class="caption">{layerOffsetText(tc.layerOffsets) || 'no layer has an offset of its own'}</span>
+      <span class="caption" aria-live="polite">{layerOffsetText(tc.layerOffsets) || 'no layer has an offset of its own'}</span>
     </div>
     <label class="field">
       <span>Freewheel (s)</span>
@@ -180,7 +183,8 @@
   .fields .select { min-width: 200px; max-width: 100%; }
   .fields .input { width: 110px; }
   .stepper input { width: 90px; }
-  .fields .select.layer { min-width: 0; width: 120px; }
+  /* inside the stepper's frame: no frame of its own */
+  .fields .select.layer { min-width: 0; width: 120px; border: 0; border-radius: 0; background: transparent; }
   .switch { position: relative; }
   p { margin: 0; }
 </style>
