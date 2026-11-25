@@ -476,7 +476,7 @@ public final class LibraryIndex: @unchecked Sendable {
                 // can make the count huge, which traps playback's frame arithmetic. The same bound as `MovieSource`.
                 guard let frameCount = Int(exactly: (duration * Double(frameRate)).rounded()), (0...Int(Int32.max)).contains(frameCount)
                 else { throw MovieError.unknownDuration }
-                guard Double(frameRate) <= MovieSource.maxFrameRate else { throw MovieError.frameRate }  // B336, as `MovieSource`
+                guard MovieSource.playable(frameRate: Double(frameRate)) else { throw MovieError.frameRate }  // B336, as `MovieSource`
                 metadata.frameCount = frameCount
                 if let description = descriptions.first {
                     let codec = CMFormatDescriptionGetMediaSubType(description)
@@ -505,7 +505,9 @@ public final class LibraryIndex: @unchecked Sendable {
     var markerFile: URL { cacheDirectory.appending(path: "library-probing.json") }
 
     private func loadCache(readsStopMarker: Bool) {
-        if let data = try? Data(contentsOf: cacheFile), let cache = try? JSONDecoder().decode([String: CacheEntry].self, from: data) {
+        if let data = try? Data(contentsOf: cacheFile), var cache = try? JSONDecoder().decode([String: CacheEntry].self, from: data) {
+            // B336: an entry listed before the frame-rate bound is probed again (and is then unreadable with its reason)
+            cache = cache.filter { MovieSource.playable(frameRate: $0.value.metadata?.frameRate ?? 0) }
             state.withLock { $0.cache = cache }
         }
         // B267: a marker means the engine stopped while that file was read (a crash, a kill, a power cut). The second time it
