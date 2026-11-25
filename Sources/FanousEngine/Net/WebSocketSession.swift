@@ -14,7 +14,25 @@ public final class WebSocketSession: @unchecked Sendable {
     public static let maxQueuedBytes = 256 * 1024
     /// Beyond this a non-droppable send is refused too; the caller then closes the connection.
     public static let hardLimitBytes = 4 * maxQueuedBytes
-    public static let maxMessageBytes = 16 * 1024 * 1024
+    /// B368: a client-to-server message after `hello`. The largest real one is an `output.set` of an output's whole slice
+    /// list (the Outputs screen sends `/slices` when a slice is added or removed): 16 slices with two freehand masks of
+    /// 1500 points each encode to about 2.3 MB; a typical freehand stroke is a few hundred points after the 2 px
+    /// simplification. Was 16 MiB.
+    public static let maxMessageBytes = 4 * 1024 * 1024
+    /// B368: a frame, and a message, before `hello` is accepted: the open monitor role costs nothing, so an unknown
+    /// client holds 4 KiB, not a 16 MiB frame and a 16 MiB fragment. `hello` with a token is about 150 bytes.
+    public static let preHelloBytes = 4096
+
+    /// B368: the bytes all sessions hold in partial frames and open fragments together. A session whose holding grows past
+    /// 64 KiB (one receive) while the sum is above `limit` is closed with 1009, so trickled large messages on many
+    /// connections cannot take the engine's memory, and small commands still pass.
+    final class ReceiveBudget: Sendable {
+        let limit: Int
+        let held = Atomic<Int>(0)
+        init(limit: Int) { self.limit = limit }
+        static let shared = ReceiveBudget(limit: 64 * 1024 * 1024)
+        static let free = 64 * 1024
+    }
 
     public let remoteAddress: String
     private let connection: NWConnection
@@ -26,12 +44,19 @@ public final class WebSocketSession: @unchecked Sendable {
     private var fragment: (opcode: WebSocketFrame.Opcode, payload: [UInt8])?
     /// `maxMessageBytes`; a test passes a small one so it need not build 16 MB frames (B353).
     private let messageLimit: Int
+    private let budget: ReceiveBudget
+    /// Connection queue: what this session counts in `budget` (its partial frame and open fragment, after the last feed).
+    private var held = 0
 
-    init(connection: NWConnection, remoteAddress: String, handler: StateServer.Connection, messageLimit: Int = maxMessageBytes) {
+    init(
+        connection: NWConnection, remoteAddress: String, handler: StateServer.Connection, messageLimit: Int = maxMessageBytes,
+        budget: ReceiveBudget = .shared
+    ) {
         self.connection = connection
         self.remoteAddress = remoteAddress
         self.handler = handler
         self.messageLimit = messageLimit
+        self.budget = budget
     }
 
     public var isClosed: Bool { closed.load(ordering: .relaxed) }
@@ -77,10 +102,24 @@ public final class WebSocketSession: @unchecked Sendable {
 
     /// Consumes every complete frame in `buffer`. Returns false once the connection is closing.
     func feed(_ buffer: inout [UInt8]) -> Bool {
+        guard consume(&buffer) else { return false }
+        // B368: what stays (a partial frame, an open fragment) counts in the budget; growing past it closes the connection
+        let now = buffer.count + (fragment?.payload.count ?? 0)
+        let total = budget.held.wrappingAdd(now - held, ordering: .relaxed).newValue
+        defer { held = now }
+        if now > held, now > ReceiveBudget.free, total > budget.limit {
+            close(code: 1009, reason: "message too large")
+            return false
+        }
+        return true
+    }
+
+    private func consume(_ buffer: inout [UInt8]) -> Bool {
         while !buffer.isEmpty {
+            let limit = handler.isAuthenticated ? messageLimit : Self.preHelloBytes  // B368
             let parsed: (frame: WebSocketFrame, length: Int)?
             do {
-                parsed = try WebSocketFrame.parse(buffer, maxPayload: messageLimit)
+                parsed = try WebSocketFrame.parse(buffer, maxPayload: limit)
             } catch {
                 close(code: 1002, reason: "protocol error")
                 return false
@@ -112,7 +151,7 @@ public final class WebSocketSession: @unchecked Sendable {
                     return false
                 }
                 current.payload.append(contentsOf: frame.payload)
-                guard current.payload.count <= messageLimit else {
+                guard current.payload.count <= (handler.isAuthenticated ? messageLimit : Self.preHelloBytes) else {
                     close(code: 1009, reason: "message too large")
                     return false
                 }
@@ -132,6 +171,8 @@ public final class WebSocketSession: @unchecked Sendable {
         closed.store(true, ordering: .relaxed)
         guard !ended.exchange(true, ordering: .acquiringAndReleasing) else { return }
         handler.sessionDidClose(self)
+        budget.held.wrappingSubtract(held, ordering: .relaxed)  // B368: its buffers go with it
+        held = 0
     }
 
     private func deliver(_ opcode: WebSocketFrame.Opcode, _ payload: [UInt8]) {
