@@ -25,7 +25,7 @@ cd "$(dirname "$0")/.."
 if [[ "${1:-}" == "--hosted" ]]; then
   shift
   hosted='AudioLifecycleTests|BonjourTests|CITPServerTests|ClientErrorTextTests|ConnectionLimitTests|DXTCompressorTests|DisplayModeSwitcherTests'
-  hosted+='|EditOverlayTests|HTTPSServerLogTests|IngestAPITests|LayerGeometryTests|LibraryIndexTests|LibraryRedactionTests|ListenerRecoveryTests|LiveCatalogTests'
+  hosted+='|ControlQueueTests|EditOverlayTests|HTTPSServerLogTests|IngestAPITests|LayerGeometryTests|LibraryIndexTests|LibraryRedactionTests|ListenerRecoveryTests|LiveCatalogTests'
   hosted+='|DMXStateBoundsTests|HAPFrameBoundsTests|HTTPSPipeliningTests|MetricsMicrosTests|MetricsStaleFramesTests|ProjectValueRangeTests'
   hosted+='|MIDIControlTests|OSCFeedbackServerTests|OSCReceiverTests|OSLogHandlerTests|PresetCommandsTests|ProjectVersionsTests'
   hosted+='|ReferenceSwapTests|RESTAuthTests|RoleAuthTests|ShowControlTests|SlaveClockTests|StateServerTests|StateStoreRedactionTests|StateStoreTests'
