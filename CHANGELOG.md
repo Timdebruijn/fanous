@@ -12,7 +12,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Show control: a GO from the browser no longer waits behind the readiness checks of a `show.mode` sent just before it
   on the same connection (B287). The checks ran on the connection's queue, up to about 12 s; `show.mode` now runs on a
-  queue of its own and its ack still comes after the checks, so the GO's ack can come first (PR #N).
+  queue of its own and its ack still comes after the checks, so the GO's ack can come first (PR #466).
 - Playback: a chased or sync-slave layer's first frame is its clock's frame (B404). The hand-off asked the decoder for
   the in point (the out point in a reverse mode), and the swap tick moved the clock to the timecode or the master's
   position, so the cut showed a frame of the in point; a slave with a reverse play mode also filled the ring backwards
