@@ -5338,8 +5338,8 @@ FanousSync v1
   frames, a rate beyond ±1e6, a group or direction out of range) is a decode
   error (B316): a position near 1e300 made the slave's offset NaN, and the
   position bound is the one that keeps the slave's arithmetic finite at any
-  fps. A master leaves a file above 10 000 fps out of its packet, so one odd
-  file does not make every packet of that machine a decode error. A packet
+  fps (no master sends such a layer: a file above 1000 fps does not open,
+  B336). A packet
   whose tick is the entry's or up to 256 ticks behind it, from the same
   machine, is a duplicate or arrived out of order and is dropped; a master
   restarted within 256 ticks of its previous start is therefore dropped until

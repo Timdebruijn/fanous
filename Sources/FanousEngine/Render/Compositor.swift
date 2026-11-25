@@ -944,7 +944,6 @@ public final class Compositor: @unchecked Sendable {
     /// a local slave prepared after it sees the same tick. `rate` is how the clock really moves, 0 when it does not.
     private func publishMaster(_ playback: LayerPlayback, _ p: LayerParameters, group: Int, layer: Int, in ctx: TickContext) {
         guard let sync, playback.frameCount > 1, playback.live == nil, syncClocks.count < SyncPacket.maxLayers else { return }
-        guard playback.frameRate <= Double(SyncPacket.maxFps) else { return }  // receivers refuse the whole packet for it (B316)
         let clock = playback.clock
         let direction: Double = (p.playMode.isReverse ? -1 : 1) * (clock.direction < 0 ? -1 : 1)
         let last = Float(playback.frameCount - 1)
