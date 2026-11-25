@@ -22,6 +22,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Timecode: changing the Offset, a layer offset or the Freewheel time no longer restarts the timecode input and clears
   the clock, so a chase no longer freezes and jumps on each nudge; a change of Source, Device, Channel or the switch
   still restarts it (B289) (PR #460).
+- Audio: a layer's audio clock is stamped with the tick's target, the time its frame is shown, not the time of the
+  tick (B320); its clock ran that lead (about 16.7 ms at 60 Hz) ahead of the picture. The decoder never takes its
+  clock before the target, so a cue to an in point plays nothing from before it. The output path's own latency is
+  still not compensated (B406) (PR #457).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
