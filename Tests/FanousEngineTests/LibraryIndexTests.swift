@@ -137,6 +137,67 @@ struct LibraryIndexTests {
         #expect(LibraryIndex.watchPath(URL(fileURLWithPath: topLevel)) == topLevel)
     }
 
+    /// B329: writes the scan never lists (an upload into `_incoming`, an ingest temp file, `_originals`) start no rescan;
+    /// a new numbered file does, and only that rescan gives clients a new `scannedAt`.
+    @Test func writesUnderHiddenOrUnderscoreNamesStartNoRescan() async throws {
+        let root = try tempDir("fanous-library")
+        try Self.touch(root.appending(path: "001_Show/001_a.mov"))
+        let index = LibraryIndex(root: root, cacheDirectory: try tempDir("fanous-library-cache"), logger: testLogger)
+        index.start()
+        defer { index.stop() }
+        // FSEvents can still deliver this test's own setup (the root, the folder, 001_a.mov) after start: their event ids
+        // come after the stream's "since now" (measured: three events about 0.5 s after start, one rescan of the same
+        // files). The baseline is taken once no rescan came for 1.5 s (FSEvents latency 0.5 s plus the 0.5 s throttle).
+        var scans = index.rescans.load(ordering: .relaxed)
+        var quietSince = ContinuousClock.now
+        let settle = ContinuousClock.now + .seconds(15)
+        while ContinuousClock.now - quietSince < .milliseconds(1500), ContinuousClock.now < settle {
+            try await Task.sleep(for: .milliseconds(50))
+            let now = index.rescans.load(ordering: .relaxed)
+            if now != scans { (scans, quietSince) = (now, .now) }
+        }
+        let stamp = index.snapshot.scannedAt
+        // a 2 s burst, one write every 50 ms, as an upload or an ingest writes
+        for n in 0..<40 {
+            try Self.touch(root.appending(path: "_incoming/upload.mov"), bytes: 1024 * (n + 1))
+            try Self.touch(root.appending(path: "001_Show/.ingest-\(n % 4).mov"), bytes: 1024 * (n + 1))
+            try Self.touch(root.appending(path: "001_Show/_originals/\(n % 4).mov"))
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        try await Task.sleep(for: .milliseconds(1000))  // FSEvents latency 0.5 s plus the 0.5 s debounce
+        #expect(index.rescans.load(ordering: .relaxed) == scans, "rescans during the burst")
+        #expect(index.snapshot.scannedAt == stamp)
+        try Self.touch(root.appending(path: "001_Show/002_b.mov"))
+        #expect(await waitUntil(every: .milliseconds(50)) { index.snapshot.fileCount == 2 })
+        #expect(index.snapshot.scannedAt > stamp)
+        // the ingest's last step: its hidden temp file renamed to the numbered name
+        try Self.touch(root.appending(path: "001_Show/.ingest-x.mov"))
+        try FileManager.default.moveItem(at: root.appending(path: "001_Show/.ingest-x.mov"), to: root.appending(path: "001_Show/003_c.mov"))
+        #expect(await waitUntil(every: .milliseconds(50)) { index.snapshot.fileCount == 3 }, "the rename onto a listed name rescans")
+        #expect(LibraryIndex.ignoredEvent("/r/_incoming", watched: "/r") && LibraryIndex.ignoredEvent("/r/001_A/.x", watched: "/r/"))
+        #expect(!LibraryIndex.ignoredEvent("/r", watched: "/r") && !LibraryIndex.ignoredEvent("/r/001_A/002_b.mov", watched: "/r"))
+        #expect(!LibraryIndex.ignoredEvent("/elsewhere/_x", watched: "/r"), "a path outside the root rescans")
+    }
+
+    /// B329: a rescan that finds the files the last one left keeps `scannedAt` and calls no change hook; a changed file does.
+    @Test func aRescanOfTheSameFilesKeepsScannedAt() async throws {
+        let root = try tempDir("fanous-library")
+        try Self.touch(root.appending(path: "001_Show/001_a.mov"))
+        let index = LibraryIndex(root: root, cacheDirectory: try tempDir("fanous-library-cache"), logger: testLogger)
+        final class Changes: Sendable { let count = Atomic<Int>(0) }
+        let changes = Changes()
+        index.onChange = { changes.count.wrappingAdd(1, ordering: .relaxed) }
+        index.rescan()
+        let stamp = index.snapshot.scannedAt
+        #expect(stamp > 0 && changes.count.load(ordering: .relaxed) == 1)
+        try await Task.sleep(for: .milliseconds(20))
+        index.rescan()
+        #expect(index.snapshot.scannedAt == stamp && changes.count.load(ordering: .relaxed) == 1)
+        try Self.touch(root.appending(path: "001_Show/001_a.mov"), bytes: 32)
+        index.rescan()
+        #expect(index.snapshot.scannedAt > stamp && changes.count.load(ordering: .relaxed) == 2, "a new size is a change")
+    }
+
     /// A 2×2 PNG: enough for the still probe to call it playable.
     static func png(_ url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)

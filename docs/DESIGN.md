@@ -1363,9 +1363,13 @@ Fanous Library/
   anything non-digit. Names without a numeric prefix, duplicates, and numbers
   outside range are indexed as **invalid** and shown in red in the Media
   screen; they are never addressable from DMX.
-- The index is built at start and kept current with FSEvents (debounced
-  500 ms), on the root's real path also while the root does not exist yet
-  (B140: FSEvents resolves symlinks only in a path that exists). Metadata (codec, size, fps, duration, alpha, audio channels,
+- The index is built at start and kept current with FSEvents (throttled:
+  one rescan 500 ms after the first event of a burst), on the root's real path also while the root does not exist yet
+  (B140: FSEvents resolves symlinks only in a path that exists). An event on
+  a name the scan does not list (a path component under the root starting
+  with `.` or `_`: `_incoming` uploads, `_originals`, `.ingest-…` temp files)
+  starts no rescan, and a rescan that finds what the last one found keeps
+  `scannedAt`, on which every client refetches `/api/library` (B329). Metadata (codec, size, fps, duration, alpha, audio channels,
   colour primaries, file hash) and thumbnails are cached in
   `~/Library/Application Support/Fanous/cache/` keyed by path + mtime + size.
 - **Playable** = ProRes/HAP in `.mov`, stills. Anything else (H.264/HEVC,

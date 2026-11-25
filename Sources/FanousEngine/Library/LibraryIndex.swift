@@ -130,6 +130,10 @@ public final class LibraryIndex: @unchecked Sendable {
     /// How long `stop()` waits for a probe in flight; shortened by a test only.
     var joinTimeout: DispatchTimeInterval = .seconds(10)
     private var stream: FSEventStreamRef?
+    /// The path FSEvents watches (`watchPath(root)`, set in `watch()`): events carry real paths under it.
+    private var watchedPath = ""
+    /// Rescans made, for the tests (B329).
+    let rescans = Atomic<Int>(0)
     private let eventQueue = DispatchQueue(label: "org.fanous.library.fsevents", qos: .utility)
     private var rescanPending = false
     public var onChange: (@Sendable () -> Void)?
@@ -323,14 +327,23 @@ public final class LibraryIndex: @unchecked Sendable {
             folders.append(LibraryFolder(number: number, name: folderName, path: folderURL.path, items: items))
         }
         folders.sort { ($0.number ?? 999, $0.name) < ($1.number ?? 999, $1.name) }
-        let snapshot = LibrarySnapshot(root: root.path, rootExists: rootExists, folders: folders, scannedAt: Date().timeIntervalSince1970, fileCount: fileCount, invalidCount: invalidCount)
-        state.withLock { s in
+        var snapshot = LibrarySnapshot(root: root.path, rootExists: rootExists, folders: folders, scannedAt: Date().timeIntervalSince1970, fileCount: fileCount, invalidCount: invalidCount)
+        rescans.wrappingAdd(1, ordering: .relaxed)
+        // B329: a scan that finds what the last one left keeps its `scannedAt`; every client refetches `/api/library` on a new one
+        let same = state.withLock { s in
+            var unchanged = snapshot
+            unchanged.scannedAt = s.snapshot.scannedAt
+            let same = s.snapshot.scannedAt != 0 && unchanged == s.snapshot
+            if same { snapshot = unchanged }
             s.snapshot = snapshot
             s.byKey = byKey
             s.pendingProbes = probes
+            return same
         }
-        logger.info("library scanned", metadata: ["root": "\(root.path)", "folders": "\(folders.count)", "files": "\(fileCount)", "invalid": "\(invalidCount)", "toProbe": "\(probes.count)"])
-        changed()
+        if !same {
+            logger.info("library scanned", metadata: ["root": "\(root.path)", "folders": "\(folders.count)", "files": "\(fileCount)", "invalid": "\(invalidCount)", "toProbe": "\(probes.count)"])
+            changed()
+        }
         if !probes.isEmpty { probeWake.signal() }
     }
 
@@ -550,12 +563,15 @@ public final class LibraryIndex: @unchecked Sendable {
                 guard let info else { return }
                 Unmanaged<LibraryIndex>.fromOpaque(info).release()
             }, copyDescription: nil)
-        let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
+        let callback: FSEventStreamCallback = { _, info, _, paths, _, _ in
             guard let info else { return }
-            Unmanaged<LibraryIndex>.fromOpaque(info).takeUnretainedValue().scheduleRescan()
+            let index = Unmanaged<LibraryIndex>.fromOpaque(info).takeUnretainedValue()
+            let paths = unsafeBitCast(paths, to: NSArray.self) as? [String] ?? []  // CFStrings: kFSEventStreamCreateFlagUseCFTypes
+            if paths.isEmpty || paths.contains(where: { !LibraryIndex.ignoredEvent($0, watched: index.watchedPath) }) { index.scheduleRescan() }
         }
+        watchedPath = Self.watchPath(root)
         guard let stream = FSEventStreamCreate(
-            nil, callback, &context, [Self.watchPath(root)] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.5,
+            nil, callback, &context, [watchedPath] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.5,
             FSEventStreamCreateFlags(kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents))
         else {
             logger.warning("FSEvents unavailable for \(root.path); the library only rescans on request")
@@ -581,7 +597,15 @@ public final class LibraryIndex: @unchecked Sendable {
         return rest.reduce(URL(fileURLWithPath: String(cString: real))) { $0.appending(path: $1) }.path  // no "//" under "/"
     }
 
-    /// Debounced: one rescan 500 ms after the last event (DESIGN.md §8.1).
+    /// B329: an event on a path the scan never lists, a name under the root starting with `.` or `_` (`_incoming` uploads,
+    /// `_originals`, `.ingest-…` temp files, `.DS_Store`), starts no rescan. The ingest's final move lands on a listed name.
+    static func ignoredEvent(_ path: String, watched: String) -> Bool {
+        let prefix = watched.hasSuffix("/") ? watched : watched + "/"
+        guard path.hasPrefix(prefix) else { return false }
+        return path.dropFirst(prefix.count).split(separator: "/").contains { $0.hasPrefix(".") || $0.hasPrefix("_") }
+    }
+
+    /// Debounced: one rescan 500 ms after the first event of a burst (DESIGN.md §8.1).
     private func scheduleRescan() {
         eventQueue.async { [self] in
             guard !rescanPending else { return }

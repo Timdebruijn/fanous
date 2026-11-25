@@ -73,6 +73,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   bounce's turning frame, for a tick (B383). The slave extrapolated the master's last moving tick by rate × age without
   knowing the in and out points; a master in a once mode or a bounce now sends rate 0 while its clock shows the end
   frame it moves towards. The packet layout is unchanged; a loop's wrap is B426 (PR #478).
+- Library: writes under a name the library does not list (an upload into `_incoming`, an ingest temp file,
+  `_originals`) start no rescan, and a rescan that finds no change keeps `scannedAt` (B329). Each rescan stamped a new
+  `scannedAt`, so every client on Layers, Outputs and Media refetched the whole `/api/library` about once a second for
+  the length of an upload or an ingest (PR #465).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)
