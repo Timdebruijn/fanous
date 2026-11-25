@@ -72,6 +72,9 @@ import Testing
             case .http: _ = try? HTTPRequest.parse(bytes)
             case .sync:
                 guard let packet = try? SyncPacket.decode(bytes) else { return }
+                for l in packet.layers {  // B316: a slave's arithmetic on any accepted clock stays finite (a day old, at 1000 fps)
+                    #expect(((l.position + Double(l.rate) * 86_400) * 1000 / Double(l.fps)).isFinite, "\(l)")
+                }
                 var out: [UInt8] = []
                 packet.encode(into: &out)
             case .midi:

@@ -57,6 +57,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   probe thread and the new one's could both write its single-writer parameter buffer and run a compositor on it at
   once; a lock in `Thumbnailer.make` serialises them (PR #477).
 - Docs: the README link row gains a "Project page" link to the project's page on timdebruijn.nl (PR #493)
+- Sync: a clock packet with a position, rate or fps no real clock has is a decode error (B316). A position near 1e300
+  made a slave's offset NaN, and that one number made every live message "{}" and every live patch `ops: []`; the
+  receiver now refuses an fps that is not a normal number up to 10 000, a position beyond ±1e9 frames and a rate beyond ±1e6, and a non-finite
+  number in any document encodes as null. The packet layout is unchanged (PR #464).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)

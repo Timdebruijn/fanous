@@ -88,6 +88,7 @@ struct SyncReceiverTests {
             Array("not a sync packet".utf8),
             Array("FSYN".utf8) + [9] + [UInt8](repeating: 0, count: 40),  // a version we do not speak
             Self.packet(from: Self.high, []),  // keepalive
+            Self.packet(from: Self.low, [Self.clock(group: 5, position: 1e300)]),  // B316: its offset would be NaN
             Self.packet(from: Self.low, [Self.clock(group: 2)]),
         ]
         #expect(sendUDP(datagrams, to: port).sent == datagrams.map(\.count))
@@ -95,7 +96,7 @@ struct SyncReceiverTests {
         let table = receiver.table.withLock { $0 }
         #expect(table.entries[0] == nil, "our own id is dropped")
         #expect(table.entries.compactMap { $0 }.count == 1, "the keepalive set nothing")
-        #expect(receiver.decodeErrors.load(ordering: .relaxed) == 2)
+        #expect(receiver.decodeErrors.load(ordering: .relaxed) == 3)
         #expect(receiver.packetsIn.load(ordering: .relaxed) == 2, "the keepalive and the clock; not our own")
     }
 
