@@ -208,7 +208,7 @@ struct ShowControlTests {
     /// Acceptance: the chase against a generated LTC file (the decoder → clock path of `LTCInput`) is on the frame being
     /// transmitted, to a hundredth of a frame (B290: it ran one frame late and the old ±1 tolerance passed either way).
     /// The host time is the sample index, so the only error left is the threshold crossing within one sample.
-    @Test func ltcFileChasesWithinOneFrame() throws {
+    @Test func ltcFileChasesToAHundredthOfAFrame() throws {
         let sampleRate = 48_000.0
         let rate = TimecodeRate.fps25
         let frames = (0..<75).map { Timecode(frameCount: 90_000 + $0, rate: rate) }  // 3 s from 01:00:00:00

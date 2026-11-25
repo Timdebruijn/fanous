@@ -43,9 +43,9 @@ public final class TimecodeClock: @unchecked Sendable {
 
     public init() {}
 
-    /// Source thread: the time at `hostTime`, when a decoded frame's last bit ended (LTC passes the frame after the one
-    /// decoded, MTC two frames after piece 0); `everyFrames` is the update interval the source promises, which sets the
-    /// lock window.
+    /// Source thread: the time at `hostTime`. LTC passes the frame after the one whose last bit ended then; MTC passes
+    /// piece 0's frame + 2 at piece 7, which comes 1.75 frames after piece 0, so MTC reads a quarter frame ahead.
+    /// `everyFrames` is the update interval the source promises, which sets the lock window.
     public func update(_ timecode: Timecode, at hostTime: Double, source: String, everyFrames: Int = 1) {
         sample.withLock { s in
             s.frameCount = timecode.frameCount
