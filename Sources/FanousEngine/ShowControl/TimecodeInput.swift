@@ -219,7 +219,7 @@ public final class LTCInput: @unchecked Sendable {
             for frame in frames {
                 // sub-frame phase: the host time at which the frame's last bit ended
                 let offset = Double(frame.endSampleIndex - bufferStart) / sampleRate
-                clock.update(Self.timeAtEnd(of: frame), at: bufferHostTime + offset, source: "LTC")
+                clock.update(frame.running ? Self.timeAtEnd(of: frame) : frame.timecode, at: bufferHostTime + offset, source: "LTC", running: frame.running)
             }
             return noErr
         }
