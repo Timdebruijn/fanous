@@ -846,8 +846,8 @@ extension StateStoreTests {
             return store.execute(command, args: command == "patch.set" ? args : ["entries": [args]], role: .programmer)
         }
         for command in ["patch.set", "patch.setMany"] {
-            let message = try #require(run(command, "Layer 3", 1).failureMessage, "\(command) patched Layer 3 above the count")
-            #expect(message.contains("there is no layer 3: the project has 2 layers"), "\(message)")
+            let message = run(command, "Layer 3", 1).failureMessage
+            #expect(message?.contains("there is no layer 3: the project has 2 layers") == true, "\(command): \(message ?? "patched Layer 3 above the count")")
             #expect(run(command, "Layer 40", 1).failureCode == "invalidArgs")
             #expect(run(command, "Layer 2", 1).failureCode == nil)
             // address 0 removes the stale entry; undo brings it back for the next round
