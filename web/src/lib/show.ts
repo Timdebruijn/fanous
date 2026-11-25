@@ -129,6 +129,41 @@ export function countdownText(seconds: number): string {
   return whole < 60 ? `${whole} s` : `${Math.floor(whole / 60)}:${pad2(whole % 60)}`;
 }
 
+/** Frames of `hh:mm:ss:ff` (`;` or `:` before the frames, a leading minus allowed) at a rate as the engine spells it
+ * ("25", "29.97 DF"), counted as `Timecode.frameCount` (drop frame skips two numbers a minute except each tenth);
+ * null when the text is not a timecode in range (`Timecode.isValid`: at drop frame the skipped numbers too) or the
+ * rate names none of the trigger rates. */
+export function timecodeFrames(text: string, rate: string): number | null {
+  const m = /^(-|−)?(\d{1,2}):(\d{1,2}):(\d{1,2})[:;](\d{1,2})$/.exec(text.trim());
+  const r = TRIGGER_RATES.find((x) => x.engine === rate);
+  if (!m || !r) return null;
+  const [h, min, s, f] = [m[2], m[3], m[4], m[5]].map(Number) as [number, number, number, number];
+  if (h > 23 || min > 59 || s > 59 || f >= r.frames) return null;
+  if (r.id === '29.97df' && s === 0 && f < 2 && min % 10 !== 0) return null;
+  const totalMinutes = h * 60 + min;
+  const frames = (h * 3600 + min * 60 + s) * r.frames + f - (r.id === '29.97df' ? 2 * (totalMinutes - Math.floor(totalMinutes / 10)) : 0);
+  return m[1] ? -frames : frames;
+}
+
+/** `hh:mm:ss:ff` of a frame count at a rate, the inverse of `timecodeFrames` (`Timecode(frameCount:)`: `;` before the
+ * frames at drop frame as the readout shows it); the sign kept; a day or more wraps, as the engine's does; "" when
+ * the rate names none of the trigger rates. */
+export function timecodeText(frames: number, rate: string): string {
+  const r = TRIGGER_RATES.find((x) => x.engine === rate);
+  if (!r) return '';
+  const fps = r.frames;
+  let count = Math.abs(Math.round(frames));
+  if (r.id === '29.97df') {
+    const per10Minutes = fps * 600 - 18;
+    const perMinute = fps * 60 - 2;
+    const remainder = count % per10Minutes;
+    count += 18 * Math.floor(count / per10Minutes);
+    if (remainder > 2) count += 2 * Math.floor((remainder - 2) / perMinute);
+  }
+  const text = `${pad2(Math.floor(count / (fps * 3600)) % 24)}:${pad2(Math.floor(count / (fps * 60)) % 60)}:${pad2(Math.floor(count / fps) % 60)}${r.id === '29.97df' ? ';' : ':'}${pad2(count % fps)}`;
+  return frames < 0 ? `−${text}` : text;
+}
+
 export const TRIGGER_HINT = 'hh:mm:ss:ff@rate, for example 00:01:30:00@25 (rates: 24, 25, 29.97df, 29.97ndf, 30)';
 
 export type TriggerResult = { ok: true; value: string | null } | { ok: false; error: string };

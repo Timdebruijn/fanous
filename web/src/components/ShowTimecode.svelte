@@ -4,7 +4,7 @@
 <script lang="ts">
   import LevelMeter from './LevelMeter.svelte';
   import type { JSONValue } from '../lib/protocol';
-  import { countdownText, formatNumber, lockTitle, nextTrigger, offsetText, timecodeBadge, timecodeOn, timecodeSource } from '../lib/show';
+  import { countdownText, formatNumber, lockTitle, nextTrigger, offsetText, timecodeBadge, timecodeFrames, timecodeOn, timecodeSource, timecodeText } from '../lib/show';
   import { app, can, cmd, programmerLock } from '../lib/state.svelte';
   import { plural, typedNumber } from '../lib/system';
 
@@ -120,6 +120,25 @@
       <span class="caption" aria-live="polite">{offsetText(offset, app.live.timecode.rate)}</span>
     </div>
     <label class="field">
+      <span>Start (hh:mm:ss:ff)</span>
+      <input
+        class="input mono start"
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="01:00:00:00"
+        value={timecodeText(offset, live.rate)}
+        disabled={!editable || timecodeText(offset, live.rate) === ''}
+        title={editTitle ?? (timecodeText(offset, live.rate) === '' ? 'Start needs a known rate: lock a source first' : 'The time the show timecode starts at: the Offset as a timecode at the current rate')}
+        onchange={(e) => {
+          const el = e.currentTarget;
+          const n = timecodeFrames(el.value, live.rate);
+          el.value = timecodeText(n ?? offset, live.rate);
+          if (n !== null) setOffset(n);
+        }}
+      />
+    </label>
+    <label class="field">
       <span>Freewheel (s)</span>
       <input
         class="input mono"
@@ -139,7 +158,7 @@
     </label>
   </div>
   <p class="caption">
-    Offset is subtracted from the incoming time. Channel 1 is the first input channel of the device.
+    Offset is subtracted from the incoming time; Start is the same value as a timecode. Channel 1 is the first input channel of the device.
     {#if tc.source === 'ltc'}LTC needs the microphone permission: the engine asks once, or authorize it on the <a href="#/inputs">Inputs screen</a>.{/if}
   </p>
 </section>
@@ -154,6 +173,7 @@
   .fields { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; }
   .fields .select { min-width: 200px; max-width: 100%; }
   .fields .input { width: 110px; }
+  .fields .input.start { width: 130px; }
   .stepper input { width: 90px; }
   .switch { position: relative; }
   p { margin: 0; }
