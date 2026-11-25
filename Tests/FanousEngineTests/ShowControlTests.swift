@@ -391,7 +391,8 @@ struct ShowControlTests {
     }
 
     /// B289: `timecode.set` on an offset, a layer offset or the freewheel time restarted the input and cleared the
-    /// clock, so the chase froze and jumped on every nudge. MTC with no source named: an LTC input asks for the microphone.
+    /// clock, so the chase froze and jumped on every nudge. MTC, as an LTC input asks for the microphone, on a device no
+    /// source has, as no device connects every MIDI source and a real one would feed the clock.
     @Test func timecodeOffsetsChangeWithoutRestartingTheInput() throws {
         let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
         let (store, _) = testStore(outputs: 0)
@@ -399,6 +400,7 @@ struct ShowControlTests {
         engine.store = store
         store.onProjectChanged = { [engine] in engine.projectChanged($0) }
         let set = { (path: String, value: JSONValue) in _ = try store.execute("timecode.set", args: ["path": .string(path), "value": value], role: .programmer).get() }
+        try set("/device", "B289 none")
         try set("/source", "mtc")
         let input = try #require(engine.mtc)
         engine.timecodeClock.update(Timecode(frameCount: 90_000, rate: .fps25), at: 100, source: "MTC")
@@ -410,7 +412,7 @@ struct ShowControlTests {
         #expect(sample.state == .locked && sample.frameCount == 90_000, "the clock was cleared: \(sample)")
         #expect(engine.timecodeClock.freewheelSeconds == 4)
         // what opens the input still restarts it, and clears the clock
-        try set("/device", "Console")
+        try set("/device", "B289 other")
         #expect(engine.mtc != nil && engine.mtc !== input)
         #expect(engine.timecodeClock.current(at: 100).state == .off)
         try set("/source", "off")  // no MTC input left open

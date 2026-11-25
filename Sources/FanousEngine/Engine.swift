@@ -1229,9 +1229,9 @@ public final class Engine: @unchecked Sendable {
     }
 
     /// An offset, a layer offset or the freewheel time applies to the running input and clock; only a change of what
-    /// opens the input (source, device, channel, the switch) or a `reopen` restarts it and clears the clock (B289).
+    /// opens the input (source, device, LTC channel, the switch) or a `reopen` restarts it and clears the clock (B289).
     private func applyTimecodeSettings(_ settings: ShowCommands.TimecodeSettings, reopen: Bool = false) {
-        let opens = { (s: ShowCommands.TimecodeSettings) in (s.enabled == false ? .off : s.source, s.device, s.channel) }
+        let opens = { (s: ShowCommands.TimecodeSettings) in (s.enabled == false ? .off : s.source, s.device, s.source == .ltc ? s.channel : 0) }
         let restart = reopen || opens(settings) != opens(lastTimecodeSettings)
         lastTimecodeSettings = settings
         // the switch does not count: the operator may turn it on in show mode, and LTC then asks for the microphone
