@@ -34,8 +34,7 @@ import Testing
 
     static func mode(_ url: URL) throws -> Int { try #require(FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int) }
 
-    /// `TLSIdentity.reset` is not tested: it deletes the production-tag key and the "Fanous (" certificates from the
-    /// login keychain unless FANOUS_HOME is set.
+    /// `TLSIdentity.reset` is not tested: it deletes the data-protection key with this home's tag and the files in `tls/`.
     @Test(.enabled(if: fileStorage)) func loadOrCreateKeepsTheIdentityInPrivateFiles() throws {
         let directory = try tempDir("tls")
         let first = try Self.loadOrCreate(directory)

@@ -64,5 +64,6 @@ not needed.
 
 `fanousd reset-tls` removes the data-protection key and the files in `tls/`
 only. The search for login-keychain leftovers (keys and certificates) is
-gone: only the Phase 2 development builds before the amendment above wrote
-there, none was released, and no build since reads such an item.
+gone: only the Phase 0–2 development builds (2026-10-22/23, before the
+Phase 3 amendment above) wrote there, none was released, and no build since
+reads such an item.

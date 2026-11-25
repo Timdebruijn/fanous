@@ -94,6 +94,16 @@ import Testing
     static let uploadHead = Data("PUT /api/upload/1/clip.mov HTTP/1.1\r\nHost: x\r\nContent-Length: \(uploadSize)\r\n\r\n".utf8)
     static let stored = Data(HTTPResponse.text(202, "stored \(uploadSize)").serialized())
 
+    /// The refusal log line: the first refusal logs, one within 60 s is held back and counted, the next after 60 s logs
+    /// with the count since the last line.
+    @Test func refusalsLogOneLineAMinuteWithTheCount() {
+        var log = RefusalLog()
+        #expect(log.add(now: 1000) == 1)
+        #expect(log.add(now: 1059) == nil)
+        #expect(log.add(now: 1060) == 2)
+        #expect(log.add(now: 1061) == nil)
+    }
+
     // MARK: HTTPS deadlines
 
     /// A connection that sends nothing, one with half a request head and one with half a body are each closed once the
