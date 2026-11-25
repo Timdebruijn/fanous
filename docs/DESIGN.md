@@ -1378,6 +1378,11 @@ Fanous Library/
   changed, with their thumbnails (B328): not after a scan whose listing
   failed, not the entries of a root inside this one, and a replaced index
   (B51) writes once before its replacement reads the cache and never after.
+  In show mode a probe reads the metadata (so the file resolves and plays)
+  but makes no thumbnail and caches no entry without its thumbnail; a scan
+  takes the read as a hit, so the file keeps resolving (also when show mode
+  is left and entered again), and out of show mode queues it for the probe
+  that makes its thumbnail; the rescan when show mode ends does that (B325).
 - **Playable** = ProRes/HAP in `.mov`, stills. Anything else (H.264/HEVC,
   `.mp4`, `.avi`, image sequences) is indexed as "needs transcode" with a
   one-click ingest action. Long-GOP codecs are deliberately not playable:
@@ -4634,7 +4639,8 @@ with public APIs:
   engine); the shell adds the same assertions while visible.
 - Output windows at `CGShieldingWindowLevel`, cursor hidden over outputs,
   desired display modes applied (§9.6). Not built (B42): the mirroring check.
-- Ingest paused (always; no setting). Not built (B42): library rescans
+- Ingest paused, and library thumbnails wait until show mode ends (B325;
+  always; no setting). Not built (B42): library rescans
   reduced to manual, log level `warning`, thumbnails at 1 fps, preview
   encoders capped.
 - The status bar's reds follow the show lock, not show mode (§12): dropped

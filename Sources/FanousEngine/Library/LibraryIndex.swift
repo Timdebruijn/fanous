@@ -133,17 +133,19 @@ public final class LibraryIndex: @unchecked Sendable {
     var saveInterval: TimeInterval = 2
     /// Cache writes and the bytes they wrote, for the tests (B328).
     let cacheWrites = Atomic<Int>(0), cacheBytes = Atomic<Int>(0)
-    /// Show mode (DESIGN.md §14), set by the engine from `showMode.onChange`: cache writes and pruning wait (B328). Turning
-    /// it off wakes the library thread, which writes what waited.
+    /// Show mode (DESIGN.md §14), set by the engine from `showMode.onChange`: cache writes and pruning wait (B328) and
+    /// probes make no thumbnail (B325). Turning it off wakes the library thread, which writes what waited, and rescans
+    /// when a thumbnail was left out, which probes those files again with theirs.
     public var paused: Bool {
         get { pausedFlag.load(ordering: .sequentiallyConsistent) }
         set {
             pausedFlag.store(newValue, ordering: .sequentiallyConsistent)
             guard !newValue else { return }
             probeWake.signal()
+            if thumbnailsDeferred.exchange(false, ordering: .sequentiallyConsistent) { scheduleRescan() }
         }
     }
-    private let pausedFlag = Atomic<Bool>(false)
+    private let pausedFlag = Atomic<Bool>(false), thumbnailsDeferred = Atomic<Bool>(false)
     /// The first incomplete scan is logged (B328: nothing is pruned while scans stay incomplete).
     private let warnedIncomplete = Atomic<Bool>(false)
     /// Replaced (B51): set under `writeLock` after its last write, so no write of it lands after the replacement read the
@@ -174,6 +176,10 @@ public final class LibraryIndex: @unchecked Sendable {
         var savedAt = ProcessInfo.processInfo.systemUptime
         /// B328: the last scan listed every folder it found; a failed listing (a volume grant reset, EIO) prunes nothing.
         var scanComplete = false
+        /// B325: what a probe in show mode read, without its thumbnail, by cache key: a scan takes it as a hit, so the file
+        /// keeps resolving (also when show mode is left and entered again before the re-probe); out of show mode the scan
+        /// also queues it for the probe that makes its thumbnail, which moves it to `cache`. Never written to the cache file.
+        var deferred: [String: CacheEntry] = [:]
     }
 
     /// B220: the wording of the probe's reason texts. A cached entry that carries a reason is probed again once when the
@@ -311,7 +317,8 @@ public final class LibraryIndex: @unchecked Sendable {
         // plain code-point order decides who wins a duplicate number ("012_Show" before "12_Dup"): deterministic on every machine
         let folderNames = list(root).sorted()
         var seenFolders: Set<Int> = []
-        let cache = state.withLock { $0.cache }
+        let inShow = paused
+        let (cache, deferred) = state.withLock { ($0.cache, $0.deferred) }
         for folderName in folderNames {
             let folderURL = root.appending(path: folderName)
             guard let isDirectory = (try? folderURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory else {
@@ -368,11 +375,12 @@ public final class LibraryIndex: @unchecked Sendable {
                 }
                 if item.status == .invalid {
                     invalidCount += 1
-                } else if let cached = cache[Self.cacheKey(item)], cached.reason == nil || cached.reasonsVersion == Self.reasonsVersion || cached.reason == Self.stoppedTwice {
+                } else if let cached = cache[Self.cacheKey(item)] ?? deferred[Self.cacheKey(item)], cached.reason == nil || cached.reasonsVersion == Self.reasonsVersion || cached.reason == Self.stoppedTwice {
                     item.metadata = cached.metadata
                     item.thumbnail = cached.thumbnail
                     item.status = cached.status
                     item.reason = cached.reason
+                    if !inShow, cache[Self.cacheKey(item)] == nil { probes.append(url.path) }  // playable while its thumbnail waits
                 } else {
                     probes.append(url.path)
                 }
@@ -490,16 +498,30 @@ public final class LibraryIndex: @unchecked Sendable {
             entry.reason = "unknown type"
         }
         if entry.reason != nil { entry.reasonsVersion = Self.reasonsVersion }
+        // B325: in show mode a file is read, so it plays, but gets no thumbnail (a compositor and a decode on the shared GPU
+        // queue). Not cached without it: the rescan when show mode ends probes it again, with its thumbnail.
+        var cached = true
         if entry.status == .playable || entry.status == .needsTranscode, let metadata = entry.metadata, let thumbnailer {
-            entry.thumbnail = thumbnailer(item.kind == .sequence ? ((try? SequenceIngest.frames(in: url))?[0] ?? url) : url, metadata, item.kind)
+            if paused {
+                cached = false
+                thumbnailsDeferred.store(true, ordering: .sequentiallyConsistent)
+            } else {
+                entry.thumbnail = thumbnailer(item.kind == .sequence ? ((try? SequenceIngest.frames(in: url))?[0] ?? url) : url, metadata, item.kind)
+            }
         }
-        apply(entry, to: item)
+        apply(entry, to: item, cached: cached)
+        if !cached, !paused, running.load(ordering: .relaxed) { scheduleRescan() }  // show mode ended during this probe
     }
 
-    private func apply(_ entry: CacheEntry, to item: LibraryItem) {
+    private func apply(_ entry: CacheEntry, to item: LibraryItem, cached: Bool) {
         state.withLock { s in
-            s.cache[Self.cacheKey(item)] = entry
-            s.unsaved += 1
+            if cached {
+                s.cache[Self.cacheKey(item)] = entry
+                s.deferred[Self.cacheKey(item)] = nil
+                s.unsaved += 1
+            } else {
+                s.deferred[Self.cacheKey(item)] = entry
+            }
             for f in s.snapshot.folders.indices {
                 for i in s.snapshot.folders[f].items.indices where s.snapshot.folders[f].items[i].path == item.path {
                     var updated = s.snapshot.folders[f].items[i]
@@ -516,7 +538,7 @@ public final class LibraryIndex: @unchecked Sendable {
         }
         // a probe that outlived stop() (the join timed out): the cache file and the hook belong to the next index (B51)
         guard running.load(ordering: .relaxed) else { return }
-        saveCacheIfDue(drained: false)
+        if cached { saveCacheIfDue(drained: false) }
         changed()
     }
 

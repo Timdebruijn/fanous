@@ -256,7 +256,9 @@ as stopping the engine twice are not touched. The cache is saved every 200 files
 when the reading is done and when the engine stops, and not in show mode (it is saved when show mode ends), so after a
 crash the files read in the last moments show "probing…" once more; in show mode nothing is saved until it ends, so
 after a crash during a show every file read in it is read again. The cached results and thumbnails of files that
-left the library are removed.
+left the library are removed. In show mode a new file is still read, so a layer can play it, but its
+thumbnail waits until show mode ends (making one decodes on the graphics card the show uses); its tile shows none until
+then.
 
 ## Audio
 

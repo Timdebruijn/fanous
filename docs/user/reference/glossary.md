@@ -119,7 +119,7 @@ browser's find for a word. Back to the [index](../README.md).
 | **Web UI** | The same screens in any browser on the network at `https://<mac>.local:8443`; an iPad is the intended second screen. |
 | **Role** | What a browser may do: **monitor** (look), **operator** (cues, show mode, readiness, timecode switch), **programmer** (everything). Each role can have a password. |
 | **Show lock** | The L key or the Locked tag: refuses every change to the setup while cues, show mode and the timecode switch keep working. |
-| **Show mode** | Runs the readiness list, then keeps the Mac awake, pauses the ingest queue, hides the cursor on the outputs and applies display modes. |
+| **Show mode** | Runs the readiness list, then keeps the Mac awake, pauses the ingest queue and the library's thumbnails, hides the cursor on the outputs and applies display modes. |
 | **Readiness** | The list of checks on the System screen (power, heat, disk, universes, outputs, permissions, macOS settings). A failed item blocks show mode until fixed or acknowledged. |
 | **Project** | Everything you set up, one per Mac: patch, Who controls, canvases, outputs, walls, presets, cues, timecode and MIDI settings. Saved by itself; **versions** of it can be restored. |
 | **Clients** | Browsers and app windows connected to the engine. A **lagging** client is one that cannot keep up with the state updates. |

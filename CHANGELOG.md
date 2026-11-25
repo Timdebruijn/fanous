@@ -80,6 +80,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Library: the cache file is written every 200 probes or 2 s, when the probe queue drains and at stop, not after every
   probe, and not in show mode (B328). Each write holds every entry, so a write per probe was quadratic: 500 new files
   wrote 500 files and 27 MB, now 3 and 0.24 MB. Entries and thumbnails of files that left the library are pruned (PR #469).
+- Library: in show mode a new file is probed without a thumbnail, so it plays but runs no thumbnail compositor and
+  decode on the shared GPU queue (B325); the rescan when show mode ends makes the thumbnails. A bulk copy into the
+  library during a show made one per file (PR #474).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)

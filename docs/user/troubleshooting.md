@@ -316,7 +316,7 @@ against the frame budget ([System screen](screens/system.md#live-metrics)).
   thermal state and does not slow itself down.
 - Other work on the Mac: quit other applications, switch Time Machine
   off, Spotlight off for the library's volume, show mode on (it pauses
-  ingest). Many open browser previews cost time too: the clients tile.
+  ingest and the library's thumbnails). Many open browser previews cost time too: the clients tile.
 - Display mode: the display at the canvas frame rate or a multiple of it,
   not mirrored; the output's Mode set, so show mode applies it
   ([Outputs and mapping](outputs-and-mapping.md#display-modes)).
