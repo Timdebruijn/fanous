@@ -161,6 +161,8 @@ public final class LayerPlayback: @unchecked Sendable {
     var hold = InvisibilityHold()
     var currentShown = -1
     var previousShown = -1
+    /// The play direction of the last pick (B293): a change drains the ring, whose frames all lie on the other side.
+    private var lastDirection = 0
     var holdFrame: DecodedFrame?
     /// `holdFrame`'s media frame (B371), equal to `holdFrame?.frameIndex` since B386 (nothing relabels a held frame).
     /// −1 = none.
@@ -247,6 +249,18 @@ public final class LayerPlayback: @unchecked Sendable {
         defer { if freed { decoder?.nudge() } }  // a slot is free again: the decode thread may be asleep on a full ring
         let n = frameCount
         func behind(_ f: Int) -> Int { direction > 0 ? (index - f + n) % n : (f - index + n) % n }
+        let previous = lastDirection
+        lastDirection = direction
+        if previous != 0, direction != previous, ring.count > 0 {
+            // B293: a turn (bounce, forward to reverse). Every buffered frame is ahead in the old direction, so behind in
+            // the new one, and the decoder cannot write until a slot is free: hold the shown picture (B386's own frame)
+            // and let the thread restart at the request now, instead of after `capacity + 2` frames of a stale hold.
+            if holdFrame == nil, let first = ring.peek(0) { (holdFrame, holdFrameIndex) = (first, first.frameIndex) }
+            if let holdFrame, holdFrame !== held { held.exchange(with: holdFrame); self.holdFrame = held }
+            freed = true
+            ring.drain()
+            return holdFrame
+        }
         while ring.count > 1, let head = ring.peek(0), let next = ring.peek(1) {
             if head.frameIndex == previousShown || head.frameIndex == currentShown { break }
             if behind(next.frameIndex) <= behind(head.frameIndex) {

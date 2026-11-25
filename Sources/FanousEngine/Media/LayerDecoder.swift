@@ -18,6 +18,9 @@ public final class LayerDecoder: @unchecked Sendable {
     public let source: MovieSource
     private let wanted = Atomic<Int>(-1)  // -1: no request yet
     private let direction = Atomic<Int>(1)
+    /// The loop the compositor plays, as `lo << 32 | hi + 1` (0: none): the thread reads across the wrap itself, so the
+    /// ring never holds the frame past the out point and a wrap is not a seek (B293).
+    private let loopBits = Atomic<UInt64>(0)
     private let running = Atomic<Bool>(true)
     private let wake = DispatchSemaphore(value: 0)
     /// What the decode thread was last woken for; a repeated request (paused clip) wakes nobody.
@@ -66,10 +69,12 @@ public final class LayerDecoder: @unchecked Sendable {
 
     /// Called by the compositor every tick (never blocks). The thread is only woken when the frame or the direction
     /// differs from the last wake-up: while it has a full ring and nothing changes it sleeps.
-    public func request(frame: Int, direction: Int) {
+    /// `loop`: the frames a loop mode plays, read across the wrap in play direction; nil for the other modes.
+    public func request(frame: Int, direction: Int, loop: ClosedRange<Int>? = nil) {
         let dir = direction >= 0 ? 1 : -1
         wanted.store(max(0, frame), ordering: .relaxed)  // -1 is "nothing asked yet"
         self.direction.store(dir, ordering: .relaxed)
+        loopBits.store(loop.map { UInt64(max(0, $0.lowerBound)) << 32 | UInt64(max(0, $0.upperBound) + 1) } ?? 0, ordering: .relaxed)
         let frameChanged = signalledFrame.exchange(frame, ordering: .relaxed) != frame
         let directionChanged = signalledDirection.exchange(dir, ordering: .relaxed) != dir
         if frameChanged || directionChanged { nudge() }
@@ -100,9 +105,18 @@ public final class LayerDecoder: @unchecked Sendable {
             var next = want
             if lastProduced >= 0, !ring.isEmpty {
                 // how far the last decoded frame runs ahead of the request in play direction; behind it (a seek, a slow
-                // decode) this wraps to count − k and the thread restarts at the request
-                let ahead = dir > 0 ? (lastProduced - want + count) % count : (want - lastProduced + count) % count
+                // decode) this wraps to count − k and the thread restarts at the request. Inside a loop the distance is
+                // measured around the loop, and the frame after its out point is its in point (B293): the ring then holds
+                // the wrap and the compositor never drains it there
+                let loop = loopBits.load(ordering: .relaxed)
+                let lo = Int(loop >> 32), hi = Int(loop & 0xFFFF_FFFF) - 1
+                let looped = loop != 0 && lo <= hi && hi < count && (lo...hi).contains(lastProduced) && (lo...hi).contains(want)
+                let span = looped ? hi - lo + 1 : count
+                let ahead = dir > 0 ? (lastProduced - want + span) % span : (want - lastProduced + span) % span
                 next = ahead <= ring.capacity ? (lastProduced + dir + count) % count : want
+                if looped, ahead <= ring.capacity {
+                    if dir > 0, next > hi || next < lo { next = lo } else if dir < 0, next < lo || next > hi { next = hi }
+                }
             }
             do {
                 Signposts.begin("decode", id: signpost)

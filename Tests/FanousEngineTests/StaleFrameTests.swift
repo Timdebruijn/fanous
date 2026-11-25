@@ -27,7 +27,7 @@ struct StaleFrameTests {
 
         /// A 20-frame 25 fps movie on a 25 fps compositor, playing in `mode`; the decode thread is not started yet.
         /// `drawn`: every tick encodes and commits a command buffer (the record written after the encode), else idle ticks.
-        init(mode: PlayMode, frames: Int = 20, drawn: Bool = false) async throws {
+        init(mode: PlayMode, frames: Int = 20, drawn: Bool = false, inOut: (Float, Float) = (0, 1)) async throws {
             let url = try tempDir("fanous-ingest-tests").appending(path: "clip.mov")
             try await writePatternMovie(to: url, size: (128, 64), fps: 25, frames: frames)
             let context = try MetalContext()
@@ -48,6 +48,8 @@ struct StaleFrameTests {
                 slot.layers[0].folder = 1
                 slot.layers[0].file = 1
                 slot.layers[0].playMode = mode
+                slot.layers[0].inPoint = inOut.0
+                slot.layers[0].outPoint = inOut.1
             }
         }
 
@@ -72,6 +74,19 @@ struct StaleFrameTests {
 
     // a tick with no frame at all is a texture miss and not also stale; a healthy layer then counts nothing, across
     // 15 loop wraps
+    // B293: a loop with in and out points: the decoder reads across the wrap itself, so the ring never holds the frame
+    // past the out point and a wrap is neither a seek nor a held tick (before: one stale tick at every wrap, the drain)
+    @Test func aLoopWithInAndOutPointsCountsNoStaleFrameAtItsWraps() async throws {
+        let rig = try await Rig(mode: .loopForward, inOut: (0.25, 0.75))  // frames 5...14 of 20
+        defer { rig.decoder.stop() }
+        await rig.tick(fed: false)
+        rig.decoder.start(name: "test.decode")
+        var seen = Set<Int>()
+        for _ in 0..<300 { await rig.tick(); seen.insert(rig.shown) }  // 30 wraps
+        #expect(rig.stale == 0, "stale ticks at the wraps: \(rig.stale)")
+        #expect(seen.min() == 5 && seen.max() == 14, "frames shown: \(seen.sorted())")
+    }
+
     @Test func aHealthyLayerCountsNoStaleFrameAcrossLoopWraps() async throws {
         let rig = try await Rig(mode: .loopForward)
         defer { rig.decoder.stop() }
@@ -111,9 +126,10 @@ struct StaleFrameTests {
         #expect(rig.metrics.summary(seconds: 1e6, now: 3600 + 1e5).idle == 0, "every tick took the drawn path")
     }
 
-    // row B293: at a bounce turn the ring is full of frames on the old side and the decode thread sleeps on it; the layer
-    // holds one frame until the clock is `capacity + 2` frames past it and the ring drains. Measured here: every turn,
-    // at either end, holds exactly that long (the stale runs are read from the shown frame after each tick)
+    // B293: at a bounce turn the ring is full of frames on the old side and the decode thread sleeps on it. Before, the
+    // layer held one frame until the clock was `capacity + 2` frames past it and the ring drained; now the turn drains the
+    // ring at once and the thread restarts, so every turn, at either end, holds exactly one tick (the stale runs are read
+    // from the shown frame after each tick)
     @Test func aBounceTurnCountsTheTicksItHolds() async throws {
         let rig = try await Rig(mode: .bounce)
         rig.decoder.start(name: "test.decode")
@@ -130,7 +146,7 @@ struct StaleFrameTests {
                 run = 0
             }
         }
-        #expect(runs.count >= 3 && runs.allSatisfy { $0 == StaleFrameTests.capacity + 2 }, "\(runs)")
+        #expect(runs.count >= 3 && runs.allSatisfy { $0 == 1 }, "\(runs)")
         #expect(rig.stale == runs.reduce(run, +))
         #expect(rig.layer.staleFrames.load(ordering: .relaxed) == rig.stale)
         #expect(rig.misses == 0)
