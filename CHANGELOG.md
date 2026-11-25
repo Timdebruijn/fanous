@@ -11,7 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Timecode: the LTC chase and LTC cue triggers are on the frame, no longer one frame late (B290). An LTC frame's address
-  is decoded when its sync word ends, as the next frame starts; the clock took it as the time at that moment (PR #N).
+  is decoded when its sync word ends, as the next frame starts; the clock took it as the time at that moment (PR #459).
 - Playback: a file's first frame is its start position (B294). The loader asked the decoder for frame 0 at start,
   before the compositor's hand-off asked for the in point and the direction, so a cut to an in point flashed the last
   pre-decoded frame (3 at a ring of 4) and a reverse mode showed frame 0 for about ten frames. The decoder now decodes
