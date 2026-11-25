@@ -13,6 +13,18 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Control channel: "Resync audio" (16–23) re-seeks the layer's audio to its clock and "Clear error" (24–31) clears the
   layer's error and opens a selection that failed again, each once on the tick the band is entered (B363). Both were
   parsed and handled nowhere (PR #468).
+- Docs: the owner's four decisions on the 3D pixel-mapping note (`docs/pixelmap-3d.md` §6, row B407): z up with
+  the up axis a project setting, CSV and OPC import both, the height map on its own canvas, order atlas, kinetic,
+  project (PR #483)
+- Docs: a design note for the pixel mapper in three dimensions and for pixels on winches (`docs/pixelmap-3d.md`,
+  row B407): a point list with x/y/z per LED, three sampling modes, a height map for kinetic groups, and what
+  changes on the wire when Fanous sends Art-Net/sACN (PR #481)
+- Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
+  slot, not the slot itself (B386). After the ring drained,
+  the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
+  the same tick: a wrong label and a replaced texture under the GPU, and a HAP frame, decoded in place into its pool
+  texture, changed pixels. The playback's own held frame now exchanges pictures with the drained slot, pool texture
+  included (the movie's pool has one texture more than the ring for it) (PR #453).
 - Playback: a chased or sync-slave layer's first frame is its clock's frame (B404). The hand-off asked the decoder for
   the in point (the out point in a reverse mode), and the swap tick moved the clock to the timecode or the master's
   position, so the cut showed a frame of the in point; a slave with a reverse play mode also filled the ring backwards
