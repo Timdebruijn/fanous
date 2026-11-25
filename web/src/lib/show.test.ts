@@ -206,6 +206,9 @@ describe('currentTrigger', () => {
     expect(currentTrigger({ state: 'off', value: '--:--:--:--', rate: '25' })).toBeNull();
     expect(currentTrigger({ state: 'lost', value: '01:00:12:05', rate: '25' })).toBeNull();
     expect(currentTrigger({ state: 'locked', value: '01:00:12:05', rate: '' })).toBeNull();
+  });
+});
+
 describe('next trigger', () => {
   it('counts a trigger in seconds the way the engine does, drop frame included', () => {
     expect(triggerSeconds('00:01:30:00@25')).toBe(90);
