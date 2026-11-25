@@ -14,7 +14,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   and snapshots were redacted and encoded there (68 ms for a 1.6 MB show), so 20 clients joining held a GO for 1.4 s;
   they are now encoded on the connection's queue, OSC and MIDI GO, back and goto skip the control queue, and
   `project.snapshot` writes its file off it. The same GO now waits 0.004 ms (OSC, MIDI) or 0.05 ms
-  (WebSocket) (PR #N).
+  (WebSocket) (PR #480).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
