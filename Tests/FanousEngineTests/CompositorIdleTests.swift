@@ -49,14 +49,7 @@ struct CompositorIdleTests {
         }
 
         static func stillPlayback(_ context: MetalContext) throws -> LayerPlayback {
-            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 16, height: 9, mipmapped: false)
-            let texture = try #require(context.device.makeTexture(descriptor: descriptor))
-            texture.replace(region: MTLRegionMake2D(0, 0, 16, 9), mipmapLevel: 0, withBytes: [UInt8](repeating: 200, count: 16 * 9 * 4), bytesPerRow: 64)
-            let frame = DecodedFrame(poolIndex: 0)
-            frame.frameIndex = 0
-            frame.kind = .rgba
-            frame.texture0 = texture
-            return LayerPlayback(key: MediaKey(folder: 1, file: 1), still: frame)
+            LayerPlayback(key: MediaKey(folder: 1, file: 1), still: try .rgba(context.device, 16, 9, [UInt8](repeating: 200, count: 16 * 9 * 4)))
         }
 
         mutating func setIntensity(_ value: Float) {
@@ -64,10 +57,7 @@ struct CompositorIdleTests {
             let sequence = sequence
             parameters.write { slot in
                 slot.sequence = sequence
-                slot.layers[0].intensity = value
-                slot.layers[0].folder = 1
-                slot.layers[0].file = 1
-                slot.layers[0].fitMode = .stretch
+                slot.layers[0].play(intensity: value)
             }
         }
 

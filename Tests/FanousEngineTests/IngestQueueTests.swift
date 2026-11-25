@@ -185,6 +185,20 @@ import VideoToolbox
         return state() ?? .cancelled
     }
 
+    /// `wait(for:in:)` for a job that must fail: its message.
+    static func failure(of id: UUID, in queue: IngestQueue, sourceLocation: SourceLocation = #_sourceLocation) async throws -> String {
+        let state = await wait(for: id, in: queue, sourceLocation: sourceLocation)
+        let text: String? = if case .failed(let text) = state { text } else { nil }
+        return try #require(text, "not failed: \(state)", sourceLocation: sourceLocation)
+    }
+
+    /// A queue on `directory`/queue.json, started; the caller stops it.
+    static func started(in directory: URL) -> IngestQueue {
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        queue.start()
+        return queue
+    }
+
     /// Opens `url` the way the engine does and checks the frame count, codec and size, and that the middle frame decodes
     /// to that frame's picture (its `PatternFrames` bar).
     static func expectPlayable(_ url: URL, device: MTLDevice, frames: Int, fps: Double, codec: String, sourceLocation: SourceLocation = #_sourceLocation) async throws {
@@ -236,8 +250,7 @@ import VideoToolbox
         let source = directory.appending(path: "source.mov"), hapSource = directory.appending(path: "source-hap.mov")
         try await Self.writeSource(to: source)
         try await Self.writeSource(to: hapSource, fps: 2)  // 4 frames: HAP Q encoding takes ~0.2 s a frame in a debug build
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = Self.started(in: directory)
         defer { queue.stop() }
 
         let hapJob = queue.enqueue(IngestJob(source: hapSource, destination: directory.appending(path: "library/001_hap.mov"), kind: .transcode(codec: .hap(.hapQ))))
@@ -262,8 +275,7 @@ import VideoToolbox
         let frames = directory.appending(path: "frames")
         try FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
         for i in 0..<10 { try Self.writeFramePNG(to: frames.appending(path: String(format: "frame_%03d.png", i)), index: i) }
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = Self.started(in: directory)
         defer { queue.stop() }
 
         let sequence = queue.enqueue(IngestJob(source: frames, destination: directory.appending(path: "library/001_seq.mov"), kind: .sequence(fps: 25, codec: .proRes4444)))
@@ -291,8 +303,7 @@ import VideoToolbox
         try Self.writeFramePNG(to: png, index: 3)
         let bytes = try Data(contentsOf: png)
         let library = directory.appending(path: "library/001_Opening")  // does not exist yet
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = Self.started(in: directory)
         defer { queue.stop() }
 
         let job = queue.enqueue(IngestJob(source: png, destination: library.appending(path: "002_title.png"), kind: .still, originalsDirectory: library.appending(path: "_originals")))
@@ -315,8 +326,7 @@ import VideoToolbox
         try Data("one".utf8).write(to: first)
         try Data("two".utf8).write(to: second)
         let destination = directory.appending(path: "library/001_a.png")
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = Self.started(in: directory)
         defer { queue.stop() }
 
         let one = queue.enqueue(IngestJob(source: first, destination: destination, kind: .still, deleteSource: true))
@@ -324,10 +334,7 @@ import VideoToolbox
         #expect(!FileManager.default.fileExists(atPath: first.path))  // deleteSource, no originals directory
 
         let clash = queue.enqueue(IngestJob(source: second, destination: destination, kind: .still))
-        guard case .failed(let message) = await Self.wait(for: clash.id, in: queue) else {
-            Issue.record("expected a failure")
-            return
-        }
+        let message = try await Self.failure(of: clash.id, in: queue)
         #expect(message.contains("already exists"))
         #expect(try String(contentsOf: destination, encoding: .utf8) == "one")
         #expect(FileManager.default.fileExists(atPath: second.path))  // a failed job leaves its source alone
@@ -460,8 +467,7 @@ import VideoToolbox
         let directory = try tempDir("fanous-ingest-tests")
         let source = directory.appending(path: "phone.mp4")
         try await Self.writeH264(to: source)
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = Self.started(in: directory)
         defer { queue.stop() }
 
         let changes = LockedCounter()
@@ -501,10 +507,9 @@ import VideoToolbox
         let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: testLogger)
         library.rescan()
         let item = try #require(library.item(MediaKey(folder: 1, file: 2)))
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: testLogger)
-        queue.start()
+        let queue = Self.started(in: directory)
         defer { queue.stop() }
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: testLogger)
 
         // the Media tile's request: the item's own path, folder, file and name (Media.svelte transcode())
         #expect(api.enqueue(source: URL(fileURLWithPath: item.path), folder: 1, file: item.file, name: item.name, codec: "prores422hq", fps: nil, keepOriginal: true).status == 202)
@@ -529,10 +534,7 @@ import VideoToolbox
 
         // without an originals directory or deleteSource the source would be lost: still refused
         let bare = queue.enqueue(IngestJob(source: source, destination: source, kind: .transcode(codec: .proRes422)))
-        guard case .failed(let text) = await Self.wait(for: bare.id, in: queue) else {
-            Issue.record("not failed")
-            return
-        }
+        let text = try await Self.failure(of: bare.id, in: queue)
         #expect(text == "source and destination are the same file")
 
         // deleteSource instead of an originals directory: the result replaces the source in one rename
@@ -550,15 +552,11 @@ import VideoToolbox
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let source = folder.appending(path: "002_bad.mov")
         try Data("not a movie".utf8).write(to: source)
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = Self.started(in: directory)
         defer { queue.stop() }
 
         let job = queue.enqueue(IngestJob(source: source, destination: source, kind: .transcode(codec: .proRes422HQ), originalsDirectory: folder.appending(path: "_originals")))
-        guard case .failed = await Self.wait(for: job.id, in: queue) else {
-            Issue.record("not failed")
-            return
-        }
+        _ = try await Self.failure(of: job.id, in: queue)
         #expect(try String(contentsOf: source, encoding: .utf8) == "not a movie")
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["002_bad.mov"])
     }
@@ -727,20 +725,14 @@ import VideoToolbox
         #expect(queue.jobs.first?.state == .queued)
         queue.start()
         defer { queue.stop() }
-        guard case .failed(let text) = await Self.wait(for: job.id, in: queue) else {
-            Issue.record("not failed")
-            return
-        }
+        let text = try await Self.failure(of: job.id, in: queue)
         #expect(text == "source not found: 002_phone.mov")
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty, "nothing put in place")
 
         try FileManager.default.createDirectory(at: folder.appending(path: "_originals"), withIntermediateDirectories: true)
         try Data("the original".utf8).write(to: folder.appending(path: "_originals/002_phone.mov"))
         let again = queue.enqueue(IngestJob(source: source, destination: source, kind: .transcode(codec: .proRes422HQ), originalsDirectory: folder.appending(path: "_originals")))
-        guard case .failed(let named) = await Self.wait(for: again.id, in: queue) else {
-            Issue.record("not failed")
-            return
-        }
+        let named = try await Self.failure(of: again.id, in: queue)
         #expect(named == "source not found: 002_phone.mov; the original is in _originals/002_phone.mov")
     }
 
@@ -762,10 +754,7 @@ import VideoToolbox
         defer { queue.stop() }
 
         let job = queue.enqueue(IngestJob(source: still, destination: still, kind: .still, originalsDirectory: folder.appending(path: "_originals")))
-        guard case .failed(let text) = await Self.wait(for: job.id, in: queue) else {
-            Issue.record("not failed")
-            return
-        }
+        let text = try await Self.failure(of: job.id, in: queue)
         #expect(text == "the ingest queue could not be saved; the source was left in place")
         #expect(try Data(contentsOf: still) == bytes)
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { !$0.hasPrefix("_") } == ["003_title.png"], "no temporary left")
@@ -782,8 +771,7 @@ import VideoToolbox
         try await Self.writeSource(to: source, seconds: 1, audio: false)  // ProRes 422 HQ
         let bytes = try Data(contentsOf: source)
         let originals = folder.appending(path: "_originals")
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = Self.started(in: directory)
         defer { queue.stop() }
 
         let same = queue.enqueue(IngestJob(source: source, destination: source, kind: .transcode(codec: .proRes422HQ), originalsDirectory: originals))
@@ -805,8 +793,7 @@ import VideoToolbox
         let directory = try tempDir("fanous-ingest-tests")
         let source = directory.appending(path: "master.mov")
         try await Self.writeH264(to: source, floatAudio: true)
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = Self.started(in: directory)
         defer { queue.stop() }
         let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_master.mov"), kind: .transcode(codec: .proRes422)))
         #expect(await Self.wait(for: job.id, in: queue) == .done)
@@ -875,8 +862,7 @@ import VideoToolbox
         let directory = try tempDir("fanous-ingest-tests")
         let source = directory.appending(path: "six.mov")
         try await Self.writeH264(to: source, sixChannels: tag)
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = Self.started(in: directory)
         defer { queue.stop() }
         let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_six.mov"), kind: .transcode(codec: .proRes422)))
         #expect(await Self.wait(for: job.id, in: queue) == .done)
@@ -906,8 +892,7 @@ import VideoToolbox
         let directory = try tempDir("fanous-ingest-tests")
         let source = directory.appending(path: "anamorphic.mp4")
         try await Self.writeH264(to: source, pixelAspect: (4, 3))
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = Self.started(in: directory)
         defer { queue.stop() }
         let proRes = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_prores.mov"), kind: .transcode(codec: .proRes422)))
         let hap = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/002_hap.mov"), kind: .transcode(codec: .hap(.hap))))
@@ -973,8 +958,7 @@ import VideoToolbox
         let source = directory.appending(path: "screen.mp4")
         let times = (0..<10).map { CMTime(value: Int64($0) * 100, timescale: 1000) } + (0..<30).map { CMTime(value: 30 + Int64($0), timescale: 30) }
         try await Self.writeH264(to: source, presentationTimes: times)
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = Self.started(in: directory)
         defer { queue.stop() }
         let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_screen.mov"), kind: .transcode(codec: .proRes422)))
         #expect(await Self.wait(for: job.id, in: queue) == .done)
@@ -1003,8 +987,7 @@ import VideoToolbox
         let source = directory.appending(path: "obs.mp4")
         let times = (0..<frames).map { CMTime(value: Int64((Double($0) * 1000 / rate).rounded()), timescale: 1000) }
         try await IngestQueueTests.writeH264(to: source, presentationTimes: times, timescale: 1000)
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = IngestQueueTests.started(in: directory)
         defer { queue.stop() }
         let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_obs.mov"), kind: .transcode(codec: .proRes422)))
         #expect(await IngestQueueTests.wait(for: job.id, in: queue) == .done)
@@ -1020,8 +1003,7 @@ import VideoToolbox
         let directory = try tempDir("fanous-ingest-tests")
         let source = directory.appending(path: "rotated.mp4")
         try await IngestQueueTests.writeH264(to: source, rotated: true)
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = IngestQueueTests.started(in: directory)
         defer { queue.stop() }
         let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_rotated.mov"), kind: .transcode(codec: .proRes422HQ)))
         #expect(await IngestQueueTests.wait(for: job.id, in: queue) == .done)
@@ -1065,8 +1047,7 @@ import VideoToolbox
         try await offPool { try Self.writeTenBitRamp(to: source) }
         let before = try await Self.rampError(source)
         #expect(before.max <= 1, "source: \(before)")  // the source itself is 10-bit
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = IngestQueueTests.started(in: directory)
         defer { queue.stop() }
         let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_ramp.mov"), kind: .transcode(codec: .proRes422HQ)))
         #expect(await IngestQueueTests.wait(for: job.id, in: queue) == .done)
@@ -1131,8 +1112,7 @@ import VideoToolbox
         let directory = try tempDir("fanous-ingest-tests")
         let source = directory.appending(path: "rotated-alpha.mov")
         try await IngestQueueTests.writeH264(to: source, rotated: true, pixelAspect: (4, 3), alpha: true)
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = IngestQueueTests.started(in: directory)
         defer { queue.stop() }
         let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_rotated.mov"), kind: .transcode(codec: .proRes422HQ)))
         #expect(await IngestQueueTests.wait(for: job.id, in: queue) == .done)
@@ -1167,8 +1147,7 @@ import VideoToolbox
         let directory = try tempDir("fanous-ingest-tests")
         let source = directory.appending(path: "tagged.mp4")
         try await IngestQueueTests.writeH264(to: source, transform: transform)
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = IngestQueueTests.started(in: directory)
         defer { queue.stop() }
         let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_tagged.mov"), kind: .transcode(codec: .proRes422)))
         #expect(await IngestQueueTests.wait(for: job.id, in: queue) == .done, "\(name)")
@@ -1230,16 +1209,12 @@ extension IngestQueueTests {
 
     @Test func unreadableSourceFailsCleanly() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = Self.started(in: directory)
         defer { queue.stop() }
         let notAMovie = directory.appending(path: "broken.mp4")
         try Data("this is not a movie".utf8).write(to: notAMovie)
         let job = queue.enqueue(IngestJob(source: notAMovie, destination: directory.appending(path: "library/001_broken.mov"), kind: .transcode(codec: .proRes422HQ)))
-        guard case .failed(let message) = await Self.wait(for: job.id, in: queue) else {
-            Issue.record("expected a failure")
-            return
-        }
+        let message = try await Self.failure(of: job.id, in: queue)
         #expect(!message.isEmpty)
         #expect((try? FileManager.default.contentsOfDirectory(atPath: directory.appending(path: "library").path)) ?? [] == [])
         #expect(FileManager.default.fileExists(atPath: notAMovie.path))
@@ -1250,8 +1225,7 @@ extension IngestQueueTests {
     /// that claims 2^31 fps (timescale 2^31 − 1, one tick per frame; `nominalFrameRate` rounds up to 2^31 as a Float).
     @Test func headerWithoutUsableTimingFailsTheJob() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = Self.started(in: directory)
         defer { queue.stop() }
         let noDuration = directory.appending(path: "no_duration.mov"), tooFast = directory.appending(path: "too_fast.mov")
         try await writePatternMovie(to: noDuration, size: (64, 64), fps: 25, frames: 2)
@@ -1271,8 +1245,7 @@ extension IngestQueueTests {
     /// and the source is still there byte for byte, with no output or temporary beside the destination.
     @Test func unopenableContainerFailsWithTheLibrarysReasonAndKeepsTheSource() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        queue.start()
+        let queue = Self.started(in: directory)
         defer { queue.stop() }
         let webm = directory.appending(path: "001_web.webm")
         let bytes = Data((0..<4096).map { UInt8(truncatingIfNeeded: $0 &* 31) })
@@ -1327,7 +1300,8 @@ extension IngestQueueTests {
         let replayed = queue.enqueue(IngestJob(source: old, destination: directory.appending(path: "library/001_Folder/002_old.mov"), kind: .sequence(fps: 0, codec: .proRes422)))
         queue.start()
         defer { queue.stop() }
-        if case .failed(let text) = await Self.wait(for: replayed.id, in: queue) { #expect(text.contains("frame rate"), "failed with: \(text)") } else { Issue.record("not failed") }
+        let text = try await Self.failure(of: replayed.id, in: queue)
+        #expect(text.contains("frame rate"), "failed with: \(text)")
     }
 
     /// B172: a sequence whose frames are not a multiple of 4 wide and high, queued for HAP Q the way the Media tile sends it,
@@ -1347,10 +1321,7 @@ extension IngestQueueTests {
 
         #expect(api.enqueue(source: frames, folder: 1, file: nil, name: "seq", codec: "hapq", fps: 25, keepOriginal: true).status == 202)
         let hap = try #require(queue.jobs.last)
-        guard case .failed(let text) = await Self.wait(for: hap.id, in: queue) else {
-            Issue.record("not failed")
-            return
-        }
+        let text = try await Self.failure(of: hap.id, in: queue)
         #expect(text == "\(TranscodeError.hapDimensions(30, 30))", "failed with: \(text)")
         #expect(!FileManager.default.fileExists(atPath: hap.destination.path) && FileManager.default.fileExists(atPath: frames.path))
 
@@ -1361,10 +1332,7 @@ extension IngestQueueTests {
 
         // the movie path refuses the same size with the same error (its check moved into MovieWriter)
         let movie = queue.enqueue(IngestJob(source: proRes.destination, destination: directory.appending(path: "hap.mov"), kind: .transcode(codec: .hap(.hapQ))))
-        guard case .failed(let movieText) = await Self.wait(for: movie.id, in: queue) else {
-            Issue.record("movie not failed")
-            return
-        }
+        let movieText = try await Self.failure(of: movie.id, in: queue)
         #expect(movieText == text, "movie failed with: \(movieText)")
     }
 

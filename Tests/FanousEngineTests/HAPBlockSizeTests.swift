@@ -74,15 +74,6 @@ import Testing
         }
     }
 
-    /// `texture`'s blocks as the engine uploads them: rows of ceil(width/4) blocks.
-    static func blocks(_ texture: MTLTexture) -> [UInt8] {
-        let bytesPerBlock = texture.pixelFormat == .bc1_rgba || texture.pixelFormat == .bc4_rUnorm ? 8 : 16
-        let row = (texture.width + 3) / 4 * bytesPerBlock
-        var out = [UInt8](repeating: 0, count: row * ((texture.height + 3) / 4))
-        texture.getBytes(&out, bytesPerRow: row, from: MTLRegionMake2D(0, 0, texture.width, texture.height), mipmapLevel: 0)
-        return out
-    }
-
     @Test(arguments: ["Hap1", "Hap5", "HapY", "HapA", "HapM", "HapR"], [(66, 120), (64, 122), (62, 121)])  // width, height, both short of a block
     func oddSizedFramesDecodeToTheirBlocks(codec: String, size: (Int, Int)) async throws {
         let url = try tempDir("fanous-hap-sizes").appending(path: "\(codec)-\(size.0)x\(size.1).mov")
@@ -91,7 +82,7 @@ import Testing
         let frame = DecodedFrame(poolIndex: 0)
         try source.decode(frame: 1, into: frame)
         let textures = [frame.texture0, frame.texture1].prefix(written.count)
-        #expect(textures.map { $0.map(Self.blocks) ?? [] } == written, "\(codec) \(size): every texture holds the blocks the file carries")
+        #expect(textures.map { $0?.bytes() ?? [] } == written, "\(codec) \(size): every texture holds the blocks the file carries")
         if codec != "HapA" && codec != "HapR" {  // a picture to look at: frame 1's bar starts at x = 8
             #expect(try patternBarX(frame, size: size) == 8, "\(codec) \(size): frame 1 as drawn on stage")
         }

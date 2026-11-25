@@ -124,13 +124,9 @@ final class Box { var value = 0 }
             var time = 1000.0
             /// Output 1 intensity, Keystone 1 centred but for the top-left corner.
             func send(intensity: UInt16, topLeft: (x: UInt16, y: UInt16)) {
-                var data = [UInt8](repeating: 0, count: 512)
-                (data[0], data[1]) = (UInt8(intensity >> 8), UInt8(intensity & 0xFF))
-                for (i, raw) in ([topLeft.x, topLeft.y] + Array(repeating: 32768, count: 6)).enumerated() {
-                    (data[8 + 2 * i], data[9 + 2 * i]) = (UInt8(raw >> 8), UInt8(raw & 0xFF))
-                }
+                let raws = [intensity, 0, 0, 0, topLeft.x, topLeft.y] + Array(repeating: 32768, count: 6)  // keystone at ch 9
                 time += 0.02
-                store.queue.sync { store.receive(artnet: ArtDmx(portAddress: 0, data: data), from: "desk", at: time) }
+                Self.console(store, raws.flatMap { [UInt8($0 >> 8), UInt8($0 & 0xFF)] }, at: time)
             }
             func state() -> (intensity: Float, topLeft: SIMD2<Float>, invalid: Bool) {
                 store.snapshots.withLatest { slot in
@@ -164,11 +160,7 @@ final class Box { var value = 0 }
         let universe = UniverseID(.artnet, 0)
         let store = DMXStore(patch: Patch(entries: [PatchEntry(fixture: .output(1), universe: universe, address: 1)]), logger: testLogger)
         let t = 1000.0
-        func send(ch6: UInt8, at time: Double) {
-            var data = [UInt8](repeating: 0, count: 512)
-            (data[0], data[1], data[5]) = (0xFF, 0xFF, ch6)
-            store.queue.sync { store.receive(artnet: ArtDmx(portAddress: 0, data: data), from: "desk", at: time) }
-        }
+        func send(ch6: UInt8, at time: Double) { Self.console(store, [0xFF, 0xFF, 0, 0, 0, ch6], at: time) }
         func shown(_ i: Int = 0) -> (preset: UInt8, compare: Bool) { store.snapshots.withLatest { ($0.presets[i], $0.presetCompare[i]) } }
         send(ch6: 3, at: t)
         #expect(shown() == (3, false), "the console's preset")
@@ -194,11 +186,7 @@ final class Box { var value = 0 }
         let universe = UniverseID(.artnet, 0)
         let store = DMXStore(patch: Patch(entries: [PatchEntry(fixture: .output(1), universe: universe, address: 1)]), logger: testLogger)
         let t = 1000.0
-        func send(ch6: UInt8, ch7: UInt8, at time: Double) {
-            var data = [UInt8](repeating: 0, count: 512)
-            (data[0], data[1], data[5], data[6]) = (0xFF, 0xFF, ch6, ch7)
-            store.queue.sync { store.receive(artnet: ArtDmx(portAddress: 0, data: data), from: "desk", at: time) }
-        }
+        func send(ch6: UInt8, ch7: UInt8, at time: Double) { Self.console(store, [0xFF, 0xFF, 0, 0, 0, ch6, ch7], at: time) }
         func shown() -> (preset: UInt8, morph: PresetMorph) { store.snapshots.withLatest { ($0.presets[0], $0.morphs[0]) } }
         send(ch6: 3, ch7: 0, at: t)
         #expect(shown() == (3, PresetMorph(from: 0, start: t, fade: 0)), "ch 7 = 0 cuts")
@@ -230,9 +218,7 @@ final class Box { var value = 0 }
             store.applyUI(.output(1), .output(.preset), raw: 4, at: t)
             store.applyUI(.output(1), .output(.fade), raw: 10, at: t)  // 1 s
         }
-        var data = [UInt8](repeating: 0, count: 512)
-        (data[0], data[1], data[5], data[6]) = (0xFF, 0xFF, 2, 50)  // preset 2 over 5 s
-        store.queue.sync { store.receive(artnet: ArtDmx(portAddress: 0, data: data), from: "desk", at: t + 1) }
+        Self.console(store, [0xFF, 0xFF, 0, 0, 0, 2, 50], at: t + 1)  // preset 2 over 5 s
         func shown() -> (preset: UInt8, morph: PresetMorph) { store.snapshots.withLatest { ($0.presets[0], $0.morphs[0]) } }
         let running = shown()
         #expect(running.preset == 2 && running.morph.start == t + 1 && running.morph.fade == 5, "\(loss): the console's morph runs")
@@ -256,10 +242,10 @@ final class Box { var value = 0 }
         settings.holdOnLoss = .zero
         let time = 1000.0
         store.queue.sync { store.configure([universe: settings], at: time) }
-        var data = [UInt8](repeating: 0, count: 512)
+        var data = [UInt8](repeating: 0, count: 16)
         for i in 0..<8 { data[2 * i] = 0x80 }  // 32768: centred
         data[0] = 0xA0  // top-left X +12.5 %
-        store.queue.sync { store.receive(artnet: ArtDmx(portAddress: 0, data: data), from: "desk", at: time + 0.02) }
+        Self.console(store, data, at: time + 0.02)
         func topLeft() -> SIMD2<Float> {
             store.snapshots.withLatest { slot in
                 let k = slot.keystones[0] * SIMD3<Float>(0, 0, 1)

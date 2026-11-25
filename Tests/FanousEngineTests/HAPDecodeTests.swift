@@ -9,7 +9,7 @@ import Testing
 @testable import FanousEngine
 
 /// HAP frames are decoded straight from the sample's block buffer; the staging-copy fallback must give the same texture.
-@Suite(.serialized, .cleansTempFiles) struct HAPDecodeTests {
+@Suite(.cleansTempFiles) struct HAPDecodeTests {
     @Test func decodingInPlaceMatchesTheStagingCopy() async throws {
         let directory = try tempDir("fanous-ingest-tests")
         let url = directory.appending(path: "clip.mov")
@@ -23,15 +23,8 @@ import Testing
         try source.decode(frame: 2, into: staged)
         #expect(source.hapInPlaceFrames == 1, "the staged decode took the copy")
         let a = try #require(direct.texture0), b = try #require(staged.texture0)
-        func bytes(_ texture: MTLTexture) -> [UInt8] {
-            let blocks = texture.width / 4 * texture.height / 4
-            var out = [UInt8](repeating: 0, count: blocks * 8)  // DXT1 (Hap1); a larger format fails the size check below
-            let rowBytes = texture.width / 4 * 8
-            texture.getBytes(&out, bytesPerRow: rowBytes, from: MTLRegionMake2D(0, 0, texture.width, texture.height), mipmapLevel: 0)
-            return out
-        }
         #expect(source.info.codecName == "Hap1")
-        #expect(bytes(a) == bytes(b), "same decoded texture either way")
+        #expect(a.bytes() == b.bytes(), "same decoded texture either way")
         #expect(try patternBarX(direct, size: (320, 176)) == 16, "and it is frame 2: its bar at x = 16")
     }
 }

@@ -69,8 +69,7 @@ import Testing
         let received = try #require(input.latestFrame?.texture0)
         #expect(received.width == Self.size && received.height == Self.size)
 
-        var bytes = [UInt8](repeating: 0, count: pattern.count)
-        received.getBytes(&bytes, bytesPerRow: Self.size * 4, from: MTLRegionMake2D(0, 0, Self.size, Self.size), mipmapLevel: 0)
+        let bytes = received.bytes()
         let row = Self.size * 4
         let reversed = (0..<Self.size).reversed().flatMap { y in pattern[(y * row)..<((y + 1) * row)] }
         #expect(bytes == reversed)
@@ -295,20 +294,15 @@ import Testing
     /// server says "not running" and keeps the playback, and its return connects again without a new selection.
     @Test func loaderResolvesNumberedServersAndReconnects() async throws {
         guard let device = MTLCreateSystemDefaultDevice() else { return }
-        let layers = [RenderLayer(index: 0), RenderLayer(index: 1)]
-        let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: testLogger)
-        loader.liveFactory = { uuid in FakeLive(uuid: uuid) }
         let catalog = LiveCatalog(.syphon)
-        catalog.onChange = { [loader] in loader.changed(.syphonServers) }
-        loader.syphonCatalog = catalog
+        let rig = LoaderRig<FakeLive>(device, layers: 2, catalog: catalog), loader = rig.loader
+        loader.liveFactory = { uuid in FakeLive(uuid: uuid) }
         catalog.update(running: [Self.info("Resolume", "Out", "a"), Self.info("Other", "", "b")])
         loader.start()
         defer { loader.stop() }
 
-        func playback(_ i: Int) -> FakeLive? { layers[i].pending.withLock { $0.playback?.live as? FakeLive } }
-        func status(_ i: Int) -> LayerMediaStatus { layers[i].mediaStatus.withLock { $0 } }
-        layers[0].wanted.store(MediaKey(folder: 0, file: 150).packed, ordering: .relaxed)
-        loader.wake.signal()
+        let (playback, status, select) = (rig.playback, rig.status, rig.select)
+        select(0, 150)
         #expect(await waitUntil { playback(0)?.uuid == "a" && status(0).name == "Syphon: Resolume/Out" })
         #expect(status(0).kind == "live" && status(0).error == nil)
 
@@ -325,12 +319,10 @@ import Testing
         #expect(catalog.entry(file: 150)?.runtimeID == "a2")
 
         // a number no server has: missing; a gone server picked anew: not running, nothing to show
-        layers[1].wanted.store(MediaKey(folder: 0, file: 160).packed, ordering: .relaxed)
-        loader.wake.signal()
+        select(1, 160)
         #expect(await waitUntil { status(1).kind == "missing" && status(1).error == "no Syphon server numbered 160 (folder 0, 150–169)" })
         catalog.update(running: [Self.info("Other", "", "b")])
-        layers[1].wanted.store(MediaKey(folder: 0, file: 150).packed, ordering: .relaxed)
-        loader.wake.signal()
+        select(1, 150)
         #expect(await waitUntil { status(1).error == "not running" && status(1).name == "Syphon: Resolume/Out" && playback(1) == nil })
         // ... and connects when it starts
         catalog.update(running: [Self.info("Other", "", "b"), Self.info("Resolume", "Out", "a3")])
@@ -347,19 +339,14 @@ import Testing
     /// the server it was connected to.
     @Test func loaderFollowsARenumberedServer() async throws {
         guard let device = MTLCreateSystemDefaultDevice() else { return }
-        let layers = [RenderLayer(index: 0), RenderLayer(index: 1)]
-        let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: testLogger)
-        loader.liveFactory = { uuid in FakeLive(uuid: uuid) }
         let catalog = LiveCatalog(.syphon)
-        catalog.onChange = { [loader] in loader.changed(.syphonServers) }
-        loader.syphonCatalog = catalog
+        let rig = LoaderRig<FakeLive>(device, layers: 2, catalog: catalog), loader = rig.loader
+        loader.liveFactory = { uuid in FakeLive(uuid: uuid) }
         catalog.update(running: [Self.info("Resolume", "Out", "a")])
         loader.start()
         defer { loader.stop() }
-        func playback(_ i: Int) -> FakeLive? { layers[i].pending.withLock { $0.playback?.live as? FakeLive } }
-        func status(_ i: Int) -> LayerMediaStatus { layers[i].mediaStatus.withLock { $0 } }
-        layers[0].wanted.store(MediaKey(folder: 0, file: 150).packed, ordering: .relaxed)
-        loader.wake.signal()
+        let (playback, status, select) = (rig.playback, rig.status, rig.select)
+        select(0, 150)
         #expect(await waitUntil { playback(0)?.uuid == "a" })
         let first = try #require(playback(0))
         catalog.adopt([LiveCatalog.Entry(kind: .syphon, file: 155, source: "Resolume", name: "Out")])
@@ -367,8 +354,7 @@ import Testing
         #expect(await waitUntil { status(0).error == "no Syphon server numbered 150 (folder 0, 150–169)" && playback(0) == nil })
         let stopped = first.stopped.load(ordering: .relaxed)
         #expect(stopped)
-        layers[1].wanted.store(MediaKey(folder: 0, file: 155).packed, ordering: .relaxed)
-        loader.wake.signal()
+        select(1, 155)
         #expect(await waitUntil { playback(1)?.uuid == "a" && status(1).error == nil })
     }
 
@@ -379,34 +365,28 @@ import Testing
         let json = #"{"media": [{"folder": 0, "file": 151, "syphon": "Scene App/Fixed"}]}"#
         let scene = try JSONDecoder().decode(SceneConfig.self, from: Data(json.utf8))
         #expect(scene.media == [MediaEntry(folder: 0, file: 151)])
-        let layer = RenderLayer(index: 0)
-        let loader = MediaLoader(layers: [layer], media: scene.media, device: device, ringCapacity: 4, logger: testLogger)
-        loader.liveFactory = { uuid in FakeLive(uuid: uuid) }
         let catalog = LiveCatalog(.syphon)
+        let rig = LoaderRig<FakeLive>(device, layers: 1, media: scene.media, catalog: catalog)
+        rig.loader.liveFactory = { uuid in FakeLive(uuid: uuid) }
         catalog.update(running: [Self.info("Resolume", "Out", "a"), Self.info("Other", "", "b")])
         #expect(catalog.entry(file: 151)?.runtimeID == "b")
-        loader.syphonCatalog = catalog
-        loader.start()
-        defer { loader.stop() }
-        layer.wanted.store(MediaKey(folder: 0, file: 151).packed, ordering: .relaxed)
-        loader.wake.signal()
-        #expect(await waitUntil { (layer.pending.withLock { $0.playback?.live as? FakeLive })?.uuid == "b" })
-        #expect(layer.mediaStatus.withLock { $0.name == "Syphon: Other" && $0.error == nil })
+        rig.loader.start()
+        defer { rig.loader.stop() }
+        rig.select(0, 151)
+        #expect(await waitUntil { rig.playback(0)?.uuid == "b" })
+        #expect(rig.status(0).name == "Syphon: Other" && rig.status(0).error == nil)
     }
 
     @Test func loaderSaysCouldNotConnectWhenARunningServerRefuses() async throws {
         guard let device = MTLCreateSystemDefaultDevice() else { return }
-        let layer = RenderLayer(index: 0)
-        let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: testLogger)
-        loader.liveFactory = { _ in nil }
         let catalog = LiveCatalog(.syphon)
+        let rig = LoaderRig<FakeLive>(device, layers: 1, catalog: catalog)
+        rig.loader.liveFactory = { _ in nil }
         catalog.update(running: [Self.info("App", "", "a")])
-        loader.syphonCatalog = catalog
-        loader.start()
-        defer { loader.stop() }
-        layer.wanted.store(MediaKey(folder: 0, file: 150).packed, ordering: .relaxed)
-        loader.wake.signal()
-        #expect(await waitUntil { layer.mediaStatus.withLock { $0.error == "could not connect" && $0.name == "Syphon: App" } })
+        rig.loader.start()
+        defer { rig.loader.stop() }
+        rig.select(0, 150)
+        #expect(await waitUntil { rig.status(0).error == "could not connect" && rig.status(0).name == "Syphon: App" })
     }
 
     @Test func catalogLeavesTheEnginesOwnServerOut() {

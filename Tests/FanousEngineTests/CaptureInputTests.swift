@@ -326,11 +326,9 @@ struct CaptureInputTests {
     /// permission opens once the answer comes (`changed(.capturePermission)`).
     @Test func loaderOpensSceneCaptureEntries() async throws {
         let context = try MetalContext(), device = context.device
-        let layers = [RenderLayer(index: 0), RenderLayer(index: 1)]
-        let loader = MediaLoader(
-            layers: layers, media: [MediaEntry(folder: 0, file: 5, capture: "cam-1"), MediaEntry(folder: 0, file: 6, capture: "cam-2")], device: device,
-            ringCapacity: 4, logger: testLogger)
-        let clock = Clock()
+        let rig = LoaderRig<CaptureInput>(
+            device, layers: 2, media: [MediaEntry(folder: 0, file: 5, capture: "cam-1"), MediaEntry(folder: 0, file: 6, capture: "cam-2")])
+        let loader = rig.loader, clock = Clock()
         let granted = Atomic<Bool>(false)
         loader.captureFactory = { uid in
             if uid == "cam-2" && !granted.load(ordering: .relaxed) { throw CaptureError.permissionNotAsked }
@@ -338,11 +336,9 @@ struct CaptureInputTests {
         }
         loader.start()
         defer { loader.stop() }
-        func playback(_ i: Int) -> CaptureInput? { layers[i].pending.withLock { $0.playback?.live as? CaptureInput } }
-        func status(_ i: Int) -> LayerMediaStatus { layers[i].mediaStatus.withLock { $0 } }
-        layers[0].wanted.store(MediaKey(folder: 0, file: 5).packed, ordering: .relaxed)
-        layers[1].wanted.store(MediaKey(folder: 0, file: 6).packed, ordering: .relaxed)
-        loader.wake.signal()
+        let (playback, status) = (rig.playback, rig.status)
+        rig.select(0, 5)
+        rig.select(1, 6)
         #expect(await waitUntil { playback(0) != nil && status(0).name == "Camera: synthetic" })
         #expect(status(0).kind == "live" && status(0).error == nil)
         #expect(await waitUntil { status(1).error == CaptureError.permissionNotAsked.description })
@@ -370,11 +366,8 @@ struct CaptureInputTests {
     /// new session for both, and the old one stops when its last layer lets go. A device in use elsewhere is not opened.
     @Test func loaderResolvesNumberedCaptureDevicesToOneSharedInput() async throws {
         let context = try MetalContext(), device = context.device
-        let layers = (0..<4).map { RenderLayer(index: $0) }
-        let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: testLogger)
         let catalog = LiveCatalog(.capture, numbers: [LiveCatalogTests.numbered(5, "away", "Away Cam", model: "")])
-        catalog.onChange = { [loader] in loader.changed(.captureDevices) }
-        loader.captureCatalog = catalog
+        let rig = LoaderRig<CaptureInput>(device, layers: 4, catalog: catalog), loader = rig.loader
         let cams = ["cam-a", "cam-b", "cam-c"].map { LiveCatalogTests.device($0, "Cam \($0.suffix(1).uppercased())", model: "m") }
         catalog.update(running: cams)
         #expect(catalog.entry(file: 3)?.source == "cam-c")
@@ -385,12 +378,7 @@ struct CaptureInputTests {
         }
         loader.start()
         defer { loader.stop() }
-        func playback(_ i: Int) -> CaptureInput? { layers[i].pending.withLock { $0.playback?.live as? CaptureInput } }
-        func status(_ i: Int) -> LayerMediaStatus { layers[i].mediaStatus.withLock { $0 } }
-        func select(_ i: Int, _ file: Int) {
-            layers[i].wanted.store(MediaKey(folder: 0, file: file).packed, ordering: .relaxed)
-            loader.wake.signal()
-        }
+        let (playback, status, select) = (rig.playback, rig.status, rig.select)
 
         select(0, 3)
         #expect(await waitUntil { playback(0) != nil })
@@ -452,11 +440,8 @@ struct CaptureInputTests {
     /// the camera; a layer on its new number opens it; a swap trades the two layers' pictures.
     @Test func loaderFollowsARenumber() async throws {
         let context = try MetalContext(), device = context.device
-        let layers = (0..<3).map { RenderLayer(index: $0) }
-        let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: testLogger)
         let catalog = LiveCatalog(.capture)
-        catalog.onChange = { [loader] in loader.changed(.captureDevices) }
-        loader.captureCatalog = catalog
+        let rig = LoaderRig<CaptureInput>(device, layers: 3, catalog: catalog), loader = rig.loader
         let cams = ["cam-a", "cam-b"].map { LiveCatalogTests.device($0, "Cam \($0.suffix(1).uppercased())", model: "m") }
         catalog.update(running: cams)
         let inputs = Mutex<[String: CaptureInput]>([:])
@@ -467,12 +452,7 @@ struct CaptureInputTests {
         }
         loader.start()
         defer { loader.stop() }
-        func playback(_ i: Int) -> CaptureInput? { layers[i].pending.withLock { $0.playback?.live as? CaptureInput } }
-        func status(_ i: Int) -> LayerMediaStatus { layers[i].mediaStatus.withLock { $0 } }
-        func select(_ i: Int, _ file: Int) {
-            layers[i].wanted.store(MediaKey(folder: 0, file: file).packed, ordering: .relaxed)
-            loader.wake.signal()
-        }
+        let (playback, status, select) = (rig.playback, rig.status, rig.select)
         func numbered(_ files: [String: Int]) -> [LiveCatalog.Entry] {
             catalog.entries.map { LiveCatalog.Entry(kind: .capture, file: files[$0.source] ?? $0.file, source: $0.source, name: $0.name, model: $0.model) }
         }

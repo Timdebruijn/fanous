@@ -32,16 +32,7 @@ struct MasterIntensityTests {
         }
 
         static func solid(_ device: MTLDevice, _ r: UInt8, _ g: UInt8, _ b: UInt8) throws -> DecodedFrame {
-            let texture = try MovieSource.makeTexture(device, .rgba8Unorm, 4, 4)
-            let pixels = [UInt8]((0..<16).flatMap { _ in [r, g, b, 255] })
-            pixels.withUnsafeBytes {
-                texture.replace(region: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 16)
-            }
-            let frame = DecodedFrame(poolIndex: 0)
-            frame.kind = .rgba
-            frame.frameIndex = 0
-            frame.texture0 = texture
-            return frame
+            try .rgba(device, 4, 4, (0..<16).flatMap { _ in [r, g, b, 255] })
         }
 
         func set(master: Float, control: MasterControl = .normal) {
@@ -52,10 +43,7 @@ struct MasterIntensityTests {
                 slot.masterControl = control
                 for (i, file) in [UInt8(1), 2].enumerated() {
                     slot.layers[i] = LayerParameters()
-                    slot.layers[i].intensity = 1
-                    slot.layers[i].folder = 1
-                    slot.layers[i].file = file
-                    slot.layers[i].fitMode = .stretch
+                    slot.layers[i].play(file: file)
                 }
             }
         }

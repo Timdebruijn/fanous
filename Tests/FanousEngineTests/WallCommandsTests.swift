@@ -247,10 +247,3 @@ struct WallCommandsTests {
         #expect(Self.output(store, 1).blend.right.gamma == 2.2 && Self.output(store, 2).blend.left.gamma == 2.2, "both gamma edits in one step")
     }
 }
-
-extension Result where Failure == CommandError {
-    var failureMessage: String? {
-        if case .failure(let error) = self { return error.message }
-        return nil
-    }
-}

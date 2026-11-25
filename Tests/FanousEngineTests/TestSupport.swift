@@ -189,10 +189,7 @@ func patternBarX(_ frame: DecodedFrame, size: (Int, Int)) throws -> Int {
     compositor.setLayers([.still(frame)])
     parameters.write { slot in
         slot.sequence = 1
-        slot.layers[0].intensity = 1
-        slot.layers[0].folder = 1
-        slot.layers[0].file = 1
-        slot.layers[0].fitMode = .stretch
+        slot.layers[0].play()
     }
     compositor.tick(target: 3600, drawable: nil)
     let (width, _, rgba) = compositor.readback()
@@ -265,6 +262,96 @@ extension RenderLayer {
     }
 }
 
+extension LayerParameters {
+    /// Media `folder`/`file` stretched over the canvas at `intensity`.
+    mutating func play(folder: UInt8 = 1, file: UInt8 = 1, intensity: Float = 1) {
+        (self.intensity, self.folder, self.file, fitMode) = (intensity, folder, file, .stretch)
+    }
+}
+
+extension DecodedFrame {
+    /// A still of `pixels` (RGBA 8-bit, `width` × `height`, rows top to bottom).
+    static func rgba(_ device: MTLDevice, _ width: Int, _ height: Int, _ pixels: [UInt8]) throws -> DecodedFrame {
+        let texture = try MovieSource.makeTexture(device, .rgba8Unorm, width, height)
+        pixels.withUnsafeBytes { texture.replace(region: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: width * 4) }
+        let frame = DecodedFrame(poolIndex: 0)
+        frame.kind = .rgba
+        frame.frameIndex = 0
+        frame.texture0 = texture
+        return frame
+    }
+}
+
+extension MTLTexture {
+    /// Mip level 0 as it lies in memory: rows of `width` pixels, or of ceil(width / 4) blocks for a BC format. A shared
+    /// texture the GPU is done with.
+    func bytes() -> [UInt8] {
+        let (row, rows): (Int, Int) = switch pixelFormat {
+        case .bc1_rgba, .bc4_rUnorm: ((width + 3) / 4 * 8, (height + 3) / 4)
+        case .bc3_rgba, .bc7_rgbaUnorm: ((width + 3) / 4 * 16, (height + 3) / 4)
+        case .r8Unorm: (width, height)
+        case .rgba8Unorm, .bgra8Unorm: (width * 4, height)
+        case .rg32Float, .rgba16Float, .rgba16Unorm: (width * 8, height)
+        default: preconditionFailure("bytes(): no row size for \(pixelFormat)")
+        }
+        var out = [UInt8](repeating: 0, count: row * rows)
+        getBytes(&out, bytesPerRow: row, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+        return out
+    }
+}
+
+/// The CPU time `body` took on this thread, in milliseconds: other threads and a loaded Mac do not count (B67).
+func cpuMillis(_ body: () throws -> Void) rethrows -> Double {
+    let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+    try body()
+    return Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e6
+}
+
+extension Result where Failure == CommandError {
+    /// The refusal's code and message; nil when the command ran.
+    var failureCode: String? {
+        if case .failure(let error) = self { return error.code }
+        return nil
+    }
+    var failureMessage: String? {
+        if case .failure(let error) = self { return error.message }
+        return nil
+    }
+}
+
+/// `count` layers and a loader on them (`media` the scene's entries), not started; `catalog`, when given, is the
+/// loader's catalog of its kind and tells the loader of every change. A test selects folder 0 numbers on the layers and
+/// reads their status and live input (as a `Live`) from the hand-off.
+struct LoaderRig<Live> {
+    let layers: [RenderLayer]
+    let loader: MediaLoader
+
+    init(_ device: MTLDevice, layers count: Int, media: [MediaEntry] = [], catalog: LiveCatalog? = nil) {
+        let layers = (0..<count).map { RenderLayer(index: $0) }
+        let loader = MediaLoader(layers: layers, media: media, device: device, ringCapacity: 4, logger: testLogger)
+        if let catalog {
+            let change: MediaLoader.Changes
+            switch catalog.kind {
+            case .capture: (loader.captureCatalog, change) = (catalog, .captureDevices)
+            case .screens: (loader.screensCatalog, change) = (catalog, .screens)
+            case .syphon: (loader.syphonCatalog, change) = (catalog, .syphonServers)
+            case .windows: preconditionFailure("the loader has no window catalog")
+            }
+            catalog.onChange = { [loader] in loader.changed(change) }
+        }
+        (self.layers, self.loader) = (layers, loader)
+    }
+
+    /// Layer `i` wants folder 0 file `file`; the loader is woken.
+    func select(_ i: Int, _ file: Int) {
+        layers[i].wanted.store(MediaKey(folder: 0, file: file).packed, ordering: .relaxed)
+        loader.wake.signal()
+    }
+
+    func status(_ i: Int) -> LayerMediaStatus { layers[i].mediaStatus.withLock { $0 } }
+    func playback(_ i: Int) -> Live? { layers[i].pending.withLock { $0.playback?.live as? Live } }
+}
+
 /// `body` with an IPv4 address `host`:`port` (any address by default) as the `sockaddr` pointer and length the socket calls take.
 func withSockaddr<T>(port: UInt16 = 0, host: String? = nil, _ body: (UnsafePointer<sockaddr>, socklen_t) throws -> T) rethrows -> T {
     var address = sockaddr_in()
@@ -290,19 +377,19 @@ func listeningPort(_ read: () -> UInt16?, sourceLocation: SourceLocation = #_sou
     return try #require(read().flatMap { $0 == 0 ? nil : $0 }, "the listener never got ready", sourceLocation: sourceLocation)
 }
 
-/// One UDP datagram to `host`:`port` from a throwaway socket.
-func sendUDP(_ bytes: [UInt8], to port: UInt16, host: String = "127.0.0.1") {
-    sendUDP([bytes], to: port, host: host)
+/// One UDP datagram to 127.0.0.1:`port` from a throwaway socket.
+func sendUDP(_ bytes: [UInt8], to port: UInt16) {
+    sendUDP([bytes], to: port)
 }
 
-/// UDP datagrams to `host`:`port`, back-to-back from one throwaway socket (one flow, as a console sends them); `sent`
+/// UDP datagrams to 127.0.0.1:`port`, back-to-back from one throwaway socket (one flow, as a console sends them); `sent`
 /// is what `sendto` returned for each. With a `reply` time, `replied` says whether an answer came back to that socket
 /// within it.
 @discardableResult
-func sendUDP(_ datagrams: [[UInt8]], to port: UInt16, host: String = "127.0.0.1", reply: Double = 0) -> (sent: [Int], replied: Bool) {
+func sendUDP(_ datagrams: [[UInt8]], to port: UInt16, reply: Double = 0) -> (sent: [Int], replied: Bool) {
     let fd = socket(AF_INET, SOCK_DGRAM, 0)
     defer { close(fd) }
-    let sent = datagrams.map { bytes in withSockaddr(port: port, host: host) { sendto(fd, bytes, bytes.count, 0, $0, $1) } }
+    let sent = datagrams.map { bytes in withSockaddr(port: port, host: "127.0.0.1") { sendto(fd, bytes, bytes.count, 0, $0, $1) } }
     guard reply > 0 else { return (sent, false) }
     setReceiveTimeout(fd, reply)
     var buffer = [UInt8](repeating: 0, count: 1500)
@@ -357,6 +444,13 @@ func tempDir(_ prefix: String) throws -> URL {
     let url = tempFile(prefix)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
+}
+
+/// A UDP socket bound without SO_REUSEPORT on a port the kernel picks: a listener on that port fails.
+func holdUDP() throws -> (fd: Int32, port: UInt16) {
+    let fd = socket(AF_INET, SOCK_DGRAM, 0)
+    try #require(withSockaddr { bind(fd, $0, $1) } == 0)
+    return (fd, try #require(UDPSend.localPort(fd)))
 }
 
 /// A socket on 127.0.0.1, on a `port` the kernel picks, whose `receive` waits at most `timeout` seconds; nil = nothing came.

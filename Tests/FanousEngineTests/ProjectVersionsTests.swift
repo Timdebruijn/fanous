@@ -244,11 +244,6 @@ struct ProjectVersionsTests {
         #expect(Readiness.check(context, acknowledged: ["project"]).first { $0.id == "project" }?.blocks == false)
     }
 
-    static func failure(_ result: Result<CommandResult, CommandError>) -> CommandError? {
-        if case .failure(let error) = result { return error }
-        return nil
-    }
-
     @Test func snapshotListRevertAndUndo() throws {
         let f = Self.make()
         let store = f.store
@@ -310,7 +305,7 @@ struct ProjectVersionsTests {
         _ = try store.execute("project.set", args: ["path": "/name", "value": "Changed"], role: .programmer).get()
 
         f.flag.on.store(true, ordering: .relaxed)
-        #expect(Self.failure(store.execute("project.revert", args: ["id": .string(id)], role: .programmer))?.code == "showMode")
+        #expect(store.execute("project.revert", args: ["id": .string(id)], role: .programmer).failureCode == "showMode")
         #expect(f.versions.list().count == 1)  // a refused revert saves nothing
 
         f.flag.on.store(false, ordering: .relaxed)
@@ -327,7 +322,7 @@ struct ProjectVersionsTests {
         _ = try store.execute("project.revert", args: ["id": .string(id)], role: .programmer).get()
 
         f.flag.on.store(true, ordering: .relaxed)
-        #expect(Self.failure(store.execute("undo", role: .programmer))?.code == "showMode")
+        #expect(store.execute("undo", role: .programmer).failureCode == "showMode")
         #expect(store.project["name"]?.string == "Untitled")
         #expect(store.historyDepth == (2, 0))  // the refused entry stays
 
@@ -336,7 +331,7 @@ struct ProjectVersionsTests {
         #expect(store.project["name"]?.string == "Changed")
 
         f.flag.on.store(true, ordering: .relaxed)
-        #expect(Self.failure(store.execute("redo", role: .programmer))?.code == "showMode")
+        #expect(store.execute("redo", role: .programmer).failureCode == "showMode")
         #expect(store.historyDepth == (1, 1))
         // other history entries still step in show mode
         _ = try store.execute("undo", role: .programmer).get()
@@ -366,7 +361,7 @@ struct ProjectVersionsTests {
         #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo/redo refused")))
         #expect(store.project["syphon"]?["151"]?["app"]?.string == "Y")
         #expect(store.historyDepth.undo == 0)
-        #expect(Self.failure(store.execute("undo", role: .programmer))?.code == "nothingToUndo")
+        #expect(store.execute("undo", role: .programmer).failureCode == "nothingToUndo")
         #expect(store.project["name"]?.string == "Untitled")
     }
 
@@ -473,9 +468,9 @@ struct ProjectVersionsTests {
         try project.set([canvas, canvas, canvas, canvas, canvas], at: "/canvases")
         let tooMany = try f.versions.save(project, name: "Too many", automatic: false)
         for (version, word) in [(noLayers, "layer count"), (badPatch, "patch"), (tooBig, "pixels"), (tooMany, "canvases")] {
-            let error = Self.failure(f.store.execute("project.revert", args: ["id": .string(version.id)], role: .programmer))
-            #expect(error?.code == "invalidArgs")
-            #expect(error?.message.contains(word) == true, "\(version.name): \(error?.message ?? "accepted")")
+            let result = f.store.execute("project.revert", args: ["id": .string(version.id)], role: .programmer)
+            #expect(result.failureCode == "invalidArgs")
+            #expect(result.failureMessage?.contains(word) == true, "\(version.name): \(result.failureMessage ?? "accepted")")
         }
         #expect(f.store.project == testStore(outputs: 0).store.project)
     }
@@ -487,10 +482,10 @@ struct ProjectVersionsTests {
         let automatic = try #require(try store.execute("project.snapshot", role: .programmer).get().value)
         #expect(automatic["automatic"]?.bool == true)
         #expect(automatic["name"]?.string == "Manual")
-        #expect(Self.failure(store.execute("project.deleteVersion", args: ["id": automatic["id"]!], role: .programmer))?.code == "invalidArgs")
+        #expect(store.execute("project.deleteVersion", args: ["id": automatic["id"]!], role: .programmer).failureCode == "invalidArgs")
         _ = try store.execute("project.deleteVersion", args: ["id": .string(named)], role: .programmer).get()
         #expect(f.versions.list().map(\.id) == [automatic["id"]?.string])
-        #expect(Self.failure(store.execute("project.deleteVersion", args: ["id": .string(named)], role: .programmer))?.code == "notFound")
+        #expect(store.execute("project.deleteVersion", args: ["id": .string(named)], role: .programmer).failureCode == "notFound")
     }
 
     @Test func retentionKeepsNamedVersions() throws {

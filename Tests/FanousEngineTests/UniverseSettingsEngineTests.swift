@@ -229,10 +229,8 @@ struct UniverseSettingsEngineTests {
 
     /// A port someone holds without SO_REUSEPORT (nc -u -l 5568) fails the bind: the engine catches it and runs on.
     @Test func sacnBindFailureThrowsAndReadinessWarns() throws {
-        let holder = socket(AF_INET, SOCK_DGRAM, 0)
+        let (holder, port) = try holdUDP()
         defer { close(holder) }
-        try #require(withSockaddr { bind(holder, $0, $1) } == 0)
-        let port = try #require(UDPSend.localPort(holder))
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         #expect(throws: POSIXError(.EADDRINUSE)) { try SACNReceiver(store: store, logger: testLogger, port: port).start(groups: [:]) }
 
@@ -244,10 +242,8 @@ struct UniverseSettingsEngineTests {
 
     /// The same for Art-Net (B167): the listener fails after `start()`, the receiver keeps why, readiness warns.
     @Test func artNetListenerFailureIsKeptAndReadinessWarns() async throws {
-        let holder = socket(AF_INET, SOCK_DGRAM, 0)
+        let (holder, port) = try holdUDP()
         defer { close(holder) }
-        try #require(withSockaddr { bind(holder, $0, $1) } == 0)
-        let port = try #require(UDPSend.localPort(holder))
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let artnet = ArtNetReceiver(store: store, logger: testLogger, nodeName: "test", port: port)
         try artnet.start()
