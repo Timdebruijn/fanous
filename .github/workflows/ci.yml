@@ -11,6 +11,12 @@ on:
   pull_request:
     paths: ['**', '!docs/**', '!**/*.md', 'docs/channel-map.md']
 
+# a push to a pull request cancels the runs of its earlier heads (only the newest head can be merged); main's runs all
+# complete, so every merged sha has its result
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   swift:
     # Core tests need no GPU; golden-image and benchmark workflows run on a self-hosted Apple Silicon runner (DESIGN.md §18).

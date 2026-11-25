@@ -124,6 +124,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   itself, the playback pops the old leg's frames behind the clock, and a full ring without the clock's frame (a mode
   switch, a turn above about 1.2x, a short range) drains at once, holding the playback's own picture (B386) for one
   tick (PR #472).
+- CI: a push to a pull request cancels the queued or running jobs of its earlier heads; main's runs always complete (PR #491).
+
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)
