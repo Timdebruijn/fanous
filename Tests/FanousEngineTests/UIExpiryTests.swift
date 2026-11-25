@@ -132,4 +132,37 @@ struct UIExpiryTests {
         store.releaseUI(layer)
         #expect(store.queue.sync { store.uiClock.isEmpty })
     }
+
+    /// B288: Release, a MIDI release and the expiry give the parameter back to the cue value the UI or MIDI value
+    /// replaced in the one internal slot, with the cue's own stamp: under ltp a console change older than the cue does
+    /// not take it (before: stamp 0, the console's stale 10000 showed).
+    @Test func aReleasedControllerValueGivesTheParameterBackToTheCue() {
+        let cue = CueValue(fixture: layer, parameter: intensity, raw: 30000)
+        let ltp = store(.ltp)
+        var data = [UInt8](repeating: 0, count: 512)
+        (data[0], data[1]) = (0x27, 0x10)  // 10000, before the cue
+        ltp.queue.sync { ltp.receive(artnet: ArtDmx(portAddress: 0, data: data), from: "desk", at: DMXStore.now) }
+        ltp.setCue([cue], changed: [cue])
+        #expect(ltp.resolvedRaw(layer, intensity) == 30000)
+        ltp.setUI(layer, intensity, raw: 50000)
+        #expect(ltp.resolvedRaw(layer, intensity) == 50000)
+        ltp.releaseUI(layer)
+        #expect(ltp.resolvedRaw(layer, intensity) == 30000, "Release under ltp")
+
+        let midi = store(.internal)
+        midi.setCue([cue], changed: [cue])
+        midi.setMIDI(layer, intensity, raw: 50000)
+        #expect(midi.resolvedRaw(layer, intensity) == 50000)
+        midi.releaseMIDI([(layer, intensity)])
+        #expect(midi.resolvedRaw(layer, intensity) == 30000, "a MIDI release")
+
+        let expiry = store(.internal)
+        expiry.setCue([cue], changed: [cue])
+        console(expiry, at: 1000)
+        expiry.queue.sync { expiry.applyUI(layer, intensity, raw: 50000, at: 1000) }
+        console(expiry, at: 1599)
+        #expect(expiry.resolvedRaw(layer, intensity) == 50000)
+        console(expiry, at: 1600)
+        #expect(expiry.resolvedRaw(layer, intensity) == 30000, "the expiry")
+    }
 }

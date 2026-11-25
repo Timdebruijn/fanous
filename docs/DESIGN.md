@@ -1301,7 +1301,7 @@ or not, and the patch only feeds it DMX:
 | Source | Produces | Cadence |
 |---|---|---|
 | DMX | raw channel values for the patched fixture | per universe packet (≈ 44 Hz) |
-| Internal: cue engine | target values + fade progress for parameters the cue touches | when a fire or a fade step changes a value (fades tick at 50 Hz); a held value is not stamped again, so a later console, UI, OSC or MIDI change keeps its parameter until a cue holding it fires again; a released UI or MIDI value gives it back to the cue, stamped 0 (B288) |
+| Internal: cue engine | target values + fade progress for parameters the cue touches | when a fire or a fade step changes a value (fades tick at 50 Hz); a held value is not stamped again, so a later console, UI, OSC or MIDI change keeps its parameter until a cue holding it fires again; a released UI or MIDI value gives it back to the cue, with the cue value's own stamp (B288) |
 | Internal: OSC | last received value per address | on receipt |
 | Internal: UI override | programmer-set values (only while "override" is on in the UI; auto-expires after masking a received console for 10 min since the last UI change, to avoid show-time surprises; the count pauses while there is no console traffic or the console wins, so without a console they stay until released) | on command |
 

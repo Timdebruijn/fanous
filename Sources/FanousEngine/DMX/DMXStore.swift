@@ -456,11 +456,13 @@ public final class DMXStore: @unchecked Sendable {
     }
 
     /// A released UI or MIDI value gives the parameter back to the cue value it replaced in the one internal slot (B288),
-    /// stamped 0: under ltp a console that moved since still wins, under htp the larger value as before the touch, under
-    /// internal or without a console the cue's value. Back as the cue source, a later removal of the cue releases it.
+    /// with the cue value's own stamp: under ltp a console that moved after the cue wins and one that moved before does
+    /// not, as before the touch; under internal or without a console the cue's value. Back as the cue source, a later
+    /// removal of the cue releases it.
     private func restoreCue(_ fixture: FixtureRef) {
-        for output in cue.outputs where output.fixture == fixture && resolvers[fixture]?.hasInternal(output.parameter) == false {
-            resolvers[fixture]?.setInternal(output.parameter, raw: output.raw, source: .cue, at: 0)
+        guard let resolver = resolvers[fixture] else { return }
+        for output in cue.outputs where output.fixture == fixture && !resolver.hasInternal(output.parameter) {
+            resolvers[fixture]?.setInternal(output.parameter, raw: output.raw, source: .cue, at: resolver.cueStamp(output.parameter))
         }
     }
 
