@@ -4665,8 +4665,9 @@ later deliverable (`[OPEN-20]`).
   one plus one for every sync word since); any other frame (a start, a jump of
   the sender) needs an even word parity (the polarity correction bit) and is
   believed only when the next frame continues it, so one corrupted frame costs
-  one update instead of a jump. A repeat of the last believed (or the held)
-  address is a sender parked on a still frame: it holds the clock there,
+  one update instead of a jump. A repeat of the last believed address is held
+  (parity or not), and a frame that repeats the held one is a sender parked on
+  a still frame: from that second repeat it holds the clock there,
   stopped (`TimecodeClock.Sample.running` false), Locked while the repeats
   come, then Freewheel and Lost at that position when they stop. A dropout or
   a restarted sender keeps the last detected rate.

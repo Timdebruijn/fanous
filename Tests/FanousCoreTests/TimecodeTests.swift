@@ -131,6 +131,17 @@ import Testing
         #expect(chased.count == 58 && chased.first == second[1], "\(chased.count) frames of the second run, from \(String(describing: chased.first))")
     }
 
+    /// B291: one corrupted frame that reads as the last one (01:00:00:21 with bit 0 flipped reads :20, odd parity) is no
+    /// park: it is dropped, and the chase runs on. Taken as a still frame, it stopped the chase for two frames.
+    @Test func aCorruptedRepeatIsNoPark() {
+        let frames = Self.frames(from: Timecode(hours: 1, minutes: 0, seconds: 0, frames: 0, rate: .fps25), count: 50)
+        var decoder = LTCDecoder(sampleRate: 48_000)
+        let decoded = decoder.process(LTCEncoder.samples(frames: frames, sampleRate: 48_000, flipping: [21: [0]]))
+        let stood = decoded.filter { !$0.running }.map(\.timecode)
+        #expect(stood.isEmpty, "stood still at \(stood)")
+        #expect(decoded.map(\.timecode) == frames[1..<49].filter { $0 != frames[21] })
+    }
+
     /// B291: the continuity check passes midnight, where the day's last frame is followed by 00:00:00:00.
     @Test(arguments: [TimecodeRate.fps25, .fps2997df]) func continuityPassesMidnight(rate: TimecodeRate) {
         let frames = Self.frames(from: Timecode(hours: 23, minutes: 59, seconds: 59, frames: 20, rate: rate), count: 10 + rate.nominalFrames - 20)
