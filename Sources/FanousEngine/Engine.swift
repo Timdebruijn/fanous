@@ -85,13 +85,13 @@ public final class Engine: @unchecked Sendable {
     /// B31: keeps the rendered canvas in step with the project's.
     private var canvasSwitch: CanvasSwitch?
     // Phase 7: show control
-    private let timecodeClock = TimecodeClock()
+    let timecodeClock = TimecodeClock()  // internal for the B289 test
     /// Swapped by `applyTimecodeSettings` on Control while the feed queue reads them for `live.timecode` (B273).
     private var ltc: LTCInput? {
         get { timecodeInputs.withLock { $0.ltc } }
         set { timecodeInputs.withLock { $0.ltc = newValue } }
     }
-    private var mtc: MTCInput? {
+    private(set) var mtc: MTCInput? {  // internal for the B289 test
         get { timecodeInputs.withLock { $0.mtc } }
         set { timecodeInputs.withLock { $0.mtc = newValue } }
     }
@@ -1240,22 +1240,27 @@ public final class Engine: @unchecked Sendable {
     private func reopenFailedLTC() {
         store?.queue.async { [weak self] in
             guard let self, self.ltc?.lastError != nil else { return }
-            self.applyTimecodeSettings(self.lastTimecodeSettings)
+            self.applyTimecodeSettings(self.lastTimecodeSettings, reopen: true)
         }
     }
 
-    private func applyTimecodeSettings(_ settings: ShowCommands.TimecodeSettings) {
+    /// An offset, a layer offset or the freewheel time applies to the running input and clock; only a change of what
+    /// opens the input (source, device, LTC channel, the switch) or a `reopen` restarts it and clears the clock (B289).
+    private func applyTimecodeSettings(_ settings: ShowCommands.TimecodeSettings, reopen: Bool = false) {
+        let opens = { (s: ShowCommands.TimecodeSettings) in (s.enabled == false ? .off : s.source, s.device, s.source == .ltc ? s.channel : 0) }
+        let restart = reopen || opens(settings) != opens(lastTimecodeSettings)
         lastTimecodeSettings = settings
         // the switch does not count: the operator may turn it on in show mode, and LTC then asks for the microphone
         ltcInUse.store(settings.source == .ltc, ordering: .relaxed)
+        timecodeClock.freewheelSeconds = max(0.1, settings.freewheel)
+        render?.compositor.timecodeOffsets = TimecodeOffsets(project: settings.offset, layers: settings.layerOffsetsByNumber)
+        guard restart else { return }
         ltc?.stop()
         mtc?.stop()
         ltc = nil
         mtc = nil
         timecodeClock.stop()
-        timecodeClock.freewheelSeconds = max(0.1, settings.freewheel)
-        render?.compositor.timecodeOffsets = TimecodeOffsets(project: settings.offset, layers: settings.layerOffsetsByNumber)
-        switch settings.enabled == false ? .off : settings.source {
+        switch opens(settings).0 {
         case .off: break
         case .ltc:
             let input = LTCInput(clock: timecodeClock, channel: settings.channel, logger: logger)
