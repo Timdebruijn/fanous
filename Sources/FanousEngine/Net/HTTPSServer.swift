@@ -246,7 +246,7 @@ public final class HTTPSServer: @unchecked Sendable {
 private final class ClientConnection: @unchecked Sendable {
     private let connection: NWConnection
     private let server: HTTPSServer
-    private let queue = DispatchQueue(label: "org.fanous.https.client")
+    private let queue = DispatchQueue(label: "org.fanous.https.client", qos: .userInitiated)  // the listener's class: an iPad's GO arrives here (B318)
     private var buffer: [UInt8] = []
     /// An upload in progress: body bytes go to the file until `remaining` reaches 0.
     private var upload: (request: HTTPRequest, file: URL, handle: FileHandle, remaining: Int)?

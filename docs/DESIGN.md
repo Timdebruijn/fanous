@@ -5254,14 +5254,22 @@ FanousSync v1
   counts it (`packetsDropped` in `live.sync` and `/metrics`).
 - **Receiver:** one socket bound to `0.0.0.0:port` with `SO_REUSEPORT`
   (like the sACN receiver, so two engines on one Mac both receive), on its
-  own queue. Packets from the machine's own id are dropped (local groups use
-  the table directly, below). A packet with a layer no real clock has (fps
-  not a normal number in 0–10 000, a position beyond ±1e9 frames, a rate
-  beyond ±1e6, a group or direction out of range) is a decode error (B316):
-  a position near 1e300 made the slave's offset NaN, and the position bound
-  is the one that keeps the slave's arithmetic finite at any fps. A master
-  leaves a file above 10 000 fps out of its packet, so one odd file does not
-  make every packet of that machine a decode error. The newest packet per group goes into a
+  own queue (`.userInitiated`, the control plane's class). `receivedAt` is the
+  kernel's receive time (`SO_TIMESTAMP_MONOTONIC`, mach time, the clock of
+  `CACurrentMediaTime`), not the handler's, so a busy queue does not make
+  the master look late (B317). Packets from the machine's own id are dropped
+  (local groups use the table directly, below). A packet with a layer no real
+  clock has (fps not a normal number in 0–10 000, a position beyond ±1e9
+  frames, a rate beyond ±1e6, a group or direction out of range) is a decode
+  error (B316): a position near 1e300 made the slave's offset NaN, and the
+  position bound is the one that keeps the slave's arithmetic finite at any
+  fps. A master leaves a file above 10 000 fps out of its packet, so one odd
+  file does not make every packet of that machine a decode error. A packet
+  whose tick is the entry's or up to 256 ticks behind it, from the same
+  machine, is a duplicate or arrived out of order and is dropped; a master
+  restarted within 256 ticks of its previous start is therefore dropped until
+  its entry goes stale (at most 2 s). Two masters of one group in one packet:
+  the last wins, as for a local slave. The newest packet per group goes into a
   table `{group: (machine, mediaKey, fps, position, direction, finished,
   rate, receivedAt)}` behind a mutex; the compositor reads it with
   `withLockIfAvailable` once per tick (a busy lock means last tick's entry
@@ -5283,8 +5291,14 @@ direction, finished = entry's
 
 The position is copied every tick, never integrated, so no error can
 accumulate: the difference between master and slave is bounded by packet
-jitter (well under 1 ms on a wired LAN) plus the one tick in which the
-packet was sampled, and it stays that size after an hour as after a second.
+jitter plus the one tick in which the packet was sampled, and it stays that
+size after an hour as after a second. Measured on one Mac over loopback
+(B317, `SyncReceiverTests.printArrivalDelay`, 300 packets, other test runs
+loading the Mac): the arrival time is 0.08–0.09 ms after `sendto` at the
+median, p99 0.25–0.4 ms, max under 0.5 ms; with twice as many spinning
+`.userInitiated` threads as cores p99 0.3–1.5 ms, max 1.1–2.9 ms. Before the
+kernel stamp (handler time, default-QoS queue) the same load gave p99 about
+7 ms and max 12–15 ms. A wired LAN adds its own jitter, not measured here.
 Two residuals remain and are the floor:
 
 - **One frame of display phase.** The two Macs' vsyncs are never aligned

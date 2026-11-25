@@ -61,6 +61,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   made a slave's offset NaN, and that one number made every live message "{}" and every live patch `ops: []`; the
   receiver now refuses an fps that is not a normal number up to 10 000, a position beyond ±1e9 frames and a rate beyond ±1e6, and a non-finite
   number in any document encodes as null. The packet layout is unchanged (PR #464).
+- Sync: a slave's arrival time is the kernel's, and a duplicate or reordered packet no longer replaces a newer one
+  (B317, B318). The receiver stamped `receivedAt` in its handler on a default-QoS queue, so a busy Mac made the master
+  look up to 15 ms late (loopback, all cores busy; now at most 3 ms), and a packet arriving behind a newer one from the
+  same machine overwrote it. The receiver now reads `SO_TIMESTAMP_MONOTONIC`, drops a tick it has seen or one up to 256
+  behind, and its queue and each HTTPS connection queue run at `.userInitiated` (PR #471).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)

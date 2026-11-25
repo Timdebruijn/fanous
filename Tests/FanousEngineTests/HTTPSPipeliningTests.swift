@@ -72,6 +72,24 @@ import Testing
         return (server, stateServer)
     }
 
+    /// B318: a request is handled at `.userInitiated`, the listener's class, not the default: an iPad's GO arrives here.
+    @Test func aRequestIsHandledAtUserInitiated() async throws {
+        let seen = Mutex<UInt32?>(nil)
+        let server = try HTTPSServer(
+            port: 0, identity: try StateServerTests.makeIdentity(), webRoot: URL(fileURLWithPath: "/nonexistent"), loopbackOnly: true,
+            logger: testLogger
+        ) { _ in
+            seen.withLock { $0 = qos_class_self().rawValue }
+            return .text(200, "ok")
+        }
+        defer { server.stop() }
+        let connection = try await Self.start(server)
+        defer { connection.cancel() }
+        connection.send(content: Data("GET /x HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n".utf8), completion: .contentProcessed { _ in })
+        _ = await Self.read(connection)
+        #expect(seen.withLock { $0 } == QOS_CLASS_USER_INITIATED.rawValue)
+    }
+
     /// A client that pipelines GETs and does not read is served one response at a time, as the transport takes them,
     /// not buffered for: the route runs for a few requests, not all of them (B270; before, all 64 MiB were queued in the
     /// connection at once). Once it reads, it gets every response, in order and byte for byte, and the last request's
