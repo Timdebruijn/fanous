@@ -6,6 +6,7 @@ import CryptoKit
 import Foundation
 import FanousCore
 import Logging
+import Network
 import Security
 
 public enum TLSIdentityError: Error, CustomStringConvertible {
@@ -99,34 +100,12 @@ public struct TLSIdentity: @unchecked Sendable {
         return TLSIdentity(identity: identity, certificateDER: der, storage: .dataProtectionKeychain)
     }
 
-    /// Removes the key and certificate from the keychains (data-protection and
-    /// any login-keychain leftovers of earlier builds) and the exported files.
-    /// Under `FANOUS_HOME` only that home's key and files: the shared certificate leftovers belong to the real install.
+    /// Removes the key from the data-protection keychain and the exported files (under `FANOUS_HOME` that home's).
     public static func reset(directory: URL) {
-        for dataProtection in [true, false] {
-            var keyQuery: [String: Any] = [kSecClass as String: kSecClassKey, kSecAttrApplicationTag as String: keyTag]
-            if dataProtection { keyQuery[kSecUseDataProtectionKeychain as String] = true }
-            while SecItemDelete(keyQuery as CFDictionary) == errSecSuccess {}
-        }
-        if AppPaths.homeOverride == nil { removeCertificateLeftovers() }
+        let keyQuery: [String: Any] = [kSecClass as String: kSecClassKey, kSecAttrApplicationTag as String: keyTag, kSecUseDataProtectionKeychain as String: true]
+        while SecItemDelete(keyQuery as CFDictionary) == errSecSuccess {}
         for file in ["certificate.der", "fingerprint.sha256", "private-key.der"] {
             try? FileManager.default.removeItem(at: directory.appending(path: file))
-        }
-    }
-
-    private static func removeCertificateLeftovers() {
-        let certificateQuery: [String: Any] = [
-            kSecClass as String: kSecClassCertificate,
-            kSecMatchSubjectContains as String: "\(Attribution.projectName) (",
-            kSecMatchLimit as String: kSecMatchLimitAll,
-            kSecReturnRef as String: true,
-        ]
-        var found: CFTypeRef?
-        if SecItemCopyMatching(certificateQuery as CFDictionary, &found) == errSecSuccess, let certificates = found as? [SecCertificate] {
-            for certificate in certificates {
-                let deleteQuery: [String: Any] = [kSecClass as String: kSecClassCertificate, kSecMatchItemList as String: [certificate]]
-                SecItemDelete(deleteQuery as CFDictionary)
-            }
         }
     }
 
@@ -185,7 +164,7 @@ public struct TLSIdentity: @unchecked Sendable {
             notAfter: now.addingTimeInterval(10 * 365 * 86_400),
             publicKeyX963: Array(publicData),
             dnsNames: hostnames,
-            ipAddresses: ipAddresses.compactMap(ipBytes))
+            ipAddresses: ipAddresses.compactMap { IPv4Address($0).map { Array($0.rawValue) } ?? IPv6Address($0).map { Array($0.rawValue) } })
         let tbs = Data(template.tbsCertificate())
         guard let signature = SecKeyCreateSignature(privateKey, .ecdsaSignatureMessageX962SHA256, tbs as CFData, &error) as Data?
         else { throw TLSIdentityError.cf(error!.takeRetainedValue(), "sign certificate") }
@@ -194,13 +173,5 @@ public struct TLSIdentity: @unchecked Sendable {
             throw TLSIdentityError.security(errSecDecode, "parse generated certificate")
         }
         return (certificate, der)
-    }
-
-    static func ipBytes(_ text: String) -> [UInt8]? {
-        var v4 = in_addr()
-        if inet_pton(AF_INET, text, &v4) == 1 { return withUnsafeBytes(of: &v4) { Array($0) } }
-        var v6 = in6_addr()
-        if inet_pton(AF_INET6, text, &v6) == 1 { return withUnsafeBytes(of: &v6) { Array($0) } }
-        return nil
     }
 }

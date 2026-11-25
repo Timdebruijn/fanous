@@ -190,12 +190,7 @@ public enum ProjectDocument {
         }
         var outputs = ProjectDocument.outputs(from: project)
         let before = outputs
-        func move(_ slices: inout [SliceConfig]) { for s in slices.indices where !ids.contains(slices[s].canvas) { slices[s].canvas = 1 } }
-        for o in outputs.indices {
-            move(&outputs[o].slices)
-            // stored presets too: one shown or recalled later must not sample a canvas that is gone
-            for p in outputs[o].presets.indices { move(&outputs[o].presets[p].slices) }
-        }
+        for o in outputs.indices { outputs[o].moveSlicesToCanvas1 { !ids.contains($0) } }
         if outputs != before { try setOutputs(outputs, in: &project) }
     }
 
@@ -995,6 +990,17 @@ extension FixtureRef {
         switch self {
         case .output(let n), .keystone(let n): n
         case .layer, .master: nil
+        }
+    }
+}
+
+extension OutputConfig {
+    /// Its slices on a canvas `moves` picks show canvas 1 instead, and its stored presets' slices too: one shown or
+    /// recalled later must not sample a canvas that is gone.
+    mutating func moveSlicesToCanvas1(where moves: (Int) -> Bool) {
+        for s in slices.indices where moves(slices[s].canvas) { slices[s].canvas = 1 }
+        for p in presets.indices {
+            for s in presets[p].slices.indices where moves(presets[p].slices[s].canvas) { presets[p].slices[s].canvas = 1 }
         }
     }
 }

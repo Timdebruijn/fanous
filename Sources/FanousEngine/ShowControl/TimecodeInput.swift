@@ -373,7 +373,7 @@ public final class MTCInput: @unchecked Sendable {
     private let clock: TimecodeClock
     /// Owns the client, the port, the chosen source and the connected sources by unique id (two identical interfaces
     /// share a name).
-    private var listener: MIDISourceListener!
+    private(set) var listener: MIDISourceListener!
     private var parsers: [MIDIUniqueID: Parse] = [:]
     public let status = Mutex(Status())
 
@@ -407,8 +407,6 @@ public final class MTCInput: @unchecked Sendable {
 
     /// On `queue`: the sources now connected. One that went away takes its parse state with it; for the clock an
     /// unplugged source is signal loss like a stopped sender: freewheel, then lost after the freewheel time.
-    func setSources(_ connected: [MIDIUniqueID: String]) { listener.setSources(connected) }
-
     private func sourcesChanged(_ connected: [MIDIUniqueID: String], gone: Set<MIDIUniqueID>) {
         for uid in gone { parsers[uid] = nil }
         let list = connected.values.sorted()

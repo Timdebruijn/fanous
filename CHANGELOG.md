@@ -18,6 +18,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   `Patch.collisions()` and parameters nobody passes go, `GDTFExporter` lists shared attributes once;
   `bundle.sh` drops `CONFIG`, `WEB_BUILD` and the unread entitlements copy. Wire formats and the GDTF file are
   byte-identical (PR #448).
+- Cleanup: `/metrics` no longer has `preview.streamers`, the per-streamer B99 counters (a JPEG encode that hangs
+  for 3 s is still logged); `fanousd reset-tls` no longer looks for login-keychain leftovers of the Phase 0–2
+  development builds (2026-10-22/23, before the Phase 3 amendment);
+  the HTTPS and CITP servers share one refusal log line, the state store and the preview share one wire JSON
+  encoder, and the upload sink and route, the slice canvas remap, the sync counters and the log metadata suffix
+  are written once (PR #447).
 - Sync: a slave's audio reseeks when its master is retriggered (B395). The slave's clock followed the jump at
   once, but its audio was nudged towards the new clock 2 ms per callback (a jump of 20 to 100 ms; under 20 ms
   the lead stayed) instead of reseeked like the master's own. A locked tick that moves the clock by more than

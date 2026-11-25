@@ -569,7 +569,7 @@ public final class MIDIInput: @unchecked Sendable {
     private let dmx: DMXStore
     private let logger: Logger
     /// Owns the client, the port and the connected sources by unique id (two identical controllers share a name).
-    private var listener: MIDISourceListener!
+    private(set) var listener: MIDISourceListener!
     private var parsers: [MIDIUniqueID: MIDIParser] = [:]
     /// Parameters each source has set, released when it disconnects.
     private var setBy: [MIDIUniqueID: Set<Target>] = [:]
@@ -620,8 +620,6 @@ public final class MIDIInput: @unchecked Sendable {
 
     /// On `queue`: the sources now connected. One that went away (unplugged, or no longer the chosen source) takes its
     /// running status, its half-received 14-bit values and the values it set with it.
-    func setSources(_ connected: [MIDIUniqueID: String]) { listener.setSources(connected) }
-
     private func sourcesChanged(_ connected: [MIDIUniqueID: String], gone: Set<MIDIUniqueID>) {
         for uid in gone {
             dmx.releaseMIDI((setBy[uid] ?? []).map { ($0.fixture, $0.parameter) })
@@ -635,7 +633,7 @@ public final class MIDIInput: @unchecked Sendable {
     /// Tests: bytes as if a connected source sent them, handled before this returns.
     func inject(_ bytes: [UInt8], from source: String, uid: MIDIUniqueID = 1) {
         queue.sync {
-            if listener.names[uid] == nil { setSources(listener.names.merging([uid: source]) { a, _ in a }) }
+            if listener.names[uid] == nil { listener.setSources(listener.names.merging([uid: source]) { a, _ in a }) }
             receive(bytes, uid: uid)
         }
     }

@@ -222,7 +222,7 @@ struct MIDIControlTests {
         input.inject([], from: "nanoKONTROL2", uid: 5)
         #expect(midi() == ["intensity"])
         // the source disconnects: everything it set goes
-        input.queue.sync { input.setSources([:]) }
+        input.queue.sync { input.listener.setSources([:]) }
         #expect(midi() == [])
         // fixture.release clears MIDI values too
         input.inject([0xB0, 7, 100], from: "nanoKONTROL2", uid: 5)

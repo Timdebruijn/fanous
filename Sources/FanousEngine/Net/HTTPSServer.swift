@@ -15,17 +15,15 @@ import Synchronization
 /// upgrade request hands the connection to a `WebSocketSession` (DESIGN.md §11.1: one port for all).
 public final class HTTPSServer: @unchecked Sendable {
     public typealias Route = @Sendable (HTTPRequest) -> HTTPResponse?
-    /// Where to stream a large request body (an upload): an existing file the sink created for this request alone; nil =
-    /// refuse the body. Called with the request head only.
-    public typealias UploadSink = @Sendable (HTTPRequest) -> URL?
-    /// Called once a streamed body is complete, with the request head and the file it was written to.
-    public typealias UploadRoute = @Sendable (HTTPRequest, URL) -> HTTPResponse
+    /// A large request body (an upload): `sink` names where to stream it, an existing file it created for this request
+    /// alone (nil = refuse the body), called with the request head only; `route` runs once the body is complete, with the
+    /// request head and the file it was written to.
+    public typealias Upload = (sink: @Sendable (HTTPRequest) -> URL?, route: @Sendable (HTTPRequest, URL) -> HTTPResponse)
     /// Decides whether a WebSocket upgrade request gets a session; nil refuses it (404).
     public typealias UpgradeRoute = @Sendable (HTTPRequest) -> StateServer.Connection?
     /// Bodies up to this size are buffered and handed to the route in `HTTPRequest.body`.
     public static let maxInlineBody = 1 << 20
-    nonisolated(unsafe) public var uploadSink: UploadSink?
-    nonisolated(unsafe) public var uploadRoute: UploadRoute?
+    nonisolated(unsafe) public var upload: Upload?
     nonisolated(unsafe) public var upgradeRoute: UpgradeRoute?
     /// The port actually bound (differs from `port` when 0 was requested); set once the listener is ready.
     nonisolated(unsafe) public private(set) var boundPort: UInt16?
@@ -56,8 +54,8 @@ public final class HTTPSServer: @unchecked Sendable {
     nonisolated(unsafe) var limits = Limits()
     /// Open connections per address (loopback included, though not capped).
     private let open = Mutex<[String: Int]>([:])
-    /// Refusals since start, those since the last log line, and when that line was written: at most one line a minute.
-    private let refusals = Mutex((total: 0, count: 0, logged: -Double.infinity))
+    /// Refusals since start, and those since the last log line.
+    private let refusals = Mutex((total: 0, log: RefusalLog()))
     /// Connections refused at the cap since start (`/metrics`).
     public var refusedConnections: Int { refusals.withLock { $0.total } }
     /// Connections open now (tests).
@@ -192,20 +190,11 @@ public final class HTTPSServer: @unchecked Sendable {
             return true
         }
         if admitted { return true }
-        let now = ProcessInfo.processInfo.systemUptime
         let refused = refusals.withLock { r -> Int? in
             r.total += 1
-            r.count += 1
-            guard now - r.logged >= 60 else { return nil }
-            defer { (r.count, r.logged) = (0, now) }
-            return r.count
+            return r.log.add()
         }
-        if let refused {
-            // `peer` is the address refused as the line is written; `refused` counts every address since the last line
-            logger.warning(
-                "HTTPS connection refused: too many open from one address (one line a minute, refused counts every address)",
-                metadata: ["peer": "\(peer.host)", "limit": "\(limits.perAddress)", "refused": "\(refused)"])
-        }
+        if let refused { RefusalLog.warn(logger, "HTTPS", peer: peer.host, limit: limits.perAddress, refused: refused) }
         return false
     }
 
@@ -420,7 +409,7 @@ private final class ClientConnection: @unchecked Sendable {
         }
         if request.contentLength > HTTPSServer.maxInlineBody {
             // large body: stream it to the file the upload sink names, or refuse it
-            let file = server.uploadRoute == nil ? nil : server.uploadSink?(request)
+            let file = server.upload?.sink(request)
             guard let file, let handle = try? FileHandle(forWritingTo: file) else {
                 if let file { try? FileManager.default.removeItem(at: file) }
                 send(.text(413, "body too large"), includeBody: true, close: true)
@@ -461,7 +450,7 @@ private final class ClientConnection: @unchecked Sendable {
         guard current.remaining == 0 else { return true }
         try? current.handle.close()
         upload = nil
-        let response = server.uploadRoute?(current.request, current.file) ?? .text(500, "no upload route")
+        let response = server.upload?.route(current.request, current.file) ?? .text(500, "no upload route")
         server.log(current.request, response)
         send(response, includeBody: true, close: current.request.wantsClose)
         return !current.request.wantsClose
@@ -530,5 +519,27 @@ extension WebSocketHandshake {
                 HTTPHeader("Connection", "Upgrade"),
                 HTTPHeader("Sec-WebSocket-Accept", acceptKey(for: key)),
             ])
+    }
+}
+
+/// Connections refused at a per-address cap (HTTPS, CITP; B269): at most one log line a minute, with the count since the
+/// last line.
+struct RefusalLog {
+    private var count = 0
+    private var logged = -Double.infinity
+
+    /// Counts one refusal; the count to log when a line is due.
+    mutating func add(now: Double = ProcessInfo.processInfo.systemUptime) -> Int? {
+        count += 1
+        guard now - logged >= 60 else { return nil }
+        defer { (count, logged) = (0, now) }
+        return count
+    }
+
+    /// `peer` is the address refused as the line is written; `refused` counts every address since the last line.
+    static func warn(_ logger: Logger, _ server: String, peer: String, limit: Int, refused: Int) {
+        logger.warning(
+            "\(server) connection refused: too many open from one address (one line a minute, refused counts every address)",
+            metadata: ["peer": "\(peer)", "limit": "\(limit)", "refused": "\(refused)"])
     }
 }

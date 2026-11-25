@@ -82,20 +82,10 @@ public final class PreviewStreamer: @unchecked Sendable {
     public let jpegOut = Atomic<Int>(0)
     public let jpegFailed = Atomic<Int>(0)
     public let jpegDropped = Atomic<Int>(0)
-    /// The steps between a tap and its JPEG (B99): completion handlers that ran with `.completed` (`completions`)
-    /// or another status (`completionErrors`), `encode` entries on the preview queue (`encodes`) and JPEG encodes started
-    /// (`jpegStarted`); `jpegStarted` above `jpegOut` + `jpegFailed` is an encode still in `jpegRepresentation` or its sends
-    /// (by 1 transiently while one runs). Per streamer in `/metrics` `preview.streamers`: the sums hide one streamer among the others.
-    public let completions = Atomic<Int>(0)
-    public let completionErrors = Atomic<Int>(0)
-    public let encodes = Atomic<Int>(0)
-    public let jpegStarted = Atomic<Int>(0)
-    /// JPEG encodes that had not returned 3 s after they started (`jpegHung`), the first per streamer logged: on CI's
-    /// "Apple M1 (Virtual)" runners the refused viewer's streamer's first `jpegRepresentation` never returned and its serial
-    /// queue stayed blocked (B99, measured).
-    public let jpegHung = Atomic<Int>(0)
-    /// Subscribers, and those on JPEG (`/metrics`).
-    public var subscriberCounts: (all: Int, jpeg: Int) { subscribers.withLock { ($0.count, $0.filter(\.jpeg).count) } }
+    /// Set by the first JPEG encode that had not returned 3 s after it started, which is logged: on CI's "Apple M1 (Virtual)"
+    /// runners the refused viewer's streamer's first `jpegRepresentation` never returned and its serial queue stayed
+    /// blocked (B99, measured).
+    private let jpegHangLogged = Atomic<Bool>(false)
     /// The latest JPEG (bytes, width, height) for CITP streaming frames; produced at 5 fps while anyone wants it.
     public let latestJPEG = Mutex<([UInt8], Int, Int)?>(nil)
     /// Set by the CITP server while a console streams; nil = only WebSocket JPEG subscribers count.
@@ -254,11 +244,7 @@ public final class PreviewStreamer: @unchecked Sendable {
         nonisolated(unsafe) let keep = cvTexture, frame = pixelBuffer
         commandBuffer.addCompletedHandler { [self] buffer in
             _ = keep
-            guard buffer.status == .completed else {
-                completionErrors.wrappingAdd(1, ordering: .relaxed)
-                return
-            }
-            completions.wrappingAdd(1, ordering: .relaxed)
+            guard buffer.status == .completed else { return }
             queue.async { [self] in encode(frame, target: target) }
         }
     }
@@ -351,15 +337,14 @@ public final class PreviewStreamer: @unchecked Sendable {
     }
 
     private func encode(_ pixelBuffer: CVPixelBuffer, target: Double) {
-        encodes.wrappingAdd(1, ordering: .relaxed)
         let (h264, jpeg) = subscribers.withLock { subs in (subs.filter { !$0.jpeg }, subs.filter { $0.jpeg }) }
         if !jpeg.isEmpty || externalJPEGWanted?() == true, target - lastJPEG >= 0.18 {  // taps come every 0.2 s when only JPEG listens
             lastJPEG = target
-            let started = jpegStarted.wrappingAdd(1, ordering: .relaxed).newValue
-            // off this queue, which the hang blocks; `started` is this encode's number, finished ones count in jpegOut + jpegFailed
+            // off this queue, which the hang blocks; encodes run one at a time and each ends in jpegOut or jpegFailed
+            let finished = jpegOut.load(ordering: .relaxed) + jpegFailed.load(ordering: .relaxed)
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3) { [weak self] in
-                guard let self, jpegOut.load(ordering: .relaxed) + jpegFailed.load(ordering: .relaxed) < started else { return }
-                if jpegHung.wrappingAdd(1, ordering: .relaxed).oldValue == 0 {
+                guard let self, jpegOut.load(ordering: .relaxed) + jpegFailed.load(ordering: .relaxed) == finished else { return }
+                if !jpegHangLogged.exchange(true, ordering: .relaxed) {
                     logger.warning("preview JPEG encode did not return within 3 s; this streamer's JPEG and H.264 frames wait until it does", metadata: ["size": "\(width)x\(height)", "target": "\(layer.map { "layer:\($0)" } ?? (outputSet != nil ? "output" : "canvas:\(canvasID)"))"])
                 }
             }
@@ -427,14 +412,5 @@ public final class PreviewStreamer: @unchecked Sendable {
     static func avcC(from format: CMFormatDescription) -> [UInt8] {
         let atoms = CMFormatDescriptionGetExtension(format, extensionKey: kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms) as? [String: Any]
         return (atoms?["avcC"] as? Data).map(Array.init) ?? []
-    }
-}
-
-extension JSONValue {
-    /// One-line JSON for protocol messages built outside the store.
-    static func encodeCompact(_ value: JSONValue) -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return String(decoding: (try? encoder.encode(value)) ?? Data("{}".utf8), as: UTF8.self)
     }
 }

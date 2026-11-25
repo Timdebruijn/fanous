@@ -715,18 +715,12 @@ public final class Engine: @unchecked Sendable {
                 if let audio = self.render?.mixer?.statistics {
                     m["audio"] = ["callbacks": .number(Double(audio.callbacks)), "underruns": .number(Double(audio.underruns)), "corrections": .number(Double(audio.corrections)), "maxDriftMs": .number(audio.maxDriftMillis)]
                 }
-                if let receiver = self.syncReceiver, let sender = self.syncSender {
-                    m["sync"] = [
-                        "packetsIn": .number(Double(receiver.packetsIn.load(ordering: .relaxed))), "packetsOut": .number(Double(sender.packetsOut.load(ordering: .relaxed))), "packetsDropped": .number(Double(sender.packetsDropped.load(ordering: .relaxed))),
-                        "decodeErrors": .number(Double(receiver.decodeErrors.load(ordering: .relaxed))),
-                    ]
-                }
+                if let sync = self.syncCounters() { m["sync"] = .object(sync.json) }
                 if let preview = stateServer.preview {
                     m["preview"] = [
                         "framesIn": .number(Double(preview.framesIn)), "framesOut": .number(Double(preview.framesOut)), "skipped": .number(Double(preview.skipped)),
                         "jpegOut": .number(Double(preview.jpegOut)), "jpegFailed": .number(Double(preview.jpegFailed)),
                         "jpegDropped": .number(Double(preview.jpegDropped)),
-                        "streamers": .array(preview.rows),
                         "encoders": .number(Double(preview.encoders)), "thumbnailPasses": .number(Double(preview.thumbnails?.passes.load(ordering: .relaxed) ?? 0)),
                         "thumbnailEncodeMs": .number(Double(preview.thumbnails?.encodeMicros.load(ordering: .relaxed) ?? 0) / 1000),
                     ]
@@ -738,9 +732,7 @@ public final class Engine: @unchecked Sendable {
                 if let audio = self.render?.mixer?.statistics {
                     text += String(format: "\naudio: callbacks %llu  underruns %llu  corrections %llu  max drift %.1f ms", audio.callbacks, audio.underruns, audio.corrections, audio.maxDriftMillis)
                 }
-                if let receiver = self.syncReceiver, let sender = self.syncSender {
-                    text += "\nsync: packets in \(receiver.packetsIn.load(ordering: .relaxed))  out \(sender.packetsOut.load(ordering: .relaxed))  dropped \(sender.packetsDropped.load(ordering: .relaxed))  decode errors \(receiver.decodeErrors.load(ordering: .relaxed))"
-                }
+                if let sync = self.syncCounters() { text += "\n" + sync.text }
                 return .text(200, text)
             })
         logger.info("engine start", metadata: ["step": "https"])
@@ -748,8 +740,7 @@ public final class Engine: @unchecked Sendable {
             routes.handle($0)
         }
         // large uploads stream to _incoming/ before the route runs (role checked before the body is accepted)
-        server.uploadSink = { routes.uploadTarget($0) }
-        server.uploadRoute = { request, file in ingestAPI.handle(request, uploadedFile: file) }
+        server.upload = ({ routes.uploadTarget($0) }, { request, file in ingestAPI.handle(request, uploadedFile: file) })
         server.upgradeRoute = { request in stateServer.upgrade(request) }
         if options.network { server.bonjour(name: SystemInfo.hostName) }
         logger.info("engine start", metadata: ["step": "https listener"])
@@ -909,13 +900,19 @@ public final class Engine: @unchecked Sendable {
         for (i, entry) in table.entries.enumerated() {
             if let entry, now - entry.receivedAt <= SlaveClock.freewheelSeconds { masters["\(i + 1)"] = syncMaster(entry) }
         }
-        return [
+        let live: [String: JSONValue] = [
             "machine": .string(receiver.machine.uuidString), "interface": .string(sender.settings.interface),
-            "port": .number(Double(sender.settings.port)), "target": .string(sender.settings.target),
-            "packetsIn": .number(Double(receiver.packetsIn.load(ordering: .relaxed))), "packetsOut": .number(Double(sender.packetsOut.load(ordering: .relaxed))), "packetsDropped": .number(Double(sender.packetsDropped.load(ordering: .relaxed))),
-            "decodeErrors": .number(Double(receiver.decodeErrors.load(ordering: .relaxed))), "masters": .object(masters),
+            "port": .number(Double(sender.settings.port)), "target": .string(sender.settings.target), "masters": .object(masters),
             "conflicts": .array((1...LayerSync.groups).filter { table.conflict(group: $0, now: now) != nil }.map { .number(Double($0)) }),
         ]
+        return .object(live.merging(syncCounters()?.json ?? [:]) { a, _ in a })
+    }
+
+    /// The sync counters for `/metrics` (JSON and text) and `live.sync`; nil without sync.
+    private func syncCounters() -> (json: [String: JSONValue], text: String)? {
+        guard let receiver = syncReceiver, let sender = syncSender else { return nil }
+        let (i, o, d, e) = (receiver.packetsIn.load(ordering: .relaxed), sender.packetsOut.load(ordering: .relaxed), sender.packetsDropped.load(ordering: .relaxed), receiver.decodeErrors.load(ordering: .relaxed))
+        return (["packetsIn": .number(Double(i)), "packetsOut": .number(Double(o)), "packetsDropped": .number(Double(d)), "decodeErrors": .number(Double(e))], "sync: packets in \(i)  out \(o)  dropped \(d)  decode errors \(e)")
     }
 
     /// B198: the DMX and MIDI queues hand a command over and go on; it runs on `commandQueue` after the ones before it,
@@ -1523,13 +1520,7 @@ public final class Engine: @unchecked Sendable {
     static func effectiveCanvasUse(layers: [Int], outputs: [OutputConfig], rendering: Set<Int>, project: Set<Int>) -> (layers: [Int], outputs: [OutputConfig]) {
         let mappedLayers = layers.map { rendering.contains($0) ? $0 : 1 }
         var mappedOutputs = outputs
-        func map(_ slices: inout [SliceConfig]) {
-            for s in slices.indices where !rendering.contains(slices[s].canvas) && project.contains(slices[s].canvas) { slices[s].canvas = 1 }
-        }
-        for o in mappedOutputs.indices {
-            map(&mappedOutputs[o].slices)
-            for p in mappedOutputs[o].presets.indices { map(&mappedOutputs[o].presets[p].slices) }
-        }
+        for o in mappedOutputs.indices { mappedOutputs[o].moveSlicesToCanvas1 { !rendering.contains($0) && project.contains($0) } }
         return (mappedLayers, mappedOutputs)
     }
 

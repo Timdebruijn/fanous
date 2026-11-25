@@ -111,13 +111,10 @@ import Testing
         let server = try HTTPSServer(
             port: 0, identity: try StateServerTests.makeIdentity(), webRoot: URL(fileURLWithPath: "/nonexistent"), logger: testLogger
         ) { .text(200, "after \($0.path)") }
-        server.uploadSink = { _ in
+        server.upload = ({ _ in
             let file = dir.appending(path: "upload.bin")
             return FileManager.default.createFile(atPath: file.path, contents: nil) ? file : nil
-        }
-        server.uploadRoute = { _, file in
-            .text(202, "stored \((try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int ?? -1)")
-        }
+        }, { _, file in .text(202, "stored \((try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int ?? -1)") })
         defer { server.stop() }
         let connection = try await Self.start(server)
         defer { connection.cancel() }

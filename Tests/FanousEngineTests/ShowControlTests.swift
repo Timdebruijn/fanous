@@ -17,6 +17,13 @@ extension ShowCommands.Hooks {
     static let noop = Self(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {})
 }
 
+/// A show mode that persists to `url` from the start, as `Engine.start` sets it.
+private func showMode(persistingTo url: URL) -> ShowModeController {
+    let controller = ShowModeController(logger: testLogger)
+    controller.persist(to: url)
+    return controller
+}
+
 @Suite(.cleansTempFiles)
 struct ShowControlTests {
 
@@ -243,7 +250,7 @@ struct ShowControlTests {
     /// Words as if CoreMIDI delivered them from a connected source, handled on the input's queue before this returns.
     static func feed(_ input: MTCInput, _ words: [UInt32], at hostTime: Double, uid: MIDIUniqueID = 1, name: String = "Pad") {
         input.queue.sync {
-            if input.status.withLock({ !$0.connected.contains(name) }) { input.setSources([uid: name]) }
+            if input.status.withLock({ !$0.connected.contains(name) }) { input.listener.setSources([uid: name]) }
             input.receive(words.map { ($0, hostTime) }, uid: uid)
         }
     }
@@ -272,7 +279,7 @@ struct ShowControlTests {
     @Test func mtcSourcesKeepTheirOwnStateAndLeavingFreewheelsTheClock() {
         let clock = TimecodeClock()
         let input = MTCInput(clock: clock, logger: testLogger)
-        input.queue.sync { input.setSources([1: "Pad", 2: "Console"]) }
+        input.queue.sync { input.listener.setSources([1: "Pad", 2: "Console"]) }
         let a = Self.quarterFrames(Timecode(hours: 1, minutes: 0, seconds: 0, frames: 0, rate: .fps25))
         let b = Self.quarterFrames(Timecode(hours: 2, minutes: 0, seconds: 0, frames: 0, rate: .fps25))
         let seen = Mutex<[Int]>([])
@@ -286,7 +293,7 @@ struct ShowControlTests {
         #expect(seen.withLock { $0 } == [90_002, 180_002], "each source assembled its own time")
         #expect(input.status.withLock { $0.connected } == ["Console", "Pad"])
         // the console (last to feed) is unplugged; the pad stays
-        input.queue.sync { input.setSources([1: "Pad"]) }
+        input.queue.sync { input.listener.setSources([1: "Pad"]) }
         #expect(input.status.withLock { $0.connected } == ["Pad"], "the device list drops it at once")
         #expect(clock.current(at: 10.5).state == .freewheel, "an unplugged source is signal loss: freewheel")
         input.queue.sync { input.receive(b.map { ($0, 11) }, uid: 2) }
@@ -296,7 +303,7 @@ struct ShowControlTests {
         // the pad sends again: locked
         Self.feed(input, a, at: 13, uid: 1, name: "Pad")
         #expect(clock.current(at: 13).state == .locked)
-        input.queue.sync { input.setSources([:]) }
+        input.queue.sync { input.listener.setSources([:]) }
         #expect(input.status.withLock { $0 }.error == "no MIDI source connected")
         input.stop()
         #expect(clock.current(at: 14).state == .off)
@@ -1334,14 +1341,14 @@ struct ShowControlTests {
         #expect(ShowModeState.load(from: url) == nil)  // normal start
 
         let since = Date(timeIntervalSince1970: 1_800_000_000)
-        let crashed = ShowModeController(logger: testLogger, stateURL: url)
+        let crashed = showMode(persistingTo: url)
         crashed.enter(since: since)
         // a kill -9 here: nothing more runs, so the next start sees show mode on, just written
         let saved = try #require(ShowModeState.load(from: url))
         #expect(saved.since == since.timeIntervalSince1970 && saved.restart == nil)
         #expect(abs(saved.written - Date().timeIntervalSince1970) < 5)
 
-        let restarted = ShowModeController(logger: testLogger, stateURL: url)
+        let restarted = showMode(persistingTo: url)
         restarted.enter(since: since)  // the resume keeps the original entry time
         #expect(ShowModeState.load(from: url)?.since == since.timeIntervalSince1970)
         restarted.leave()  // leaving
@@ -1362,7 +1369,7 @@ struct ShowControlTests {
     @Test func showModeTouchRefreshesTheWriteTime() throws {
         let directory = try tempDir("fanous-show")
         let url = directory.appending(path: "show-state.json")
-        let show = ShowModeController(logger: testLogger, stateURL: url)
+        let show = showMode(persistingTo: url)
         show.enter(since: Date(timeIntervalSince1970: 1_800_000_000))
         var old = try #require(ShowModeState.load(from: url))
         old.written -= 3 * 3600
@@ -1383,7 +1390,7 @@ struct ShowControlTests {
     /// restart, nothing while off, gone when show mode is left. A file of an older build (no `cue`) still loads.
     @Test func showModeStateCarriesTheCueListState() throws {
         let url = try tempDir("fanous-show").appending(path: "show-state.json")
-        let show = ShowModeController(logger: testLogger, stateURL: url)
+        let show = showMode(persistingTo: url)
         let (three, four) = (UUID(), UUID())
         let held: [UUID: [CueValue]] = [
             three: [CueValue(fixture: .layer(3), parameter: .layer(.intensity), raw: 40000)],
@@ -1401,7 +1408,7 @@ struct ShowControlTests {
         let kept = try #require(ShowModeState.load(from: url))
         #expect(kept.restart == true && kept.cue == four && kept.cueNumber == 4 && kept.targets == held)
 
-        let left = ShowModeController(logger: testLogger, stateURL: url)
+        let left = showMode(persistingTo: url)
         left.setCue(four, number: 4, targets: held)
         left.enter()
         left.leave()
@@ -1493,7 +1500,7 @@ struct ShowControlTests {
 
         var landed = CueEngine(list: list)
         landed.resume(current: gone, number: 2.5, targets: stored)
-        let direct = ShowModeController(logger: testLogger, stateURL: dir.appending(path: "direct.json"))
+        let direct = showMode(persistingTo: dir.appending(path: "direct.json"))
         direct.setCue(landed.current?.id, number: landed.current?.number, targets: landed.targets)
         direct.enter()
         defer { direct.leave() }
@@ -1505,7 +1512,7 @@ struct ShowControlTests {
         runner.replace(list: list, resuming: (gone, 2.5, stored))
         #expect(await waitUntil { report.withLock { $0 } != nil })
         let reported = try #require(report.withLock { $0 })
-        let viaRunner = ShowModeController(logger: testLogger, stateURL: dir.appending(path: "runner.json"))
+        let viaRunner = showMode(persistingTo: dir.appending(path: "runner.json"))
         viaRunner.setCue(reported.cue?.id, number: reported.cue?.number, targets: reported.targets)
         viaRunner.enter()
         defer { viaRunner.leave() }
@@ -1576,7 +1583,7 @@ struct ShowControlTests {
         #expect(!FileManager.default.fileExists(atPath: marker.path))
 
         let since = Date(timeIntervalSince1970: 1_800_000_000)
-        let restarting = ShowModeController(logger: testLogger, stateURL: url)
+        let restarting = showMode(persistingTo: url)
         let changes = Mutex<[Bool]>([])
         restarting.onChange = { on in changes.withLock { $0.append(on) } }
         restarting.enter(since: since)
@@ -1589,14 +1596,14 @@ struct ShowControlTests {
         restarting.enter()  // refused while stopping
         #expect(!restarting.isOn)
 
-        let stopping = ShowModeController(logger: testLogger, stateURL: url)
+        let stopping = showMode(persistingTo: url)
         stopping.enter()
         #expect(!stopping.stop(keepingState: false))
         #expect(!FileManager.default.fileExists(atPath: url.path))
         stopping.enter()
         #expect(!stopping.isOn && !FileManager.default.fileExists(atPath: url.path))
 
-        let idle = ShowModeController(logger: testLogger, stateURL: url)
+        let idle = showMode(persistingTo: url)
         #expect(!idle.stop(keepingState: true))  // restart outside show mode: nothing kept
         #expect(!FileManager.default.fileExists(atPath: url.path))
     }

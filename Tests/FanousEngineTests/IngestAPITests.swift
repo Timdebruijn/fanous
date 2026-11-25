@@ -123,8 +123,7 @@ import Testing
         let server = try HTTPSServer(
             port: 0, identity: try StateServerTests.makeIdentity(), webRoot: URL(fileURLWithPath: "/nonexistent"), logger: testLogger
         ) { _ in nil }
-        server.uploadSink = { api.uploadTarget(for: $0) }
-        server.uploadRoute = { api.handle($0, uploadedFile: $1) }
+        server.upload = ({ api.uploadTarget(for: $0) }, { api.handle($0, uploadedFile: $1) })
         server.start()
         defer { server.stop() }
         #expect(await waitUntil { server.boundPort != nil })

@@ -130,8 +130,7 @@ public final class RoleAuth: @unchecked Sendable {
     /// Sets (or with nil clears) the password of a role and persists the settings.
     public func setPassword(_ password: String?, for role: Role) throws {
         let record = password.map { pw -> MachineSettings.PasswordRecord in
-            var salt = Data(count: 16)
-            _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
+            let salt = Data((0..<16).map { _ in UInt8.random(in: 0...255) })  // SystemRandomNumberGenerator: cryptographically secure on Apple platforms
             return MachineSettings.PasswordRecord(salt: salt, hash: Self.pbkdf2(pw, salt: salt, iterations: iterations), iterations: iterations)
         }
         try rewrite("passwords", [role.rawValue: try record.map { try JSONValue(encoding: $0) }]) { settings, _ in settings.passwords[role.rawValue] = record }
@@ -300,9 +299,7 @@ public final class RoleAuth: @unchecked Sendable {
     }
 
     static func randomToken() -> String {
-        var bytes = [UInt8](repeating: 0, count: 32)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        return bytes.map { String(format: "%02x", $0) }.joined()
+        (0..<32).map { _ in UInt8.random(in: 0...255) }.map { String(format: "%02x", $0) }.joined()
     }
 
     /// Writes `data` to `url` atomically and readable by the owner only from the start (B83): a temporary file created

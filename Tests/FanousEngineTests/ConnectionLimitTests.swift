@@ -82,18 +82,27 @@ import Testing
         let dir = try tempDir("upload")
         let server = try Self.server(limits: limits, logger: logger) { _ in nil }
         let files = Mutex(0)
-        server.uploadSink = { _ in
+        server.upload = ({ _ in
             if sinkDelay > 0 { Thread.sleep(forTimeInterval: sinkDelay) }  // on the connection's queue, as a slow disk would be
             let file = dir.appending(path: "upload-\(files.withLock { $0 += 1; return $0 }).bin")
             return FileManager.default.createFile(atPath: file.path, contents: nil) ? file : nil
-        }
-        server.uploadRoute = { _, file in .text(202, "stored \((try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int ?? -1)") }
+        }, { _, file in .text(202, "stored \((try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int ?? -1)") })
         return (server, dir)
     }
 
     static let uploadSize = HTTPSServer.maxInlineBody + 1 << 20  // 2 MiB
     static let uploadHead = Data("PUT /api/upload/1/clip.mov HTTP/1.1\r\nHost: x\r\nContent-Length: \(uploadSize)\r\n\r\n".utf8)
     static let stored = Data(HTTPResponse.text(202, "stored \(uploadSize)").serialized())
+
+    /// The refusal log line: the first refusal logs, one within 60 s is held back and counted, the next after 60 s logs
+    /// with the count since the last line.
+    @Test func refusalsLogOneLineAMinuteWithTheCount() {
+        var log = RefusalLog()
+        #expect(log.add(now: 1000) == 1)
+        #expect(log.add(now: 1059) == nil)
+        #expect(log.add(now: 1060) == 2)
+        #expect(log.add(now: 1061) == nil)
+    }
 
     // MARK: HTTPS deadlines
 

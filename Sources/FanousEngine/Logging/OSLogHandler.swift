@@ -20,8 +20,7 @@ struct OSLogHandler: LogHandler {
     }
 
     func log(event: LogEvent) {
-        let merged = metadata.merging(event.metadata ?? [:]) { $1 }
-        let suffix = merged.isEmpty ? "" : " " + merged.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " ")
+        let suffix = metadata.suffix(with: event.metadata)
         // public: the log file in ~/Library/Logs/Fanous holds the same text unredacted
         log.log(level: Self.type(event.level), "\(event.message.description + suffix, privacy: .public)")
     }

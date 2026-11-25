@@ -144,10 +144,10 @@ public final class ShowModeController: @unchecked Sendable {
     /// Side effects owned by the engine (ingest pause, display modes, log level), run on enter/leave.
     nonisolated(unsafe) public var onChange: (@Sendable (Bool) -> Void)?
 
-    /// `stateURL`: where the on/off state survives an unclean end (nil: not persisted until `persist(to:)`).
-    public init(logger: Logger, stateURL: URL? = nil) {
+    /// Not persisted until `persist(to:)`.
+    public init(logger: Logger) {
         self.logger = logger
-        state = Mutex(State(file: stateURL))
+        state = Mutex(State())
     }
 
     public var isOn: Bool { state.withLock { $0.on } }

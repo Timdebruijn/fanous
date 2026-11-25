@@ -19,4 +19,16 @@ extension JSONValue {
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(type, from: JSONEncoder().encode(self))
     }
+
+    /// The encoder of the JSON text on the wire (WebSocket messages, REST bodies): sorted keys, slashes not escaped.
+    static let wireEncoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return encoder
+    }()
+
+    /// One-line JSON text with `wireEncoder` ("{}" if the value does not encode).
+    static func encodeCompact(_ value: JSONValue) -> String {
+        String(decoding: (try? wireEncoder.encode(value)) ?? Data("{}".utf8), as: UTF8.self)
+    }
 }
