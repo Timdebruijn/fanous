@@ -187,8 +187,8 @@ struct ShowControlTests {
         #expect(clock.current(at: 22.1).state == .lost)
     }
 
-    /// B291: a sender parked on a still frame repeats one address; each repeat is believed and holds the chase there,
-    /// Locked, and it runs on from there with no jump back. The continuity check took a repeat for a corrupted frame:
+    /// B291: a sender parked on a still frame repeats one address; from the second repeat on each is believed and holds
+    /// the chase there, Locked, and it runs on from there with no jump back. The continuity check took a repeat for a corrupted frame:
     /// the clock freewheeled past the still frame, went lost and jumped back when the sender ran again. A sender that
     /// is parked when the input starts locks on its second frame; when its signal ends the clock freewheels and goes
     /// lost at the still frame.
@@ -212,8 +212,8 @@ struct ShowControlTests {
         }
         var previous = 0.0
         _ = chase(frames) { clock, now in
-            // the first repeat ends at 12/25 s, the last at 61/25 s; the sender runs on from 61/25 s
-            guard now > 12.0 / 25 else { return }
+            // the second repeat ends at 13/25 s (the park is believed there), the last at 61/25 s; the sender runs on
+            guard now > 13.0 / 25 else { return }
             let state = clock.current(at: now).state
             let read = clock.frames(at: now) ?? 0
             if now <= 61.0 / 25 {

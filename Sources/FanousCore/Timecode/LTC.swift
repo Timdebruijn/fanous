@@ -33,7 +33,7 @@ public struct LTCDecoder: Sendable {
     /// B291: the address the next frame should carry, and a frame that did not, held until the next one continues it.
     private var expected: Timecode?
     private var held: Timecode?
-    /// The last believed address: a frame that repeats it is a still frame.
+    /// The last believed address: a repeat of it is held even with odd parity (a park on a generator without parity).
     private var last: Timecode?
     private let threshold: Float = 0.1
 
@@ -106,15 +106,17 @@ public struct LTCDecoder: Sendable {
     /// believed when the next frame continues it (a start, or a jump of the sender), so one corrupted frame never moves the
     /// chase or fires a cue. Parity (SMPTE 12M: the polarity correction bit makes the count of ones in the 80-bit word even,
     /// wherever the rate puts that bit) is asked only of those two frames: a corrupted frame that still carries the
-    /// expected address is harmless, and a generator that leaves the bit unset still chases once it is locked. A repeat of
-    /// the last believed address, or of the held one, is a sender parked on a still frame: believed, standing still.
+    /// expected address is harmless, and a generator that leaves the bit unset still chases once it is locked. A frame that
+    /// repeats the held one is a sender parked on a still frame: believed, standing still. A repeat of the last believed
+    /// address is held without parity, so a generator with no parity bit parks too, but one corrupted frame that reads as
+    /// the last address (bit 0 flipped) is held, not taken as a park.
     /// Returns nil for a frame not believed, else whether the time runs.
     private mutating func believe(_ timecode: Timecode, parityEven: Bool) -> Bool? {
         func next(_ t: Timecode) -> Timecode { Timecode(frameCount: t.frameCount + 1, rate: t.rate) }
         let confirms = timecode.isValid && parityEven
         let running = timecode.isValid && (timecode == expected || (confirms && held.map(next) == timecode))
-        let still = !running && timecode.isValid && (timecode == last || (confirms && timecode == held))
-        held = !running && !still && confirms ? timecode : nil
+        let still = !running && timecode.isValid && timecode == held
+        held = !running && timecode.isValid && (confirms || timecode == last) ? timecode : nil
         guard running || still else {
             expected = expected.map(next)
             return nil

@@ -36,10 +36,12 @@ public enum TimecodeRate: String, Codable, Sendable, CaseIterable {
         }
     }
 
+    /// The rates `detect` picks from (DF follows the flag), built once: the LTC decoder asks up to three times a frame.
+    private static let detectable: [TimecodeRate] = [.fps24, .fps25, .fps2997ndf, .fps30]
+
     /// Nearest standard rate to a measured frame rate (within 1 %), honouring the drop-frame flag.
     public static func detect(framesPerSecond: Double, dropFrame: Bool) -> TimecodeRate? {
-        let candidates: [TimecodeRate] = [.fps24, .fps25, .fps2997ndf, .fps30]
-        guard let best = candidates.min(by: { abs($0.exactFrameRate - framesPerSecond) < abs($1.exactFrameRate - framesPerSecond) }),
+        guard let best = detectable.min(by: { abs($0.exactFrameRate - framesPerSecond) < abs($1.exactFrameRate - framesPerSecond) }),
             abs(best.exactFrameRate - framesPerSecond) <= best.exactFrameRate * 0.01
         else { return nil }
         if dropFrame && (best == .fps2997ndf || best == .fps30) { return .fps2997df }
