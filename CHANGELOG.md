@@ -12,7 +12,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Playback: the decode threads run at `.userInteractive`, as ADR-0002 says, not at the control plane's `.userInitiated`
   (B319); the HAP chunk pool follows its decode thread. No difference was measurable on a 1080p ProRes clip under load
-  (PR #N).
+  (PR #475).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
