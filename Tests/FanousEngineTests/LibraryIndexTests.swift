@@ -491,6 +491,26 @@ struct LibraryIndexTests {
         #expect(written.keys.contains { $0.contains("003_x.png") }, "a probe after a refused swap reaches the cache file")
     }
 
+    /// B51: a write of the old index in flight (entries taken, file not yet renamed) when the replacement is made: the
+    /// replacement reads the cache after it lands, so its scan hits what the old index probed.
+    @Test func aReplacementWaitsForAWriteInFlight() async throws {
+        let (root, cache) = try brokenStills(2)
+        let old = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        old.saveInterval = 3600
+        final class Gate: Sendable { let entered = DispatchSemaphore(value: 0) }
+        let gate = Gate()
+        old.beforeWrite = {
+            gate.entered.signal()
+            usleep(300_000)
+        }
+        old.start()
+        #expect(try await offPool { gate.entered.wait(timeout: .now() + 10) == .success }, "the drain write")
+        let next = try await offPool { old.replacement(root: root) }
+        defer { next.stop() }
+        #expect(next.snapshot.folders.first?.items.map(\.status) == [.unreadable, .unreadable], "the replacement read the cache before the write landed")
+        try await offPool { old.stop() }
+    }
+
     // MARK: B267: a file in work when the engine stopped
 
     /// Two stills; the cache key of the first, as a scan reads it.

@@ -144,8 +144,11 @@ public final class LibraryIndex: @unchecked Sendable {
         }
     }
     private let pausedFlag = Atomic<Bool>(false)
-    /// Replaced (B51): its last write is done, so a later write cannot bring back what the replacement pruned.
+    /// Replaced (B51): set under `writeLock` after its last write, so no write of it lands after the replacement read the
+    /// cache (which would bring back what the replacement pruned).
     private let retired = Atomic<Bool>(false)
+    /// Runs between taking the entries and writing the file, for the tests (B328: holds a write in flight).
+    var beforeWrite: (@Sendable () -> Void)?
     private var stream: FSEventStreamRef?
     private let eventQueue = DispatchQueue(label: "org.fanous.library.fsevents", qos: .utility)
     private var rescanPending = false
@@ -255,8 +258,10 @@ public final class LibraryIndex: @unchecked Sendable {
     public func replacement(root: URL) -> LibraryIndex {
         // B328: this index's last write before the replacement reads the cache; none after, which would bring back entries
         // the replacement pruned (their thumbnails deleted). What this index probes from now on is probed again when needed.
-        if state.withLock({ $0.unsaved > 0 }) { saveCache() }
-        retired.store(true, ordering: .relaxed)
+        Self.writeLock.withLock { _ in
+            if state.withLock({ $0.unsaved > 0 }) { saveCacheLocked() }
+            retired.store(true, ordering: .relaxed)
+        }
         let next = LibraryIndex(root: root, cacheDirectory: cacheDirectory, logger: logger, readsStopMarker: false)
         next.thumbnailer = thumbnailer
         next.onChange = onChange
@@ -584,13 +589,20 @@ public final class LibraryIndex: @unchecked Sendable {
     /// Always whole and atomic (a stop mid-write leaves the last complete file). Every 200 probes, 2 s after the last write,
     /// when the queue drains, and at stop: the file holds every entry, so a write per probe was quadratic (B328). A stop
     /// before the write loses at most that many probes, which the next start probes again.
-    private func saveCache() {
+    private func saveCache() { Self.writeLock.withLock { _ in saveCacheLocked() } }
+
+    /// One cache write at a time in the process (B51: two indexes share the file), so `replacement` sees a write in flight
+    /// finished: one that took the entries before it and renamed the file after the replacement read it would undo it.
+    private static let writeLock = Mutex(())
+
+    private func saveCacheLocked() {
         guard !retired.load(ordering: .relaxed) else { return }
         let cache = state.withLock { s in
             s.unsaved = 0
             s.savedAt = ProcessInfo.processInfo.systemUptime
             return s.cache
         }
+        beforeWrite?()
         try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
         if let data = try? JSONEncoder().encode(cache), (try? data.write(to: cacheFile, options: .atomic)) != nil {
             cacheWrites.wrappingAdd(1, ordering: .relaxed)
