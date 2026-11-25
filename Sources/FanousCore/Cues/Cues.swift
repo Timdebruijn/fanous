@@ -88,6 +88,14 @@ public struct CueEngine: Sendable {
     private var owner: [Key: UUID] = [:]  // the cue that last set each key
     private var follow: (from: UUID, fireAt: TimeInterval)?  // fires the cue after `from`
     private var lastTimecodeSeconds: Double?
+    /// Keys a fire or a resume set since the last `tick`: changed even when the value is the one already held (B288).
+    private var fired: Set<Key> = []
+    /// What the last `tick` returned, to tell a fade step that moved a value from one that did not.
+    private var last: [Key: UInt16] = [:]
+    /// What the last `tick` changed (B288): the values a fire or a resume set and the fade steps that moved a value. Only
+    /// these are stamped into the resolvers, so a console, UI, OSC or MIDI value set since keeps its parameter until a cue
+    /// changes it again.
+    public private(set) var changed: [CueValue] = []
     /// Counts what changes `targets` or the current cue (a fire, a list edit, a resume), so a reader builds them only then.
     public private(set) var revision = 0
 
@@ -162,6 +170,7 @@ public struct CueEngine: Sendable {
                 let key = Key(fixture: value.fixture, parameter: value.parameter)
                 held[key] = ChannelMap.spec(value.parameter).clamped(value.raw)
                 owner[key] = id
+                fired.insert(key)
             }
         }
         currentID = list.resuming(id: current, number: number)?.id
@@ -190,6 +199,7 @@ public struct CueEngine: Sendable {
             let spec = ChannelMap.spec(value.parameter)
             let duration = value.fadeTime ?? cue.fadeTime
             owner[key] = cue.id
+            fired.insert(key)
             let from = Double(currentRaw(key, at: time) ?? spec.defaultRaw)
             if spec.isContinuous && duration > 0 {
                 fades[key] = Fade(from: from, to: Double(spec.clamped(value.raw)), start: time, duration: duration)
@@ -217,11 +227,15 @@ public struct CueEngine: Sendable {
             held[key] = UInt16(fade.to.rounded())
             fades[key] = nil
         }
-        var outputs = held.map { CueValue(fixture: $0.key.fixture, parameter: $0.key.parameter, raw: $0.value) }
-        for (key, fade) in fades {
-            outputs.append(CueValue(fixture: key.fixture, parameter: key.parameter, raw: UInt16(fade.value(at: time).rounded())))
+        var now = held
+        for (key, fade) in fades { now[key] = UInt16(fade.value(at: time).rounded()) }
+        func values(_ d: [Key: UInt16]) -> [CueValue] {
+            d.map { CueValue(fixture: $0.key.fixture, parameter: $0.key.parameter, raw: $0.value) }
+                .sorted { "\($0.fixture) \($0.parameter)" < "\($1.fixture) \($1.parameter)" }
         }
-        return outputs.sorted { "\($0.fixture) \($0.parameter)" < "\($1.fixture) \($1.parameter)" }
+        changed = values(now.filter { fired.contains($0.key) || last[$0.key] != $0.value })
+        (fired, last) = ([], now)
+        return values(now)
     }
 
     public var isFading: Bool { !fades.isEmpty }

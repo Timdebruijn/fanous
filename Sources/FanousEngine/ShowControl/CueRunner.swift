@@ -10,7 +10,7 @@ import Synchronization
 
 /// Runs the project's cue list (DESIGN.md §15.2): go/back/goto from commands, OSC and the Space key,
 /// timecode triggers from the clock, fades ticked at 50 Hz while anything is fading or a follow is pending.
-/// Cue values reach the resolvers as the cue source.
+/// Cue values reach the resolvers as the cue source, stamped only when a fire or a fade step changes them (B288).
 public final class CueRunner: @unchecked Sendable {
     public struct Status: Sendable, Equatable {
         public var current: Double?
@@ -31,6 +31,7 @@ public final class CueRunner: @unchecked Sendable {
     /// engine hands them to the show-state file off this queue.
     public var onStateChange: (@Sendable (Cue?, [UUID: [CueValue]]) -> Void)?
     private var lastRevision = 0  // cue queue only
+    private var sent: [CueValue] = []  // cue queue only: what the resolvers were last given
     private var stopped = false  // cue queue only: set by `stop`, after which nothing changes
 
     public init(dmx: DMXStore) {
@@ -78,8 +79,12 @@ public final class CueRunner: @unchecked Sendable {
     }
 
     private func tick() {
-        let outputs = engine.withLock { $0.tick(at: CACurrentMediaTime()) }
-        dmx.setCue(outputs)
+        let (outputs, changed) = engine.withLock { e in (e.tick(at: CACurrentMediaTime()), e.changed) }
+        // B288: a tick that changes nothing (a timecode frame, a GO's held values) restamps nothing
+        if outputs != sent || !changed.isEmpty {
+            dmx.setCue(outputs, changed: changed)
+            sent = outputs
+        }
         publish()
     }
 

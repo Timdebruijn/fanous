@@ -148,6 +148,44 @@ struct ShowControlTests {
         #expect(last >= 950, "the fade takes its second: \(last) ms")
     }
 
+    /// B288: a held cue value is stamped when a fire changes it, not on every tick. Timecode frames tick the runner at
+    /// 25 Hz and a GO ticks it too; before, each tick restamped every held value, so a console (ltp) or a UI fader (htp,
+    /// internal: they share the one internal slot per parameter) lost a parameter a cue had set at the next frame or GO.
+    @Test(arguments: [SourcePolicy.ltp, .htp])
+    func aFaderKeepsAParameterACueSetUntilACueChangesIt(policy: SourcePolicy) async throws {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
+        store.setPolicy(policy)
+        let runner = CueRunner(dmx: store)
+        defer { runner.stop() }
+        let layer = { @Sendable in store.snapshots.withLatest { $0.layers[0] } }
+        let cueRaw: UInt16 = 30000, faderRaw: UInt16 = 50000  // the fader above the cue, so htp lets it through too
+        func value(_ parameter: LayerParameter, _ raw: UInt16) -> CueValue { CueValue(fixture: .layer(1), parameter: .layer(parameter), raw: raw) }
+        runner.replace(list: CueList(cues: [
+            Cue(number: 1, fadeTime: 0, values: [value(.intensity, cueRaw)]),
+            Cue(number: 2, fadeTime: 0, values: [value(.file, 7)]),
+            Cue(number: 3, fadeTime: 0, values: [value(.intensity, cueRaw)]),
+        ]))
+        runner.go()
+        #expect(await waitUntil { abs(layer().intensity - Float(cueRaw) / 65535) < 0.001 })
+        if policy == .ltp {
+            // the console, after the cue: ltp gives it the latest change
+            var data = [UInt8](repeating: 0, count: 512)
+            (data[0], data[1]) = (UInt8(faderRaw >> 8), UInt8(faderRaw & 0xFF))
+            try await offPool { store.queue.sync { store.receive(artnet: ArtDmx(portAddress: 0, data: data), from: "desk", at: DMXStore.now) } }
+        } else {
+            store.setUI(.layer(1), .layer(.intensity), raw: faderRaw)
+        }
+        let fader = Float(faderRaw) / 65535
+        #expect(await waitUntil { abs(layer().intensity - fader) < 0.001 })
+        for frame in 0..<100 { runner.timecode(Timecode(frameCount: frame, rate: .fps25)) }
+        runner.go()  // cue 2 does not touch intensity
+        #expect(await waitUntil { layer().file == 7 })  // the cue queue is serial: the 100 frames ran before
+        try await offPool { store.queue.sync {} }
+        #expect(abs(layer().intensity - fader) < 0.001, "\(policy): the fader kept intensity across 100 ticks and a GO, \(layer().intensity)")
+        runner.go()  // cue 3 changes intensity: the cue takes it back
+        #expect(await waitUntil { abs(layer().intensity - Float(cueRaw) / 65535) < 0.001 }, "\(policy): \(layer().intensity)")
+    }
+
     @Test func timecodeClockExtrapolatesFreewheelsAndLoses() {
         let clock = TimecodeClock()
         clock.freewheelSeconds = 2

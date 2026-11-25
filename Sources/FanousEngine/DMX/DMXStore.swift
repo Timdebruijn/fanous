@@ -56,8 +56,8 @@ public final class DMXStore: @unchecked Sendable {
     /// The project's source policy: on every fixture, and on the fixtures a later `setPatch` adds.
     private var policy = SourcePolicy.dmx
     /// The cue list's last output and when it came: a resolver made later (a layer added, an undo) takes it at once, as
-    /// the cue engine pushes values only while a fade runs. Stamped with that time, as the resolvers that existed got
-    /// it, so a console fed to the new resolver now wins under latest wins.
+    /// the cue engine pushes values only when one changes. Stamped with that time, the latest stamp any of them has in
+    /// the resolvers that existed, so a console fed to the new resolver now wins under latest wins.
     private var cue: (outputs: [CueValue], at: TimeInterval) = ([], 0)
     /// A source on a universe, as "DMX receiving" names it: sACN by source name, Art-Net by sender address.
     struct Announced: Hashable {
@@ -432,14 +432,20 @@ public final class DMXStore: @unchecked Sendable {
 
     // MARK: Cross-thread
 
-    /// Cue list output (DESIGN.md §15.2): every value the cue engine asserts, as the cue source.
-    public func setCue(_ outputs: [CueValue]) {
+    /// Cue list output (DESIGN.md §15.2): every value the cue engine asserts, as the cue source. Only `changed` (what a
+    /// fire or a fade step set) is stamped (B288): a console, UI, OSC or MIDI value set after a cue value keeps its
+    /// parameter under ltp, htp and internal until the cue engine changes that value again.
+    public func setCue(_ outputs: [CueValue], changed: [CueValue]) {
         queue.async { [self] in
             let now = Self.now
-            cue = (outputs, now)
             // values the list no longer asserts (removed cue) are released
-            for key in resolvers.keys { resolvers[key]?.clearInternal(source: .cue) }
-            for output in outputs { resolvers[output.fixture]?.setInternal(output.parameter, raw: output.raw, source: .cue, at: now) }
+            var asserted: [FixtureRef: Set<ParameterID>] = [:]
+            for output in outputs { asserted[output.fixture, default: []].insert(output.parameter) }
+            for old in cue.outputs where asserted[old.fixture]?.contains(old.parameter) != true {
+                resolvers[old.fixture]?.clearInternal(old.parameter, source: .cue)
+            }
+            cue = (outputs, now)
+            for output in changed { resolvers[output.fixture]?.setInternal(output.parameter, raw: output.raw, source: .cue, at: now) }
             publish(receivedAt: 0)
         }
     }
