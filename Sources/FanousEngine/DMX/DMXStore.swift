@@ -537,9 +537,9 @@ public final class DMXStore: @unchecked Sendable {
 
     /// Patched universes set to an interface this Mac does not have, as "A 0.0.1: en5" (readiness).
     public func missingInterfaces() -> [String] {
-        queue.sync {
-            let list = interfaceList()
-            return patch.universes.compactMap { id in
+        let list = interfaceList()  // getifaddrs: before the sync, not on the DMX queue (B285)
+        return queue.sync {
+            patch.universes.compactMap { id in
                 let s = table.settings(for: id)
                 return s.subnets(in: list)?.isEmpty == true ? "\(id): \(s.interface)" : nil
             }
