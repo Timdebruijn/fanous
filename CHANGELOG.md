@@ -16,6 +16,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Docs: a design note for the pixel mapper in three dimensions and for pixels on winches (`docs/pixelmap-3d.md`,
   row B407): a point list with x/y/z per LED, three sampling modes, a height map for kinetic groups, and what
   changes on the wire when Fanous sends Art-Net/sACN (PR #481)
+- Timecode: changing the Offset, a layer offset or the Freewheel time no longer restarts the timecode input and clears
+  the clock, so a chase no longer freezes and jumps on each nudge; a change of Source, Device, Channel or the switch
+  still restarts it (B289) (PR #460).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
