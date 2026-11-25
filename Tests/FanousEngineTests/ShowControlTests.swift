@@ -205,7 +205,9 @@ struct ShowControlTests {
         #expect(LTCInput(clock: TimecodeClock(), logger: testLogger).level == nil)
     }
 
-    /// Acceptance: chase accuracy ±1 frame against a generated LTC file (the decoder → clock path of `LTCInput`).
+    /// Acceptance: the chase against a generated LTC file (the decoder → clock path of `LTCInput`) is on the frame being
+    /// transmitted, to a hundredth of a frame (B290: it ran one frame late and the old ±1 tolerance passed either way).
+    /// The host time is the sample index, so the only error left is the threshold crossing within one sample.
     @Test func ltcFileChasesWithinOneFrame() throws {
         let sampleRate = 48_000.0
         let rate = TimecodeRate.fps25
@@ -218,24 +220,24 @@ struct ShowControlTests {
         // chase is read "live", right after the buffer that contains t has been processed
         let t = 61.0 / 25  // frame 61 (01:00:02:11) is being transmitted
         var index = 0
-        var chased: Double?
-        var later: Double?
+        var chased: (now: Double, frames: Double)?
+        var later: (now: Double, frames: Double)?
         while index < samples.count {
             let chunk = Array(samples[index..<min(samples.count, index + 512)])
             for frame in decoder.process(chunk) {
-                clock.update(frame.timecode, at: Double(frame.endSampleIndex) / sampleRate, source: "LTC")
+                clock.update(LTCInput.timeAtEnd(of: frame), at: Double(frame.endSampleIndex) / sampleRate, source: "LTC")
                 decoded += 1
             }
             index += 512
             let now = Double(index) / sampleRate
-            if chased == nil, now >= t { chased = clock.frames(at: now) }
-            if later == nil, now >= t + 0.02 { later = clock.frames(at: now) }
+            if chased == nil, now >= t { chased = clock.frames(at: now).map { (now, $0) } }
+            if later == nil, now >= t + 0.02 { later = clock.frames(at: now).map { (now, $0) } }
         }
         #expect(decoded >= 70, "decoded \(decoded) of 75 frames")
-        let atT = try #require(chased)
-        #expect(abs(atT - Double(90_000 + 61)) <= 1, "chased \(atT - 90_000) at t ≈ \(t) s")
-        let atLater = try #require(later)
-        #expect(abs(atLater - Double(90_000 + 61.5)) <= 1, "chased \(atLater - 90_000) half a frame later")
+        for (label, read) in [("at t", try #require(chased)), ("half a frame later", try #require(later))] {
+            let transmitted = 90_000 + read.now * rate.exactFrameRate  // the frame on the wire at `now`, with its phase
+            #expect(abs(read.frames - transmitted) < 0.01, "\(label): chased \(read.frames - 90_000), transmitted \(transmitted - 90_000)")
+        }
     }
 
     /// F1 quarter-frame UMP system messages (pieces 0…7) for `tc` at 25 fps (rate code 1).
