@@ -43,7 +43,7 @@ public final class SlicePlan: @unchecked Sendable {
     /// The decoded image masks the mask texture was made from, kept while the plan lives so a recompile of the slice finds
     /// them in the compile cache (§9.10 item 5).
     let images: [ImageRaster]
-    init(id: Int, vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int, mask: MTLTexture?, opacity: Float, canvas: Int = 1, images: [ImageRaster] = []) {
+    init(id: Int, vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int, mask: MTLTexture?, opacity: Float, canvas: Int, images: [ImageRaster]) {
         self.id = id
         self.canvas = canvas
         self.vertices = vertices
@@ -104,7 +104,7 @@ public final class OutputPlan: @unchecked Sendable {
 
     init(
         id: Int, index: Int, region: MTLRegion, intensity: Float, testPattern: TestPattern, color: SIMD4<Float>, blendMap: MTLTexture?, warpField: MTLTexture?,
-        slices: [SlicePlan], patternMesh: SlicePlan, presets: [Int: PresetGeometry] = [:], overlay: EditOverlay? = nil, patterns: PatternLeases? = nil
+        slices: [SlicePlan], patternMesh: SlicePlan, presets: [Int: PresetGeometry], overlay: EditOverlay?, patterns: PatternLeases?
     ) {
         self.patternMesh = patternMesh
         self.presets = presets
@@ -352,9 +352,7 @@ public final class OutputCompiler: @unchecked Sendable {
             context.translateBy(x: 0, y: CGFloat(height))
             context.scaleBy(x: 1, y: -1)
             context.beginPath()
-            for (i, p) in outline.enumerated() {
-                if i == 0 { context.move(to: CGPoint(x: p.x, y: p.y)) } else { context.addLine(to: CGPoint(x: p.x, y: p.y)) }
-            }
+            context.addLines(between: outline.map { CGPoint(x: $0.x, y: $0.y) })
             context.closePath()
             context.fillPath(using: .winding)
         }
@@ -400,7 +398,8 @@ enum OutputPass {
 
     /// `outputs` are the Output fixture values by index (1-based → index − 1); `master` the Master intensity.
     static func fixture(for plan: OutputPlan, in outputs: [OutputParameters]) -> OutputParameters {
-        plan.index - 1 < outputs.count && plan.index >= 1 ? outputs[plan.index - 1] : OutputParameters()
+        let i = plan.index - 1
+        return outputs.indices.contains(i) ? outputs[i] : OutputParameters()
     }
 
     /// Output Control = Freeze: keeps a copy of the canvases its slices and presets use from the moment Freeze engaged, released
@@ -477,14 +476,15 @@ enum OutputPass {
         var offset = 0, overlayOffset = drawsEnd
         for plan in set.plans {
             let fixture = fixture(for: plan, in: outputs)
+            let i = plan.index - 1
             // raw bypasses the keystone with the warp
-            let keystone = !fixture.raw && plan.index >= 1 && plan.index - 1 < keystones.count ? keystones[plan.index - 1] : matrix_identity_float3x3
+            let keystone = !fixture.raw && keystones.indices.contains(i) ? keystones[i] : matrix_identity_float3x3
             // the preset's warp and slices; the blend map, colour and the keystone on top are the output's. While a morph
             // runs, the preset it comes from too: one pass mixes both sides' vertices by its progress (§9.10 item 3)
-            let shown = plan.index >= 1 && plan.index - 1 < presets.count ? presets[plan.index - 1] : 0
+            let shown = presets.indices.contains(i) ? presets[i] : 0
             let geometry = plan.geometry(shown)
-            let morph = plan.index >= 1 && plan.index - 1 < morphs.count ? morphs[plan.index - 1].progress(at: now) : 1
-            let from = morph < 1 ? morphs[plan.index - 1].from : shown
+            let morph = morphs.indices.contains(i) ? morphs[i].progress(at: now) : 1
+            let from = morph < 1 ? morphs[i].from : shown
             let old = plan.geometry(from)
             let warps: UInt32 = (geometry.warpField != nil ? 1 : 0) | (old.warpField != nil ? 16 : 0)
             // the edit overlay's lines belong to the edited mapping: not while a preset shows or a morph from or into one runs,
@@ -533,40 +533,39 @@ enum OutputPass {
                 encoder.setFragmentBuffer(uniforms, offset: offset, index: 1)
                 encoder.drawIndexedPrimitives(type: .triangle, indexCount: mesh.indexCount, indexType: .uint32, indexBuffer: mesh.indices, indexBufferOffset: 0)
                 offset += 256
-                if let overlay { drawOverlay(overlay, plan, keystone: keystone, intensity: fixture.control == .blackout ? 0 : master, canvas: canvas, encoder: encoder, context: context, uniforms: uniforms, offset: &overlayOffset) }
-                continue
-            }
-            encoder.setRenderPipelineState(context.mappedPipeline)
-            encoder.setVertexSamplerState(context.linearSampler, index: 0)
-            encoder.setFragmentSamplerState(context.linearSampler, index: 0)
-            encoder.setFragmentTexture(plan.blendMap ?? canvas, index: 2)
-            encoder.setVertexTexture(geometry.warpField ?? canvas, index: 0)
-            encoder.setVertexTexture(old.warpField ?? canvas, index: 1)
-            for slice in geometry.slices {
-                guard offset + 256 <= drawsEnd else { return }
-                let frozen = fixture.control == .freeze ? plan.held[slice.canvas] : nil
-                guard let source = frozen ?? lookup(slice.canvas) else { continue }  // removed canvas: black (the coordinator logs it)
-                // the same slice on the side the morph comes from: same id, same canvas. One on one side only, and every
-                // mask, is switched at the start; its counterpart is not drawn
-                let pair = morph < 1 ? old.slices.first(where: { $0.id == slice.id && $0.canvas == slice.canvas }) : nil
-                encoder.setFragmentTexture(source, index: 0)
-                var u = MappedUniforms()
-                u.size = SIMD2(Float(region.size.width), Float(region.size.height))
-                u.intensity = content
-                u.scale = contentScale(master: master, heldMaster: frozen == nil ? nil : plan.heldMaster)
-                u.opacity = pair.map { $0.opacity + (slice.opacity - $0.opacity) * morph } ?? slice.opacity
-                u.color = plan.color
-                u.keystone = keystone
-                u.morph = pair == nil ? 1 : morph
-                u.flags = warps | (slice.mask != nil ? 2 : 0) | (fixture.raw ? 4 : 0) | (plan.blendMap == nil ? 8 : 0)
-                (uniforms.contents() + offset).assumingMemoryBound(to: MappedUniforms.self).pointee = u
-                encoder.setVertexBuffer(slice.vertices, offset: 0, index: 0)
-                encoder.setVertexBuffer(pair?.vertices ?? slice.vertices, offset: 0, index: 2)
-                encoder.setVertexBuffer(uniforms, offset: offset, index: 1)
-                encoder.setFragmentBuffer(uniforms, offset: offset, index: 1)
-                encoder.setFragmentTexture(slice.mask ?? canvas, index: 1)
-                encoder.drawIndexedPrimitives(type: .triangle, indexCount: slice.indexCount, indexType: .uint32, indexBuffer: slice.indices, indexBufferOffset: 0)
-                offset += 256
+            } else {
+                encoder.setRenderPipelineState(context.mappedPipeline)
+                encoder.setVertexSamplerState(context.linearSampler, index: 0)
+                encoder.setFragmentSamplerState(context.linearSampler, index: 0)
+                encoder.setFragmentTexture(plan.blendMap ?? canvas, index: 2)
+                encoder.setVertexTexture(geometry.warpField ?? canvas, index: 0)
+                encoder.setVertexTexture(old.warpField ?? canvas, index: 1)
+                for slice in geometry.slices {
+                    guard offset + 256 <= drawsEnd else { return }
+                    let frozen = fixture.control == .freeze ? plan.held[slice.canvas] : nil
+                    guard let source = frozen ?? lookup(slice.canvas) else { continue }  // removed canvas: black (the coordinator logs it)
+                    // the same slice on the side the morph comes from: same id, same canvas. One on one side only, and every
+                    // mask, is switched at the start; its counterpart is not drawn
+                    let pair = morph < 1 ? old.slices.first(where: { $0.id == slice.id && $0.canvas == slice.canvas }) : nil
+                    encoder.setFragmentTexture(source, index: 0)
+                    var u = MappedUniforms()
+                    u.size = SIMD2(Float(region.size.width), Float(region.size.height))
+                    u.intensity = content
+                    u.scale = contentScale(master: master, heldMaster: frozen == nil ? nil : plan.heldMaster)
+                    u.opacity = pair.map { $0.opacity + (slice.opacity - $0.opacity) * morph } ?? slice.opacity
+                    u.color = plan.color
+                    u.keystone = keystone
+                    u.morph = pair == nil ? 1 : morph
+                    u.flags = warps | (slice.mask != nil ? 2 : 0) | (fixture.raw ? 4 : 0) | (plan.blendMap == nil ? 8 : 0)
+                    (uniforms.contents() + offset).assumingMemoryBound(to: MappedUniforms.self).pointee = u
+                    encoder.setVertexBuffer(slice.vertices, offset: 0, index: 0)
+                    encoder.setVertexBuffer(pair?.vertices ?? slice.vertices, offset: 0, index: 2)
+                    encoder.setVertexBuffer(uniforms, offset: offset, index: 1)
+                    encoder.setFragmentBuffer(uniforms, offset: offset, index: 1)
+                    encoder.setFragmentTexture(slice.mask ?? canvas, index: 1)
+                    encoder.drawIndexedPrimitives(type: .triangle, indexCount: slice.indexCount, indexType: .uint32, indexBuffer: slice.indices, indexBufferOffset: 0)
+                    offset += 256
+                }
             }
             if let overlay { drawOverlay(overlay, plan, keystone: keystone, intensity: fixture.control == .blackout ? 0 : master, canvas: canvas, encoder: encoder, context: context, uniforms: uniforms, offset: &overlayOffset) }
         }

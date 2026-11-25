@@ -28,6 +28,11 @@ extension LayerAudioChannel {
     func fill(_ source: RampSource, wanted: Double) {
         fill(wanted: wanted, read: { source.read($0, $1) }, seek: { source.seek($0) })
     }
+
+    /// `fill` from a reader at an explicit layer clock.
+    func fill(from reader: AudioTrackReader, wanted: Double, producer: Int = 0) {
+        fill(wanted: wanted, producer: producer, read: { reader.read(into: $0, frameCount: $1) }, seek: { reader.seek(toSeconds: $0) })
+    }
 }
 
 @Suite(.cleansTempFiles) struct AudioTests {

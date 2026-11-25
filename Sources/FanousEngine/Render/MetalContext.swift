@@ -152,6 +152,4 @@ public final class MetalContext: @unchecked Sendable {
         self.nearestSampler = nearestSampler
         self.mipSampler = mipSampler
     }
-
-    public var deviceName: String { device.name }
 }

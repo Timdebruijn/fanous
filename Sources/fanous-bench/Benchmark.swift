@@ -151,7 +151,7 @@ enum Benchmark {
 
         Task { @MainActor in
             var result = Result(
-                chip: SystemInfo.chipName, gpu: context.deviceName, memoryGB: Int(SystemInfo.physicalMemoryBytes / 1_073_741_824),
+                chip: SystemInfo.chipName, gpu: context.device.name, memoryGB: Int(SystemInfo.physicalMemoryBytes / 1_073_741_824),
                 os: SystemInfo.osVersion, media: file.lastPathComponent, codec: codec, width: width, height: height, fps: fps,
                 display: useDisplay, ringCapacity: ringCapacity, frameLatency: 1, windowSeconds: window, steps: [], maxLayers: 0, soakSeconds: soak, soakStep: nil,
                 date: ISO8601DateFormatter().string(from: Date()))

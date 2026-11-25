@@ -8,33 +8,29 @@ import Synchronization
 
 /// Runs the compositor from a CAMetalDisplayLink on a dedicated high-QoS thread (ADR-0006).
 public final class DisplayLinkDriver: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable {
-    public let updates = Atomic<Int>(0)
     private let link: CAMetalDisplayLink
     private let compositor: Compositor
     private let thread: Thread
     private var runLoop: CFRunLoop?
     private let done = DispatchSemaphore(value: 0)
 
-    public init(layer: CAMetalLayer, fps: Double, compositor: Compositor, frameLatency: Int = 1) {
+    public init(layer: CAMetalLayer, fps: Double, compositor: Compositor) {
         self.compositor = compositor
         link = CAMetalDisplayLink(metalLayer: layer)
-        link.preferredFrameLatency = Float(frameLatency)
+        link.preferredFrameLatency = 1
         link.preferredFrameRateRange = CAFrameRateRange(minimum: Float(fps), maximum: Float(fps), preferred: Float(fps))
         nonisolated(unsafe) let link = self.link  // the thread only adds it to its run loop
         let box = RunLoopBox()
-        let onMain = ProcessInfo.processInfo.environment["FANOUS_LINK_MAIN"] == "1"  // diagnostic switch
         let done = self.done
         thread = Thread {
             defer { done.signal() }
             box.runLoop = CFRunLoopGetCurrent()
-            if !onMain { link.add(to: RunLoop.current, forMode: .default) }
+            link.add(to: RunLoop.current, forMode: .default)
             box.ready.signal()
-            if onMain { return }
             CFRunLoopRun()
         }
         super.init()
         link.delegate = self
-        if onMain { link.add(to: RunLoop.main, forMode: .common) }
         thread.name = "org.fanous.compositor"
         thread.qualityOfService = .userInteractive
         thread.start()
@@ -48,13 +44,11 @@ public final class DisplayLinkDriver: NSObject, CAMetalDisplayLinkDelegate, @unc
     }
 
     public func metalDisplayLink(_ link: CAMetalDisplayLink, needsUpdate update: CAMetalDisplayLink.Update) {
-        updates.wrappingAdd(1, ordering: .relaxed)
         autoreleasepool { compositor.tick(target: update.targetPresentationTimestamp, drawable: update.drawable) }
     }
 
     /// Stops and waits (≤ 1 s) for the thread to leave its run loop, which returns only between callouts, so the tick
-    /// in flight has finished (B113); false = still ticking. With `FANOUS_LINK_MAIN` the ticks run on the caller's
-    /// (main) thread, so none is in flight here. Safe to call again.
+    /// in flight has finished (B113); false = still ticking. Safe to call again.
     @discardableResult public func stop() -> Bool {
         link.invalidate()
         thread.cancel()

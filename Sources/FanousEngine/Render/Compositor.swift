@@ -4,7 +4,6 @@
 
 import Foundation
 import FanousCore
-import Logging
 import Metal
 import QuartzCore
 import simd
@@ -151,13 +150,14 @@ public final class Compositor: @unchecked Sendable {
     static func micros(_ seconds: Double) -> UInt32 { UInt32(max(0, min(seconds * 1e6, 4e9))) }  // this argument order sends NaN to 0
     /// This tick reused the last canvas: its own selection is still in `drawItems` (`drawLayer`).
     private var reusedThisTick = false
+    /// The items the last canvas pass drew: `drawItems` when this tick reused the canvas, else `drawnItems`.
+    private var shownItems: [DrawItem] { reusedThisTick ? drawItems : drawnItems }
     private var canvasValid = false
     /// `drawThumbnails`: 3 × `maxLayers` × 2 uniform slots, made on first use; the third the next call writes.
     private var thumbnailUniforms: MTLBuffer?
     private var thumbnailRing = 0
     private var reuseStreak = 0
     private var drawnGPUErrors = 0
-    private let logger: Logger
     public let ticks = Atomic<Int>(0)
     public let encoderFailures = Atomic<Int>(0)
     public let completed = Atomic<Int>(0)
@@ -189,7 +189,7 @@ public final class Compositor: @unchecked Sendable {
 
     public init(
         context: MetalContext, canvasWidth: Int, canvasHeight: Int, fps: Double, maxLayers: Int, metrics: MetricsRing,
-        parameters: TripleBuffer<ParameterSnapshotSlot>, logger: Logger
+        parameters: TripleBuffer<ParameterSnapshotSlot>
     ) throws {
         self.context = context
         self.fps = fps
@@ -197,7 +197,6 @@ public final class Compositor: @unchecked Sendable {
         self.maxLayers = maxLayers
         self.metrics = metrics
         self.parameters = parameters
-        self.logger = logger
         drawItems.reserveCapacity(maxLayers * 2)
         drawnItems.reserveCapacity(maxLayers * 2)
         syncClocks.reserveCapacity(SyncPacket.maxLayers)
@@ -657,13 +656,8 @@ public final class Compositor: @unchecked Sendable {
             loaderWake?.signal()
         }
         layer.pendingScratch.withLockIfAvailable { box in
-            guard box.set else { return }
-            box.set = false
-            if let playback = box.playback, playback === layer.current || playback === layer.outgoing || playback === layer.staged {
-                playback.adopt(box.answer)
-            }
-            box.playback = nil
-            box.answer = nil
+            guard let (playback, answer) = box.take() else { return }
+            if playback === layer.current || playback === layer.outgoing || playback === layer.staged { playback.adopt(answer) }
         }
         let taken: PendingPlayback? = layer.pending.withLockIfAvailable { box in
             guard box.set else { return nil }
@@ -998,18 +992,15 @@ public final class Compositor: @unchecked Sendable {
         }
         let quad = SIMD4(-w + 2 * w * p.cropLeft, -h + 2 * h * p.cropBottom, w - 2 * w * p.cropRight, h - 2 * h * p.cropTop)
         let scale = simd_float4x4(diagonal: SIMD4(p.scaleX, p.scaleY, 1, 1))
-        let (cx, sx) = (cos(p.rotationX), sin(p.rotationX))
-        let (cy, sy) = (cos(p.rotationY), sin(p.rotationY))
-        let (cz, sz) = (cos(p.rotationZ), sin(p.rotationZ))
-        let rx = simd_float4x4(SIMD4(1, 0, 0, 0), SIMD4(0, cx, sx, 0), SIMD4(0, -sx, cx, 0), SIMD4(0, 0, 0, 1))
-        let ry = simd_float4x4(SIMD4(cy, 0, -sy, 0), SIMD4(0, 1, 0, 0), SIMD4(sy, 0, cy, 0), SIMD4(0, 0, 0, 1))
-        let rz = simd_float4x4(SIMD4(cz, sz, 0, 0), SIMD4(-sz, cz, 0, 0), SIMD4(0, 0, 1, 0), SIMD4(0, 0, 0, 1))
+        // X first, then Y, then Z
+        let rotation = simd_float4x4(
+            simd_quatf(angle: p.rotationZ, axis: SIMD3(0, 0, 1)) * simd_quatf(angle: p.rotationY, axis: SIMD3(0, 1, 0)) * simd_quatf(angle: p.rotationX, axis: SIMD3(1, 0, 0)))
         var translate = matrix_identity_float4x4
         translate.columns.3 = SIMD4(p.positionX * 2 * aspect, p.positionY * 2, p.positionZ, 1)
         // camera distance 2: z = +1 doubles the size, z = −1 shows it at two thirds; near plane 0.2 in front of the camera
         let distance: Float = 2, near: Float = 0.1
         let projection = simd_float4x4(SIMD4(1 / aspect, 0, 0, 0), SIMD4(0, 1, 0, 0), SIMD4(0, 0, -1 / distance, -1 / distance), SIMD4(0, 0, 1 - near, 1))
-        return (projection * translate * rz * ry * rx * scale, quad)
+        return (projection * translate * rotation * scale, quad)
     }
 
     // MARK: Layer preview
@@ -1045,7 +1036,7 @@ public final class Compositor: @unchecked Sendable {
         encoder.setFragmentSamplerState(context.linearSampler, index: 0)
         encoder.setFragmentSamplerState(context.nearestSampler, index: 1)
         encoder.setFragmentSamplerState(context.mipSampler, index: 2)
-        for var item in reusedThisTick ? drawItems : drawnItems where item.slot / 2 == index {
+        for var item in shownItems where item.slot / 2 == index {
             item.p.blendMode = .normal  // multiply or darken over black would show nothing
             item.slot = slotBase + item.slot % 2
             encode(item, uniforms: uniforms, time: drawnTime, canvasWidth: canvasWidth, canvasHeight: canvasHeight, with: encoder)
@@ -1057,7 +1048,7 @@ public final class Compositor: @unchecked Sendable {
     /// Render thread, after the canvas pass of the tick: per render layer the size of its canvas (canvas 1's when that
     /// canvas does not render) and whether it shows something this tick (media with intensity > 0 on a canvas that renders).
     func thumbnailCanvases() -> [(width: Int, height: Int, visible: Bool)] {
-        let items = reusedThisTick ? drawItems : drawnItems
+        let items = shownItems
         return layers.map { layer in
             if let item = items.first(where: { $0.slot / 2 == layer.index && $0.canvas >= 0 }) {
                 return (targets[item.canvas].width, targets[item.canvas].height, true)
@@ -1074,7 +1065,7 @@ public final class Compositor: @unchecked Sendable {
         if thumbnailUniforms == nil { thumbnailUniforms = context.device.makeBuffer(length: Self.uniformStride * maxLayers * 2 * 3, options: .storageModeShared) }
         guard let uniforms = thumbnailUniforms, let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return false }
         encoder.label = thumbnailAtlasLabel as String
-        let items = reusedThisTick ? drawItems : drawnItems
+        let items = shownItems
         for (i, layer) in layers.enumerated() where i < cells.count {
             guard let cell = cells[i], let canvas = items.first(where: { $0.slot / 2 == layer.index && $0.canvas >= 0 })?.canvas else { continue }
             encoder.setViewport(MTLViewport(originX: Double(cell.x), originY: Double(cell.y), width: Double(cell.width), height: Double(cell.height), znear: 0, zfar: 1))
@@ -1124,18 +1115,19 @@ public final class Compositor: @unchecked Sendable {
         let outputs = scratch.outputs
         // one tick's canvases for the whole draw (the compositor may complete another meanwhile) and their Master
         let (frame, index, canvasMaster) = completedCanvases()
+        func canvas(_ id: Int) -> MTLTexture? { frame.first { $0.id == id }?.textures[index] }
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = texture
         pass.colorAttachments[0].loadAction = .clear  // to opaque black, the default clear colour
         pass.colorAttachments[0].storeAction = .store
-        OutputPass.holdFrozen(set, canvas: { id in frame.first { $0.id == id }?.textures[index] }, outputs: outputs, master: canvasMaster, buffer: commandBuffer)
+        OutputPass.holdFrozen(set, canvas: canvas, outputs: outputs, master: canvasMaster, buffer: commandBuffer)
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
             outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
             return false
         }
         encoder.label = "secondary output"
         OutputPass.draw(
-            set, canvas: { id in frame.first { $0.id == id }?.textures[index] }, encoder: encoder, context: context, uniforms: uniforms,
+            set, canvas: canvas, encoder: encoder, context: context, uniforms: uniforms,
             master: scratch.master, masterPattern: scratch.masterPattern, outputs: outputs, keystones: scratch.keystones, presets: scratch.presets,
             morphs: scratch.morphs, now: now)
         encoder.endEncoding()

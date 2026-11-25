@@ -64,7 +64,7 @@ public final class Thumbnailer: @unchecked Sendable {
         do {
             let compositor = try Compositor(
                 context: context, canvasWidth: Self.width, canvasHeight: height, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 8),
-                parameters: parameters, logger: logger)
+                parameters: parameters)
             let source = try blockingAwait { try await MovieSource.open(url: url, device: self.context.device, poolSize: 1) }
             let frame = DecodedFrame(poolIndex: 0)
             try source.decode(frame: source.info.frameCount / 2, into: frame)

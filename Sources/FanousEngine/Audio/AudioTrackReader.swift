@@ -31,8 +31,6 @@ public enum AudioError: Error, CustomStringConvertible {
 /// lists are ignored (the track starts at 0). Sample-rate conversion latency (a few frames when the source is not
 /// 48 kHz) is not compensated in the reported PTS.
 public final class AudioTrackReader: @unchecked Sendable {
-    public static let outputSampleRate = 48_000
-
     /// False for movies without an audio track: `seek` is a no-op and `read` returns no frames.
     public let hasAudio: Bool
     /// Length of the audio track in seconds (0 without audio).
@@ -104,7 +102,7 @@ public final class AudioTrackReader: @unchecked Sendable {
         let matrix = channels > 2 ? Self.stereoMixMatrix(for: description, channels: channels) : nil
         let outputChannels = matrix == nil ? 2 : channels
         var output = AudioStreamBasicDescription(
-            mSampleRate: Double(Self.outputSampleRate), mFormatID: kAudioFormatLinearPCM, mFormatFlags: kAudioFormatFlagsNativeFloatPacked,
+            mSampleRate: Double(LayerAudioChannel.sampleRate), mFormatID: kAudioFormatLinearPCM, mFormatFlags: kAudioFormatFlagsNativeFloatPacked,
             mBytesPerPacket: UInt32(4 * outputChannels), mFramesPerPacket: 1, mBytesPerFrame: UInt32(4 * outputChannels),
             mChannelsPerFrame: UInt32(outputChannels), mBitsPerChannel: 32, mReserved: 0)
         var converter: AudioConverterRef?
@@ -174,7 +172,7 @@ public final class AudioTrackReader: @unchecked Sendable {
     /// floats). Returns fewer frames only at the end of the track. `firstFramePTS` is the media time of the
     /// first frame returned, in seconds. Never allocates in Swift (see the type comment).
     public func read(into output: UnsafeMutablePointer<Float>, frameCount: Int) -> (framesRead: Int, firstFramePTS: Double) {
-        let firstFramePTS = basePTS + Double(framesSinceSeek) / Double(Self.outputSampleRate)
+        let firstFramePTS = basePTS + Double(framesSinceSeek) / Double(LayerAudioChannel.sampleRate)
         guard let converter, frameCount > 0 else { return (0, firstFramePTS) }
         var produced = 0
         while produced < frameCount {
