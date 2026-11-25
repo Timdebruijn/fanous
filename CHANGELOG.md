@@ -18,6 +18,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Docs: the owner's four decisions on the 3D pixel-mapping note (`docs/pixelmap-3d.md` §6, row B407): z up with
   the up axis a project setting, CSV and OPC import both, the height map on its own canvas, order atlas, kinetic,
   project (PR #483)
+- Show control: a GO from the browser no longer waits behind the readiness checks of a `show.mode` sent just before it
+  on the same connection (B287). The checks ran on the connection's queue, up to about 12 s; an entering `show.mode`
+  now runs on a queue of its own and its ack still comes after the checks, so the GO's ack can come first (PR #466).
 - Docs: a design note for the pixel mapper in three dimensions and for pixels on winches (`docs/pixelmap-3d.md`,
   row B407): a point list with x/y/z per LED, three sampling modes, a height map for kinetic groups, and what
   changes on the wire when Fanous sends Art-Net/sACN (PR #481)
