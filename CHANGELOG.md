@@ -14,7 +14,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   parameter inside its sync (1.0 ms at the limits); it now copies there (35 µs) and formats after. An unchanged OSC value
   no longer publishes (0.12 ms each: a 64 KiB bundle of one message cost about 0.5 s), `GET /api/live` is served from the
   live feed's last snapshot, the DMX monitor looks a universe up once per tick, and a connection holds at most 16 DMX
-  streams (PR #N).
+  streams (PR #470).
 - Playback: a chased or sync-slave layer's first frame is its clock's frame (B404). The hand-off asked the decoder for
   the in point (the out point in a reverse mode), and the swap tick moved the clock to the timecode or the master's
   position, so the cut showed a frame of the in point; a slave with a reverse play mode also filled the ring backwards
