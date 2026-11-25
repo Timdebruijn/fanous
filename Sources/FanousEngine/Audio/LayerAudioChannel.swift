@@ -165,12 +165,14 @@ public final class LayerAudioChannel: @unchecked Sendable {
         let start = loop.flatMap { Int(exactly: ($0.start * Self.rate).rounded()) } ?? -1
         let fits = (Self.sampleRate / 2...Int(UInt32.max)).contains(frames) && (0...Int(UInt32.max)).contains(start)
         loopBits.store(fits ? UInt64(start) << 32 | UInt64(frames) : 0, ordering: .relaxed)
-        if jumped || (active && !activeFlag.load(ordering: .relaxed)) || startPending.exchange(false, ordering: .relaxed) {
-            stampNanos.store(nanos, ordering: .relaxed)
+        let stamp = min(nanos, Self.hostNanos() &+ 1_000_000_000)  // a bogus far-future target must not hold the layer silent
+        let handed = startPending.exchange(false, ordering: .relaxed)  // consumed whatever else makes this a start
+        if jumped || (active && !activeFlag.load(ordering: .relaxed)) || handed {
+            stampNanos.store(stamp, ordering: .relaxed)
         }
         clockOffsetBits.store((wantedPTS - Double(nanos) / 1e9).bitPattern, ordering: .relaxed)
         if jumped {  // after the clock: a fill that sees the jump sees the new clock
-            jumpStampNanos.store(nanos, ordering: .relaxed)
+            jumpStampNanos.store(stamp, ordering: .relaxed)
             jump()
         }
         volumeBits.store(volume.bitPattern, ordering: .relaxed)
@@ -423,7 +425,10 @@ public final class LayerAudioChannel: @unchecked Sendable {
     public func pull(
         into left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>, frames: Int, wantedPTS: Double, atHostNanos host: UInt64 = .max
     ) {
-        let holding = host < jumpStampNanos.load(ordering: .relaxed)  // before the retrigger's stamp
+        // before the retrigger's stamp, on this producer's own segment: a handed-over one is never heard, so its drain
+        // does not wait (the new producer seeks at once, at the in point)
+        let holding = host < jumpStampNanos.load(ordering: .relaxed)
+            && segmentOwner.load(ordering: .relaxed) == owner.load(ordering: .relaxed)
         let generation = flushGeneration.load(ordering: .acquiring)
         if generation != appliedGeneration, !holding {
             appliedGeneration = generation

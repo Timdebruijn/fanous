@@ -378,6 +378,7 @@ extension LayerAudioChannel {
         channel.outputLeadNanos.store(lead, ordering: .relaxed)
         let t: UInt64 = 10_000_000_000
         var silent = 0
+        var held: Float = 0
         var last: [Float] = []
         for k in 0..<60 {
             let now = t + UInt64(k) * 10_000_000
@@ -395,10 +396,85 @@ extension LayerAudioChannel {
                 }
             }
             if k > 30, k <= 50, left.allSatisfy({ $0 == 0 }) { silent += 1 }
+            if k == 33 { held = left[0] }
             last = left
         }
         #expect(silent <= 1, "silent pulls after the retrigger: \(silent)")
+        #expect(held > 2 * 48_000, "the hold plays the old clip (after 2 s): \(held)")
         #expect(last[0] > 0.5 * 48_000 && last[0] < 1 * 48_000, "the new clip by the end: \(last[0])")
+    }
+
+    /// One 480-frame pull at the heard time `now + lead`, as the mixer makes it.
+    private func pullHeard(_ channel: LayerAudioChannel, now: UInt64, lead: Int64) -> [Float] {
+        let heard = UInt64(Int64(now) + lead)
+        var left = [Float](repeating: 0, count: 480)
+        var right = [Float](repeating: 0, count: 480)
+        left.withUnsafeMutableBufferPointer { l in
+            right.withUnsafeMutableBufferPointer { r in
+                channel.pull(into: l.baseAddress!, right: r.baseAddress!, frames: 480, wantedPTS: channel.wantedPTS(atHostNanos: heard), atHostNanos: heard)
+            }
+        }
+        return left
+    }
+
+    /// B406 review: the first `setState` after a hand-over also turns the channel active; that is one start, so a
+    /// first fill that lags a tick still seeks at the in point (0.5 s), not at the next tick's stamp.
+    @Test func aHandOverIsOneStartNotTwo() {
+        let channel = LayerAudioChannel()
+        channel.outputLeadNanos.store(-72_000_000, ordering: .relaxed)
+        let token = channel.handOver()
+        let t: UInt64 = 10_000_000_000
+        channel.setState(wantedPTS: 0.5, active: true, volume: 1, pan: 0, atHostNanos: t + 16_700_000)
+        channel.setState(wantedPTS: 0.51, active: true, volume: 1, pan: 0, atHostNanos: t + 26_700_000)  // the next tick
+        let source = RampSource()
+        var seeks: [Double] = []
+        channel.fill(now: t + 10_000_000, producer: token, read: { source.read($0, $1) }, seek: { seeks.append($0); source.seek($0) })
+        #expect(seeks.count == 1 && abs(seeks[0] - 0.5) < 1e-4, "at the in point: \(seeks)")
+    }
+
+    /// B406 review: a bogus far-future target (100 s) is taken as at most 1 s ahead, so it holds the layer silent for
+    /// at most a second, not until the next start.
+    @Test func aFarFutureStampCountsAsOneSecond() {
+        let channel = LayerAudioChannel()
+        let t = LayerAudioChannel.hostNanos()
+        channel.setState(wantedPTS: 100, active: true, volume: 1, pan: 0, atHostNanos: t + 100_000_000_000)
+        let source = RampSource()
+        var seeks: [Double] = []
+        channel.fill(now: t, read: { source.read($0, $1) }, seek: { seeks.append($0); source.seek($0) })
+        #expect(seeks.count == 1 && seeks[0] >= 1 && seeks[0] < 1.5, "the clock 1 s from now, not at 100 s: \(seeks)")
+    }
+
+    /// B406 review: a cue swap (a hand-over and a retrigger in one tick) with a positive offset. The old file's segment
+    /// is never heard again, so its drain does not wait for the retrigger's stamp: the new producer seeks at once, at
+    /// the in point, and the consumer waits silent for it (no underruns for the wait).
+    @Test func aCueSwapDrainsTheHandedOverSegmentAtOnce() {
+        let channel = LayerAudioChannel()
+        let lead: Int64 = -72_000_000
+        channel.outputLeadNanos.store(lead, ordering: .relaxed)
+        let t: UInt64 = 10_000_000_000
+        let a = channel.handOver()
+        let first = RampSource()
+        for k in 0..<20 {
+            let now = t + UInt64(k) * 10_000_000
+            channel.setState(wantedPTS: 2 + Double(k) * 0.01, active: true, volume: 1, pan: 0, atHostNanos: now + 16_700_000)
+            channel.fill(now: now, producer: a, read: { first.read($0, $1) }, seek: { first.seek($0) })
+            _ = pullHeard(channel, now: now, lead: lead)
+        }
+        let b = channel.handOver()
+        let next = RampSource()
+        var seeks: [Double] = []
+        let underruns = channel.statistics.underruns
+        var heard = false
+        for k in 20..<45 {
+            let now = t + UInt64(k) * 10_000_000
+            channel.setState(
+                wantedPTS: 0.5 + Double(k - 20) * 0.01, active: true, volume: 1, pan: 0, jumped: k == 20, atHostNanos: now + 16_700_000)
+            channel.fill(now: now, producer: b, read: { next.read($0, $1) }, seek: { seeks.append($0); next.seek($0) })
+            if pullHeard(channel, now: now, lead: lead).contains(where: { $0 != 0 }) { heard = true }
+        }
+        #expect(seeks.first.map { abs($0 - 0.5) < 1e-4 } == true, "the new file from its in point: \(seeks)")
+        #expect(channel.statistics.underruns - underruns <= 2, "\(channel.statistics.underruns - underruns) underruns")
+        #expect(heard)
     }
 
     @Test func inactiveChannelIsSilentAndConsumesNothing() {

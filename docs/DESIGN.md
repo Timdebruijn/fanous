@@ -3583,8 +3583,11 @@ groundwork and small engine pieces first):
   clock reaches it. With a positive offset the callback reads behind the
   picture, so after a retrigger it plays the old segment on, straight,
   until its clock reaches the retrigger's target, where the picture
-  changes, and only then drains; a cut to another file still goes silent
-  for about the offset less 11 ms (B472). Until the first callback after
+  changes, and only then drains, so the new clip starts at the callback's
+  clock about one decoder fill later and loses its first few milliseconds
+  (an accepted trade against a silent gap of the offset); a cut to another
+  file still goes silent for about the offset less 11 ms (B472). Stamps more
+  than a second ahead of now count as one second ahead. Until the first callback after
   launch or a device change the decoder has no (or the old) lead, so on an
   output whose lead is above 100 ms plus the tick's lead (positive leads
   only) the first start reseeks once: a short gap. A start whose target is
