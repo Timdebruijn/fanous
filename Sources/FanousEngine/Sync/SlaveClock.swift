@@ -28,24 +28,33 @@ enum SlaveClock {
     /// (clamped to the file), freewheel and lost advance it by the entry's rate, wrapping within the file like a loop.
     /// `offsetMs`: how far the entry's position is from where the slave's clock would have been without it (its
     /// previous position advanced by the entry's rate), i.e. the correction a locked tick applies; a whole-file jump
-    /// (the master looping) does not count. `jumped`: a locked tick moved the clock by more than `jumpMillis` either
-    /// way (the master was retriggered, or the slave just locked on): the audio reseeks to the new clock instead of
-    /// nudging towards it (B395).
+    /// (the master looping) does not count. `jumped`: a locked tick set the clock more than `jumpMillis` away from
+    /// where it would have run on in host time (`elapsed` seconds since the previous tick, not `dt`: a late tick is
+    /// no jump, and the audio extrapolates its clock in host time too): the master was retriggered, or the slave
+    /// locked on (first, or again after freewheeling or a freeze); its audio then reseeks to the new clock instead
+    /// of nudging towards it (B395). A tick that clamps the clock to the file (the master's file is longer) is no
+    /// jump: the clock stands at the last frame.
     static func follow(
-        _ clock: inout LayerClock, entry: SyncPacket.Layer, age: Double, dt: Double, interval: Double, fps: Double,
+        _ clock: inout LayerClock, entry: SyncPacket.Layer, age: Double, dt: Double, elapsed: Double? = nil, interval: Double, fps: Double,
         frameCount: Int
     ) -> (state: State, offsetMs: Double, jumped: Bool) {
         let span = Double(max(1, frameCount))
-        let predicted = clock.position + Double(entry.rate) * dt * fps / Double(entry.fps)
+        let rate = Double(entry.rate) * fps / Double(entry.fps)
+        let predicted = clock.position + rate * dt
         let implied = implied(entry, age: age, fps: fps)
         let state = state(age: age, interval: interval)
+        let jump = fold(implied - (clock.position + rate * (elapsed ?? dt)), span) * 1000 / fps
         clock.position = state == .locked ? min(span - 1, max(0, implied)) : wrap(predicted, span)
         clock.direction = entry.direction < 0 ? -1 : 1
         clock.finished = entry.finished
-        var offset = (implied - predicted).truncatingRemainder(dividingBy: span)
-        if offset > span / 2 { offset -= span } else if offset < -span / 2 { offset += span }
-        let offsetMs = offset * 1000 / fps
-        return (state, offsetMs, state == .locked && abs(offsetMs) > jumpMillis)
+        let jumped = state == .locked && implied >= 0 && implied <= span - 1 && abs(jump) > jumpMillis
+        return (state, fold(implied - predicted, span) * 1000 / fps, jumped)
+    }
+
+    /// A distance in frames folded within half the file: a whole-file jump (the master looping) is none.
+    private static func fold(_ frames: Double, _ span: Double) -> Double {
+        let r = frames.truncatingRemainder(dividingBy: span)
+        return r > span / 2 ? r - span : r < -span / 2 ? r + span : r
     }
 
     /// The audio's drift tolerance (`LayerAudioChannel.driftToleranceFrames`, 20 ms): a smaller correction is nudged

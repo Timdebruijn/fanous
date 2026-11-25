@@ -123,6 +123,23 @@ struct SlaveClockTests {
         let wrap = SlaveClock.follow(
             &clock, entry: Self.entry(position: 0.5), age: 0, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
         #expect(!wrap.jumped && abs(wrap.offsetMs) < 1e-6)
+        // a late tick (50 ms of host time for a 20 ms target step): the entry aged with it, the clock ran on with it; the
+        // offset shows the 30 ms the tick is late, the audio, which runs in host time, saw no jump
+        clock.position = 10
+        let late = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 10), age: 0.05, dt: 0.02, elapsed: 0.05, interval: Self.interval, fps: 50, frameCount: 100)
+        #expect(!late.jumped && abs(late.offsetMs - 30) < 1e-6)
+        // the master's file is longer: the slave stands at its last frame while the entry runs past it, no jump on any tick
+        clock.position = 99
+        for position in [105.0, 106, 110] {
+            let pinned = SlaveClock.follow(
+                &clock, entry: Self.entry(position: position), age: 0, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
+            #expect(!pinned.jumped && clock.position == 99, "entry \(position)")
+        }
+        // retriggered from beyond the end back into the file: a jump
+        let returned = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 40), age: 0, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
+        #expect(returned.jumped && clock.position == 40)
     }
 
     @Test func offsetIsTheCorrectionALockedTickApplies() {
