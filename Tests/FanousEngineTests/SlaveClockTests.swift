@@ -46,6 +46,35 @@ struct SlaveClockTests {
         #expect(clock.position == 0)
     }
 
+    /// B383: a master in a once mode sends rate 0 while its clock shows the end frame, so a slave, which sees no in or
+    /// out point, never extrapolates past it: forward to an out point before the file's last frame, reverse to an in
+    /// point after frame 0. 25p on 50 Hz, the entry 1.7 ms to 35 ms old (younger than one frame of the content, 40 ms:
+    /// the ceiling, see `showsEndFrame`); the slave shows `frame(lo: 0, hi: last)` as `prepare` does. With rate × age
+    /// instead (main), forward shows 13 from 1.7 ms, reverse 3 from 20 ms. A bounce turns at both seams within the 40
+    /// ticks: on main 3 on the way down from 20 ms and 13 on the way up from 35 ms (here, 25p on 50 Hz).
+    @Test(arguments: [PlayMode.onceHold, .onceBlack, .onceHoldReverse, .onceBlackReverse, .bounce])
+    func anEndFrameIsNotExtrapolatedPast(_ mode: PlayMode) {
+        let lo = 4, hi = 12, frames = 20
+        for age in [0.0017, 0.01, 0.02, 0.035] {
+            var master = LayerClock()
+            master.retrigger(mode: mode, inFrame: lo, outFrame: hi, frameCount: frames)
+            var slave = LayerClock()
+            var shown: [Int] = []
+            for _ in 0..<40 {
+                _ = master.advance(dt: 0.02, fps: 25, speed: 100, mode: mode, inFrame: lo, outFrame: hi, frameCount: frames)
+                let direction = Float(mode.isReverse ? -1 : 1) * Float(master.direction)
+                let moving = !master.finished && !SlaveClock.showsEndFrame(master, mode: mode, lo: lo, hi: hi)
+                let entry = Self.entry(
+                    position: master.position, fps: 25, rate: moving ? 25 * direction : 0, direction: Int8(direction),
+                    finished: master.finished)
+                _ = SlaveClock.follow(&slave, entry: entry, age: age, dt: 0.02, interval: 0.02, fps: 25, frameCount: frames)
+                shown.append(slave.frame(lo: 0, hi: frames - 1))
+            }
+            #expect(shown.allSatisfy { (lo...hi).contains($0) }, "age \(age): \(shown)")
+            #expect(mode == .bounce ? shown.contains(lo) && shown.contains(hi) : shown.last == (mode.isReverse ? lo : hi), "reaches the end frame")
+        }
+    }
+
     @Test func stateFollowsTheAge() {
         #expect(SlaveClock.state(age: 0.02, interval: Self.interval) == .locked)
         #expect(

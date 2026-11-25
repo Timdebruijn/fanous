@@ -69,6 +69,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Playback: the decode threads run at `.userInteractive`, as ADR-0002 says, not at the control plane's `.userInitiated`
   (B319); the HAP chunk pool follows its decode thread. No difference was measurable on a 1080p ProRes clip under load
   (PR #475).
+- Sync: a slave no longer shows the frame past a once clip's out point (before its in point in reverse), or past a
+  bounce's turning frame, for a tick (B383). The slave extrapolated the master's last moving tick by rate × age without
+  knowing the in and out points; a master in a once mode or a bounce now sends rate 0 while its clock shows the end
+  frame it moves towards. The packet layout is unchanged; a loop's wrap is B426 (PR #478).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)

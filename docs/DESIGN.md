@@ -5236,7 +5236,7 @@ FanousSync v1
       u8 group, u8 layer (source, informational)
       u16 mediaKey (packed folder/file), f32 fps
       f64 position (media frames), i8 direction, u8 finished
-      f32 rate (media frames per second as the clock really advances: speed × master speed × fps × direction; 0 when frozen, finished or paused)
+      f32 rate (media frames per second as the clock really advances: speed × master speed × fps × direction; 0 when frozen, finished or paused, and while a once mode or a bounce shows the end frame it moves towards, B383)
 ```
 
 - **Where it goes:** the subnet broadcast address of the sync interface
@@ -5442,6 +5442,24 @@ differs from the text above:
   when its master moves at 1× forward, without a loop region (its own in/out
   do not apply). Freeze-all on the slave machine holds a slave like any other
   layer; the first tick after it relocks.
+- A master in a once mode also sends rate 0 while its clock shows the end
+  frame (the out point; the in point in reverse) and has not finished yet,
+  and a bounce while it shows the frame it turns at (B383): a slave sees no
+  in or out point and ignores its own (§23.1), so extrapolating `rate × age`
+  from there showed the frame past the out point (from 1.7 ms of age at 25p
+  on 50 Hz) or before the in point for one tick. It holds for an entry
+  younger than one content frame; its audio stops up to one frame before the
+  master's. With less than one content frame per tick (25p on 50 Hz, 24p on
+  60 Hz) the master's position still moves within the end frame while it
+  sends rate 0: `offsetMs` shows the master's step on each tick of the hold
+  and the correction on the drop or resume tick (up to one frame: 32–38 ms at
+  25p on 25 Hz for entries 1.7–8 ms old, in general about 40 ms minus the
+  age); `jumped` fires at most once per seam at 100 %, with the audio already
+  silent at rate 0. A two-frame bounce range is all end frames: the slave
+  follows it frame by frame with ±20 ms `offsetMs` per tick, audio silent. A
+  loop's wrap with in and out points, and a
+  master stepping more than one frame per tick, can still show the frame past
+  the seam for a tick: that needs the in and out points in the packet (B426).
 - `live.sync` carries packet totals (`packetsIn`, `packetsOut`,
   `packetsDropped` since B123, `decodeErrors`) and the machine id instead of `packetsPerSecond`; the UI
   shows the totals. A master's `name` is shown for masters on this machine only.
