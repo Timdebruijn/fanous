@@ -14,7 +14,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   (B317, B318). The receiver stamped `receivedAt` in its handler on a default-QoS queue, so a busy Mac made the master
   look up to 15 ms late (loopback, all cores busy; now at most 3 ms), and a packet arriving behind a newer one from the
   same machine overwrote it. The receiver now reads `SO_TIMESTAMP_MONOTONIC`, drops a tick it has seen or one up to 256
-  behind, and its queue and each HTTPS connection queue run at `.userInitiated` (PR #N).
+  behind, and its queue and each HTTPS connection queue run at `.userInitiated` (PR #471).
 - Playback: a chased or sync-slave layer's first frame is its clock's frame (B404). The hand-off asked the decoder for
   the in point (the out point in a reverse mode), and the swap tick moved the clock to the timecode or the master's
   position, so the cut showed a frame of the in point; a slave with a reverse play mode also filled the ring backwards
