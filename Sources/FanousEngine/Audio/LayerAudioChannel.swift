@@ -14,8 +14,8 @@ public struct AudioStatistics: Sendable, Equatable {
     /// retrigger or a hand-over to another file (B396). Includes the short gap after a seek or retrigger while the
     /// producer resyncs.
     public var underruns: UInt64 = 0
-    /// Pulls that dropped or repeated frames to follow the layer clock. The first pull of a segment, and the first
-    /// after the channel was inactive, land on the clock and are not counted (B393).
+    /// Pulls that played the ring faster or slower to follow the layer clock (B321). The first pull of a segment, and
+    /// the first after the channel was inactive, land on the clock and are not counted (B393).
     public var corrections: UInt64 = 0
     /// Largest |ring head PTS - wanted PTS| seen since the last `resetPeakDrift()`, in milliseconds. Drift beyond
     /// 100 ms is a pending resync (seek, retrigger) and is not recorded here; it counts as an underrun. The lag or
@@ -53,7 +53,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// on it or the drift has changed sign (B394). Also how far past the ring's tail the clock may run before the
     /// producer reseeks (`needsReseek`).
     public static let driftToleranceFrames = 960
-    /// 2 ms: the most one pull drops or repeats.
+    /// 2 ms: the most one pull consumes more or fewer frames than it plays.
     public static let maxCorrectionFrames = 96
     /// 100 ms: beyond this the audio is too far off to nudge back. The producer reseeks, and until it has the
     /// consumer stays silent (and counts an underrun) instead of dropping or repeating stale audio.
@@ -356,10 +356,11 @@ public final class LayerAudioChannel: @unchecked Sendable {
     }
 
     /// Adds `frames` frames to `left` / `right`, scaled by volume and pan, and consumes them from the ring.
-    /// Follows the layer clock (`wantedPTS`): beyond ±20 ms it starts dropping frames (audio behind) or repeating the
-    /// first frame (audio ahead), at most 96 frames per call, and keeps doing so until the audio is on the clock or
-    /// the drift has changed sign, not only until it is inside the window (B394); an underrun starts the same
-    /// correction for the frames it missed. Beyond ±100 ms it stays silent until the producer has
+    /// Follows the layer clock (`wantedPTS`): beyond ±20 ms it starts consuming more frames than it plays (audio
+    /// behind) or fewer (audio ahead), at most 96 more or fewer per call, resampled over the whole callback so the
+    /// waveform has no jump (B321), and keeps doing so until the audio is on the clock or the drift has changed sign,
+    /// not only until it is inside the window (B394); an underrun starts the same correction for the frames it missed.
+    /// Beyond ±100 ms it stays silent until the producer has
     /// resynced. The first pull of a segment (a start, a retrigger, a seek), and the first after the channel was
     /// inactive (a resume), land on the clock: when the audio is behind it by up to 100 ms they drop straight to it,
     /// since nothing of it has been heard yet, and the 28 to 35 ms between the producer's seek at the clock and the
@@ -369,7 +370,6 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// there are never heard. Silent and consuming nothing while inactive, and while the ring still holds the segment
     /// from before a jump or a hand-over to another file (B396), until the producer has started a new one.
     /// Real-time safe: no allocation, no locks, no logging.
-    /// ponytail: hard drop/repeat as DESIGN.md §10 specifies; interpolating over the callback would be click-free.
     public func pull(into left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>, frames: Int, wantedPTS: Double) {
         let generation = flushGeneration.load(ordering: .acquiring)
         if generation != appliedGeneration {
@@ -392,8 +392,9 @@ public final class LayerAudioChannel: @unchecked Sendable {
 
         let h = head.load(ordering: .relaxed)
         let available = tail.load(ordering: .acquiring) - h
-        var skip = 0
-        var repeats = 0
+        var skip = 0  // frames a landing cuts: never heard
+        var drops = 0  // a correction: frames played faster to catch up with the clock
+        var repeats = 0  // a correction: frames played slower to let the clock catch up
         var lead = 0  // frames of silence before the ring's first frame: a landing found the audio ahead of the clock
         if available > 0 {
             var drift = Self.frames(from: wrapped(pts(ofFrame: h) - wantedPTS) * Self.rate)  // < 0: audio is behind the clock
@@ -430,13 +431,13 @@ public final class LayerAudioChannel: @unchecked Sendable {
                 if (drift < 0) != (correcting < 0) {
                     correcting = 0  // the drift changed sign (a nudge overshot by the clock's jitter): done, no nudging back
                 } else if correcting < 0 {
-                    skip = min(Self.maxCorrectionFrames, -drift, available)
+                    drops = min(Self.maxCorrectionFrames, -drift, available)
                 } else {
                     repeats = min(Self.maxCorrectionFrames, drift, frames - 1)
                 }
                 if abs(drift) <= Self.maxCorrectionFrames { correcting = 0 }  // this pull puts the audio on the clock
             }
-            if skip > 0 || repeats > 0, drift != 0 { correctionCount.add(1, ordering: .relaxed) }
+            if drops > 0 || repeats > 0 { correctionCount.add(1, ordering: .relaxed) }
         }
 
         // Gains ramp linearly over the audible part of the callback so fades, pan moves and a resume do not zipper.
@@ -447,18 +448,30 @@ public final class LayerAudioChannel: @unchecked Sendable {
         let usable = available - skip
         var position = (h + skip) % Self.capacity
         var written = lead  // the silence of a landing that waits for the clock (the output is mixed into, so nothing to write)
-        if repeats > 0 && usable > 0 {
-            let l = storage[2 * position]
-            let r = storage[2 * position + 1]
-            while written < repeats {
+        var consumed = 0
+        let corrected = drops > 0 || repeats > 0
+        if corrected {
+            // B321: the correction is spread over the callback, a resample instead of a cut. `consumed` ring frames (the
+            // drop: the callback plus up to 96, the repeat: the callback less up to 96) are read at a constant step by
+            // linear interpolation into `outputs` frames, the first on the frame after the last one heard, the last on
+            // the last one consumed, so the waveform runs on without a jump: up to 2 ms faster or slower for one callback.
+            let outputs = drops > 0 ? min(frames, usable - drops) : min(frames, repeats + usable)
+            consumed = outputs - repeats + drops
+            let span = max(1, outputs - 1)
+            for k in 0..<outputs {
+                let i = k * (consumed - 1) / span  // integer position and fraction: the last output is exactly the last frame
+                let t = Float(k * (consumed - 1) % span) / Float(span)
+                let a = 2 * ((position + i) % Self.capacity)
+                let b = 2 * ((position + min(i + 1, consumed - 1)) % Self.capacity)
                 gainL += stepL
                 gainR += stepR
-                left[written] += l * gainL
-                right[written] += r * gainR
-                written += 1
+                left[k] += (storage[a] + t * (storage[b] - storage[a])) * gainL
+                right[k] += (storage[a + 1] + t * (storage[b + 1] - storage[a + 1])) * gainR
             }
+            written = outputs
         }
-        let toMix = min(frames - written, usable)
+        let toMix = corrected ? 0 : min(frames - written, usable)
+        consumed += toMix
         var remaining = toMix
         while remaining > 0 {
             let run = min(remaining, Self.capacity - position)
@@ -476,7 +489,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
             previousGainL = targetL
             previousGainR = targetR
         }
-        head.store(h + skip + toMix, ordering: .releasing)
+        head.store(h + skip + consumed, ordering: .releasing)
         if written < frames && !reachedEnd.load(ordering: .relaxed) {
             underrunCount.add(1, ordering: .relaxed)
             correcting = -1  // the frames that were not there are a lag now: nudged out, however short (B394)

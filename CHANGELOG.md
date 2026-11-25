@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Audio: a drift correction is spread over the callback instead of a hard drop or repeat (B321). Up to 2 ms more or
+  fewer of the ring is resampled by linear interpolation over the whole callback, so the waveform has no jump; the
+  old cut of up to 96 frames clicked on every correction (PR #N).
 - Playback: a file's first frame is its start position (B294). The loader asked the decoder for frame 0 at start,
   before the compositor's hand-off asked for the in point and the direction, so a cut to an in point flashed the last
   pre-decoded frame (3 at a ring of 4) and a reverse mode showed frame 0 for about ten frames. The decoder now decodes
