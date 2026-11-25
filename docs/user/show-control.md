@@ -258,13 +258,14 @@ stateDiagram-v2
 |---|---|
 | **Source**, **Device**, **Channel** | Off, LTC (audio input, with its channel) or MTC (MIDI source) |
 | **Offset (frames)** | Subtracted from the incoming time for every layer that chases, one value for the project; the line under it shows it in seconds at the current rate. Not applied to cue triggers |
+| **Start (hh:mm:ss:ff)** | The Offset as a timecode at the current rate: type the time the show timecode starts at and the Offset follows; a minus sign is allowed |
 | **Freewheel (s)** | How long a dropped signal is bridged before Lost; 2 to start, 0.1 at least |
 | **Timecode on/off** | The operator's switch; off, the engine treats the source as Off |
 
 Show timecode usually starts at 01:00:00:00. A layer that chases then
-needs an Offset of one hour (90000 frames at 25 fps), else it shows the
-file one hour in, wrapped; the triggers are written at 01:00:… whatever
-the Offset. A change of Source, Device, Channel or the switch restarts
+needs an Offset of one hour: type `01:00:00:00` in Start (90000 frames at
+25 fps), else it shows the file one hour in, wrapped; the triggers are
+written at 01:00:… whatever the Offset. A change of Source, Device, Channel or the switch restarts
 the input: the state drops to Off for a moment and comes back Locked.
 Offset and Freewheel apply at once. The
 settings are the programmer's and are refused while the show is locked,

@@ -17,6 +17,8 @@ import {
   midiParameterTarget,
   midiTargetText,
   refusalNote,
+  timecodeFrames,
+  timecodeText,
 } from './show';
 
 const cue = (id: string, number: number, extra: Partial<CueDoc> = {}): CueDoc => ({ id, number, name: `Cue ${number}`, fade: 0, values: [], ...extra });
@@ -192,6 +194,32 @@ describe('parseTrigger', () => {
     expect(parseTrigger('00:01:00;01@29.97df')).toMatchObject({ ok: false });
     expect(parseTrigger('00:10:00:00@29.97df')).toMatchObject({ ok: true });
     expect(parseTrigger('00:01:00:00@29.97ndf')).toMatchObject({ ok: true });
+  });
+});
+
+describe('timecode text and frames (the Start field)', () => {
+  it('counts frames as the engine does and writes them back, drop frame included', () => {
+    expect(timecodeFrames('01:00:00:00', '25')).toBe(90000);
+    expect(timecodeText(90000, '25')).toBe('01:00:00:00');
+    expect(timecodeFrames('1:0:0:0', '25')).toBe(90000);
+    expect(timecodeFrames('00:01:00;02', '29.97 DF')).toBe(1800);
+    expect(timecodeText(1800, '29.97 DF')).toBe('00:01:00;02');
+    expect(timecodeFrames('01:00:00;00', '29.97 DF')).toBe(107892);
+    expect(timecodeText(107892, '29.97 DF')).toBe('01:00:00;00');
+    expect(timecodeFrames('00:10:00;00', '29.97 DF')).toBe(17982);
+    expect(timecodeText(17982, '29.97 DF')).toBe('00:10:00;00');
+    expect(timecodeFrames('00:01:00:02', '29.97 NDF')).toBe(1802);
+    for (let n = 0; n < 400000; n += 977) expect(timecodeFrames(timecodeText(n, '29.97 DF'), '29.97 DF')).toBe(n);
+  });
+  it('keeps the sign and refuses what is not a timecode in range or at a known rate', () => {
+    expect(timecodeFrames('-00:00:01:00', '25')).toBe(-25);
+    expect(timecodeText(-25, '25')).toBe('−00:00:01:00');
+    expect(timecodeFrames('−00:00:01:00', '25')).toBe(-25);
+    expect(timecodeFrames('00:00:00:25', '25')).toBeNull();
+    expect(timecodeFrames('24:00:00:00', '25')).toBeNull();
+    expect(timecodeFrames('junk', '25')).toBeNull();
+    expect(timecodeFrames('01:00:00:00', '50')).toBeNull();
+    expect(timecodeText(25, '')).toBe('');
   });
 });
 
