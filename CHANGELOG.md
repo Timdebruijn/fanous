@@ -12,7 +12,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Audio: a layer's audio clock is stamped with the tick's target, the time its frame is shown, not the time of the
   tick (B320); its clock ran that lead (about 16.7 ms at 60 Hz) ahead of the picture. The output path's own latency
-  is still not compensated (B406) (PR #N).
+  is still not compensated (B406) (PR #457).
 - Playback: a file's first frame is its start position (B294). The loader asked the decoder for frame 0 at start,
   before the compositor's hand-off asked for the in point and the direction, so a cut to an in point flashed the last
   pre-decoded frame (3 at a ring of 4) and a reverse mode showed frame 0 for about ten frames. The decoder now decodes
