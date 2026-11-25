@@ -97,6 +97,13 @@ export const TRIGGER_HINT = 'hh:mm:ss:ff@rate, for example 00:01:30:00@25 (rates
 
 export type TriggerResult = { ok: true; value: string | null } | { ok: false; error: string };
 
+/** The timecode showing now as a trigger (`hh:mm:ss:ff@rate`, the engine's spelling), for the cue editor's Now
+ * button; null while timecode is off or the live rate names none of the trigger rates. */
+export function currentTrigger(live: Pick<LiveDoc['timecode'], 'state' | 'value' | 'rate'>): string | null {
+  const rate = TRIGGER_RATES.find((r) => r.engine === live.rate);
+  return live.state === 'off' || !rate ? null : `${live.value}@${rate.engine}`;
+}
+
 /**
  * Empty = no trigger. Otherwise `hh:mm:ss:ff` with an optional `@rate` (25 when left out), `;` allowed before the frames.
  * The result is padded and carries the rate in the spelling the engine parses, so a typo cannot become a trigger that

@@ -17,6 +17,7 @@ import {
   midiParameterTarget,
   midiTargetText,
   refusalNote,
+  currentTrigger,
 } from './show';
 
 const cue = (id: string, number: number, extra: Partial<CueDoc> = {}): CueDoc => ({ id, number, name: `Cue ${number}`, fade: 0, values: [], ...extra });
@@ -192,6 +193,15 @@ describe('parseTrigger', () => {
     expect(parseTrigger('00:01:00;01@29.97df')).toMatchObject({ ok: false });
     expect(parseTrigger('00:10:00:00@29.97df')).toMatchObject({ ok: true });
     expect(parseTrigger('00:01:00:00@29.97ndf')).toMatchObject({ ok: true });
+  });
+});
+
+describe('currentTrigger', () => {
+  it('spells the timecode showing now as a trigger in the engine rate spelling, and nothing while off', () => {
+    expect(currentTrigger({ state: 'locked', value: '01:00:12:05', rate: '29.97 DF' })).toBe('01:00:12:05@29.97 DF');
+    expect(currentTrigger({ state: 'freewheel', value: '01:00:12:05', rate: '25' })).toBe('01:00:12:05@25');
+    expect(currentTrigger({ state: 'off', value: '--:--:--:--', rate: '25' })).toBeNull();
+    expect(currentTrigger({ state: 'locked', value: '01:00:12:05', rate: '' })).toBeNull();
   });
 });
 
