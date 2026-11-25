@@ -24,13 +24,7 @@ struct OutputPassTests {
         var pixels = [UInt8](repeating: value, count: w * h * 4)
         if let right { for i in pixels.indices where i % (w * 4) >= w * 2 { pixels[i] = right } }
         for i in stride(from: 3, to: pixels.count, by: 4) { pixels[i] = 255 }  // opaque
-        let texture = try MovieSource.makeTexture(device, .rgba8Unorm, w, h)
-        pixels.withUnsafeBytes { texture.replace(region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: w * 4) }
-        let frame = DecodedFrame(poolIndex: 0)
-        frame.kind = .rgba
-        frame.frameIndex = 0
-        frame.texture0 = texture
-        return frame
+        return try .rgba(device, w, h, pixels)
     }
 
     /// Renders one output plan over the given still into a `drawable`-sized offscreen target; BGRA bytes.
@@ -46,10 +40,7 @@ struct OutputPassTests {
         compositor.outputSet = plan.map { OutputSet(plans: [$0]) }
         parameters.write { slot in
             slot.sequence = 1
-            slot.layers[0].intensity = 1
-            slot.layers[0].folder = 1
-            slot.layers[0].file = 1
-            slot.layers[0].fitMode = .stretch
+            slot.layers[0].play()
             for (i, o) in outputs.enumerated() where i < slot.outputs.count { slot.outputs[i] = o }
             master(slot)
         }
@@ -167,10 +158,7 @@ struct OutputPassTests {
             func write(sequence: UInt64, layerIntensity: Float) {
                 parameters.write { slot in
                     slot.sequence = sequence
-                    slot.layers[0].intensity = layerIntensity
-                    slot.layers[0].folder = 1
-                    slot.layers[0].file = 1
-                    slot.layers[0].fitMode = .stretch
+                    slot.layers[0].play(intensity: layerIntensity)
                     slot.outputs[0] = fixture
                 }
             }
@@ -216,10 +204,7 @@ struct OutputPassTests {
             sequence += 1
             parameters.write { slot in
                 slot.sequence = sequence
-                slot.layers[0].intensity = layerIntensity
-                slot.layers[0].folder = 1
-                slot.layers[0].file = 1
-                slot.layers[0].fitMode = .stretch
+                slot.layers[0].play(intensity: layerIntensity)
                 slot.outputs[0] = fixture
             }
             compositor.tick(target: target, drawable: nil)
@@ -438,10 +423,7 @@ struct OutputPassTests {
             slot.sequence = 1
             slot.master = master
             for (i, layer) in layers.enumerated() {
-                slot.layers[i].intensity = 1
-                slot.layers[i].folder = 1
-                slot.layers[i].file = UInt8(i + 1)
-                slot.layers[i].fitMode = .stretch
+                slot.layers[i].play(file: UInt8(i + 1))
                 layer.edit(&slot.layers[i])
             }
         }
@@ -530,10 +512,7 @@ struct OutputPassTests {
             sequence += 1
             parameters.write { [sequence] slot in
                 slot.sequence = sequence
-                slot.layers[0].intensity = layer
-                slot.layers[0].folder = 1
-                slot.layers[0].file = 1
-                slot.layers[0].fitMode = .stretch
+                slot.layers[0].play(intensity: layer)
                 slot.outputs[0].control = control
                 slot.outputs[0].raw = raw
                 slot.keystones[0] = keystone
@@ -556,8 +535,7 @@ struct OutputPassTests {
             #expect(compositor.encodePresent(set, into: target, uniforms: uniforms, scratch: scratch, at: now, commandBuffer: commandBuffer))
             commandBuffer.commit()
             commandBuffer.waitUntilCompleted()
-            var bgra = [UInt8](repeating: 0, count: width * height * 4)
-            target.getBytes(&bgra, bytesPerRow: width * 4, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+            let bgra = target.bytes()
             return Int(bgra[(at.y * width + at.x) * 4 + 1])
         }
         /// What a secondary driver keeps between frames.
@@ -1327,14 +1305,12 @@ struct OutputPassTests {
         _ = await waitUntil(every: .zero) {
             // a fresh compiler each try: one compiler's cache would hand back the warm-up's textures (§9.10 item 0)
             let fresh = OutputCompiler(device: context.device)
-            let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
             do {
-                _ = try fresh.compile(o, index: 1, drawable: (1920, 1080))
+                ms = min(ms, try cpuMillis { _ = try fresh.compile(o, index: 1, drawable: (1920, 1080)) })
             } catch {
                 Issue.record(error)
                 return true  // a failed compile is no timing
             }
-            ms = min(ms, Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e6)
             return ms < 250
         }
         #expect(plan.warpField?.width == 480)

@@ -19,13 +19,6 @@ import Testing
 @Suite(.serialized) struct ListenerRecoveryTests {
     static let fast = (first: 0.01, max: 0.04)
 
-    /// A UDP socket bound without SO_REUSEPORT on a port the kernel picks: a listener on that port fails.
-    static func holdUDP() throws -> (fd: Int32, port: UInt16) {
-        let fd = socket(AF_INET, SOCK_DGRAM, 0)
-        try #require(withSockaddr { bind(fd, $0, $1) } == 0)
-        return (fd, try #require(UDPSend.localPort(fd)))
-    }
-
     static func capture() -> (Logger, HTTPSServerLogTests.Lines) {
         let lines = HTTPSServerLogTests.Lines()
         return (Logger(label: "test") { _ in HTTPSServerLogTests.Capture(lines: lines) }, lines)
@@ -34,7 +27,7 @@ import Testing
     /// The Art-Net listener failed at start on a held port; once the holder lets go, it listens again on that port by
     /// itself and readiness turns green. On the old code the failure stayed until a restart: no reply ever came.
     @Test func aFailedArtNetListenerListensAgainOnItsPort() async throws {
-        let holder = try Self.holdUDP()
+        let holder = try holdUDP()
         var held = true
         defer { if held { close(holder.fd) } }
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
@@ -54,7 +47,7 @@ import Testing
     /// The same for OSC: the UDP listener failed on a held port, readiness names it, and once the port is free a ping
     /// is answered on it.
     @Test func aFailedOSCListenerListensAgainAndReadinessShowsIt() async throws {
-        let holder = try Self.holdUDP()
+        let holder = try holdUDP()
         var held = true
         defer { if held { close(holder.fd) } }
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
@@ -93,7 +86,7 @@ import Testing
     /// Failures in a row wait 10, 20, 40, 40 … ms (at least: a timer never fires early) and log one line; once a listener
     /// was ready, the next failure logs again, also with the same text. `make` counts the attempts.
     @Test func repeatedFailuresBackOffAndLogOncePerChange() async throws {
-        let holder = try Self.holdUDP()
+        let holder = try holdUDP()
         var held = true
         defer { if held { close(holder.fd) } }
         let (logger, lines) = Self.capture()
@@ -137,7 +130,7 @@ import Testing
 
     /// `stop()` while a failed listener waits for its next attempt: no attempt follows, nothing holds the port.
     @Test func stopDuringTheBackoffMakesNoListener() async throws {
-        let holder = try Self.holdUDP()
+        let holder = try holdUDP()
         var held = true
         defer { if held { close(holder.fd) } }
         let attempts = Mutex(0)
@@ -166,7 +159,7 @@ import Testing
     /// CITP would start its beacon and HTTPS register `_https._tcp` again with nothing left to cancel them. Only
     /// `.cancelled` passes. Driven through the handler: the order of a real retry and a stop cannot be forced.
     @Test func statesAfterStopReachOnlyCancelled() async throws {
-        let picked = try Self.holdUDP()  // a free port, picked by the kernel
+        let picked = try holdUDP()  // a free port, picked by the kernel
         close(picked.fd)
         let queue = DispatchQueue(label: "test.listener")
         let seen = Mutex<[String]>([])
@@ -192,7 +185,7 @@ import Testing
     /// the subscriber's among them, are cancelled; the new listener takes datagrams on the same port, and once the
     /// controller sends again its feedback comes from the OSC port, on its new flow.
     @Test func aSubscriberGetsFeedbackAgainAfterARecreate() async throws {
-        let picked = try Self.holdUDP()  // a free port, picked by the kernel
+        let picked = try holdUDP()  // a free port, picked by the kernel
         close(picked.fd)
         let port = picked.port
         let box = OSCFeedbackServerTests.StateBox()

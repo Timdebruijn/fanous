@@ -12,6 +12,11 @@ import Testing
 
 @testable import FanousEngine
 
+extension ShowCommands.Hooks {
+    /// Hooks that do nothing: the commands alone.
+    static let noop = Self(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {})
+}
+
 @Suite(.cleansTempFiles)
 struct ShowControlTests {
 
@@ -300,8 +305,7 @@ struct ShowControlTests {
     /// B150: a numberless cue.add is cue 0 and is refused like any other number once cue 0 exists.
     @Test func numberlessCueAddIsCueZeroOnce() throws {
         let (store, _) = testStore(outputs: 0)
-        ShowCommands.register(
-            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {}))
+        ShowCommands.register(on: store, hooks: .noop)
         _ = try store.execute("cue.add", args: ["name": "first"], role: .programmer).get()
         #expect(store.execute("cue.add", args: ["name": "second"], role: .programmer).failureCode == "invalidArgs")
         #expect(store.execute("cue.add", args: ["number": 0, "name": "zero"], role: .programmer).failureCode == "invalidArgs")
@@ -369,8 +373,7 @@ struct ShowControlTests {
     /// The command refuses a key that is not the canonical spelling of a layer number, in the form of other refused values.
     @Test func timecodeSetRefusesNonCanonicalLayerKeys() throws {
         let (store, _) = testStore(outputs: 0)
-        ShowCommands.register(
-            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {}))
+        ShowCommands.register(on: store, hooks: .noop)
         let refused: [(String, JSONValue)] = [("/layerOffsets", ["1": 0, "01": 5]), ("/layerOffsets/01", 5), ("/layerOffsets/+3", 5), ("/layerOffsets/x", 5)]
         for (path, value) in refused {
             #expect(store.execute("timecode.set", args: ["path": .string(path), "value": value], role: .programmer).failureCode == "invalidArgs", "\(path)")
@@ -387,8 +390,7 @@ struct ShowControlTests {
         let stored: JSONValue = ["source": "off", "channel": 0, "offset": 0, "freewheel": 2, "layerOffsets": ["01": 5]]
         try project.set(stored, at: "/timecode")
         let (store, _) = testStore(project: project)
-        ShowCommands.register(
-            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {}))
+        ShowCommands.register(on: store, hooks: .noop)
         _ = try store.execute("timecode.set", args: ["path": "/source", "value": "mtc"], role: .programmer).get()
         #expect(ShowCommands.timecodeSettings(from: store.project).source == .mtc)
         #expect(ShowCommands.timecodeSettings(from: store.project).layerOffsets == ["01": 5])
@@ -418,8 +420,7 @@ struct ShowControlTests {
         }
         #expect(ShowCommands.parseTimecode("00:01:30:00@29.97") == nil)
         let (store, _) = testStore(outputs: 0)
-        ShowCommands.register(
-            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {}))
+        ShowCommands.register(on: store, hooks: .noop)
         #expect(store.execute("cue.add", args: ["number": 1, "name": "typo", "trigger": "00:01:30:00@29.97"], role: .programmer).failureCode == "invalidArgs")
         #expect(store.execute("cue.add", args: ["number": 2, "name": "short", "trigger": "01:30:00"], role: .programmer).failureCode == "invalidArgs")
         _ = try store.execute("cue.add", args: ["number": 3, "name": "ndf", "trigger": "00:01:30:00@29.97ndf"], role: .programmer).get()
@@ -432,8 +433,7 @@ struct ShowControlTests {
     /// stored by an older build still loads every cue with that trigger armed as before.
     @Test func cueTriggerFieldRanges() throws {
         let (store, _) = testStore(outputs: 0)
-        ShowCommands.register(
-            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {}))
+        ShowCommands.register(on: store, hooks: .noop)
         let bad = [
             "00:00:00:99@25", "25:00:00:00@25", "00:60:00:00", "00:00:60:00", "00:00:00:25@25", "00:00:00:24@24", "00:00:00:30@30",
             "00:01:00:00@29.97df", "00:01:00:01@29.97df",
@@ -491,8 +491,7 @@ struct ShowControlTests {
 
     @Test func cueTriggerSpellingsMatchTheWeb() throws {
         let (store, _) = testStore(outputs: 0)
-        ShowCommands.register(
-            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {}))
+        ShowCommands.register(on: store, hooks: .noop)
         for (i, row) in Self.triggerSpellings.enumerated() {
             let result = store.execute("cue.add", args: ["number": .number(Double(i + 1)), "name": "t", "trigger": .string(row[0])], role: .programmer)
             #expect((result.failureCode == nil) == (row[1] == "accept"), "\(row[0].debugDescription) \(row[1])")
@@ -528,8 +527,7 @@ struct ShowControlTests {
         #expect(ShowCommands.cueList(from: project).cues.map(\.timecodeTrigger) == old.map(\.1))
 
         let (store, _) = testStore(outputs: 0, project: project)
-        ShowCommands.register(
-            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _, _ in }, runReadiness: {}))
+        ShowCommands.register(on: store, hooks: .noop)
         let first = try #require(store.project["cues"]?.array?.first)
         var renamed = first
         try renamed.set("new name", at: "/name")

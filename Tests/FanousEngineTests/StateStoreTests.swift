@@ -184,13 +184,6 @@ struct StateStoreTests {
     }
 }
 
-extension Result where Success == CommandResult, Failure == CommandError {
-    var failureCode: String? {
-        if case .failure(let error) = self { return error.code }
-        return nil
-    }
-}
-
 extension StateStoreTests {
     /// DESIGN.md §6.6: `projectChanged` hands the DMX store the fixtures that exist as well as the patch. Layer 9 lands on
     /// the Master's slot and stays unpatched, so the patch does not change, yet Layer 9 gets a resolver and plays from
@@ -832,11 +825,7 @@ extension StateStoreTests {
         ]
         for c in bad {
             let result = store.execute("patch.setMany", args: Self.entries(c.entries), role: .programmer)
-            guard case .failure(let error) = result else {
-                Issue.record("accepted \(c.entries)")
-                continue
-            }
-            #expect(error.code == "invalidArgs" && error.message.hasPrefix(c.message), "\(error.message)")
+            #expect(result.failureCode == "invalidArgs" && result.failureMessage?.hasPrefix(c.message) == true, "\(c.entries): \(result)")
         }
         #expect(store.execute("patch.setMany", args: ["entries": "Layer 1"], role: .programmer).failureCode == "invalidArgs")
         #expect(ProjectDocument.patch(from: store.project) == before && store.historyDepth == (0, 1), "refused batches change nothing")
@@ -857,11 +846,8 @@ extension StateStoreTests {
             return store.execute(command, args: command == "patch.set" ? args : ["entries": [args]], role: .programmer)
         }
         for command in ["patch.set", "patch.setMany"] {
-            guard case .failure(let error) = run(command, "Layer 3", 1) else {
-                Issue.record("\(command) patched Layer 3 above the count")
-                continue
-            }
-            #expect(error.message.contains("there is no layer 3: the project has 2 layers"), "\(error.message)")
+            let message = try #require(run(command, "Layer 3", 1).failureMessage, "\(command) patched Layer 3 above the count")
+            #expect(message.contains("there is no layer 3: the project has 2 layers"), "\(message)")
             #expect(run(command, "Layer 40", 1).failureCode == "invalidArgs")
             #expect(run(command, "Layer 2", 1).failureCode == nil)
             // address 0 removes the stale entry; undo brings it back for the next round
@@ -874,11 +860,7 @@ extension StateStoreTests {
         // layers above 32 never render: they get no address, also from layers.setCount
         _ = try store.execute("layers.setCount", args: ["count": 40], role: .programmer).get()
         #expect(Self.layers(store).keys.max() == 32)
-        guard case .failure(let error) = run("patch.set", "Layer 33", 1) else {
-            Issue.record("Layer 33 patched")
-            return
-        }
-        #expect(error.message == "console control covers layers 1–32")
+        #expect(run("patch.set", "Layer 33", 1).failureMessage == "console control covers layers 1–32")
     }
 
     @Test func aNewLayerGoesOnItsSlot() throws {

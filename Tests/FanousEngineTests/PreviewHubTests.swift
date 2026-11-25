@@ -217,13 +217,7 @@ import Testing
 
     /// A solid-colour still for a layer (RGBA 8-bit).
     static func solid(_ context: MetalContext, _ rgba: [UInt8], file: Int) throws -> LayerPlayback {
-        let texture = try #require(context.device.makeTexture(descriptor: .texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 16, height: 9, mipmapped: false)))
-        texture.replace(region: MTLRegionMake2D(0, 0, 16, 9), mipmapLevel: 0, withBytes: Array(Array(repeating: rgba, count: 16 * 9).joined()), bytesPerRow: 64)
-        let frame = DecodedFrame(poolIndex: 0)
-        frame.frameIndex = 0
-        frame.kind = .rgba
-        frame.texture0 = texture
-        return LayerPlayback(key: MediaKey(folder: 1, file: file), still: frame)
+        LayerPlayback(key: MediaKey(folder: 1, file: file), still: try .rgba(context.device, 16, 9, Array(Array(repeating: rgba, count: 16 * 9).joined())))
     }
 
     /// RGBA (0…255) of one pixel of a canvas-format texture; blocks on the GPU.
@@ -287,10 +281,7 @@ import Testing
                 slot.sequence = sequence
                 for i in 0..<2 {
                     slot.layers[i] = LayerParameters()
-                    slot.layers[i].intensity = 1
-                    slot.layers[i].folder = 1
-                    slot.layers[i].file = UInt8(i + 1)
-                    slot.layers[i].fitMode = .stretch
+                    slot.layers[i].play(file: UInt8(i + 1))
                 }
                 slot.layers[1].scaleX = 0.5
                 slot.layers[1].scaleY = 0.5

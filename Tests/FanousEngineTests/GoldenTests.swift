@@ -142,13 +142,7 @@ struct GoldenTests {
                 pixels[i + 3] = UInt8((a * 255).rounded())
             }
         }
-        let texture = try MovieSource.makeTexture(device, .rgba8Unorm, w, h)
-        pixels.withUnsafeBytes { texture.replace(region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: w * 4) }
-        let frame = DecodedFrame(poolIndex: 0)
-        frame.kind = .rgba
-        frame.frameIndex = 0
-        frame.texture0 = texture
-        return frame
+        return try .rgba(device, w, h, pixels)
     }
 
     static func hsv(_ h: Double, _ s: Double, _ v: Double) -> (Double, Double, Double) {
@@ -204,8 +198,7 @@ struct GoldenTests {
         if let outputTexture {
             // wait for the GPU (readback() below does the same through its own command buffer)
             _ = compositor.readback()
-            var bgra = [UInt8](repeating: 0, count: width * height * 4)
-            outputTexture.getBytes(&bgra, bytesPerRow: width * 4, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+            var bgra = outputTexture.bytes()
             for i in stride(from: 0, to: bgra.count, by: 4) { bgra.swapAt(i, i + 2) }
             return (width, height, bgra)
         }

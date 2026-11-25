@@ -65,9 +65,8 @@ struct EditOverlayTests {
         let huge = EditOverlay.segments(o, selected: OverlaySelection(kind: .corner, point: 0))
         #expect(huge.count == EditOverlay.maxSegments && huge.suffix(6).allSatisfy { $0.flags & 1 != 0 }, "four arms and a 1")
         o.slices[0].masks = [MaskShape(feather: 0, path: (0..<1000).map { $0.isMultiple(of: 2) ? MaskPoint(0, 0) : MaskPoint(1e7, 1e7) })]
-        let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
-        let far = EditOverlay.segments(o, selected: OverlaySelection(kind: .corner, point: 0))
-        let ms = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e6
+        var far: [OverlaySegment] = []
+        let ms = cpuMillis { far = EditOverlay.segments(o, selected: OverlaySelection(kind: .corner, point: 0)) }
         #expect(far.count == EditOverlay.maxSegments && far.suffix(6).allSatisfy { $0.flags & 1 != 0 })
         #expect(ms < 100, "\(ms) ms of CPU")
     }
@@ -133,7 +132,7 @@ struct EditOverlayTests {
             ["slice": 0, "kind": "edge", "point": 0], ["slice": 0, "kind": "mesh", "point": -1], ["slice": 0, "kind": "mesh", "point": 1.5],
             ["kind": "corner", "point": 0], ["slice": 0, "kind": "mask", "mask": "x", "point": 0], ["slice": 0, "kind": "mask", "mask": -1, "point": 0],
         ] as [JSONValue] {
-            if case .failure(let error) = run(["id": 1, "on": true, "selected": selected]) { #expect(error.code == "invalidArgs", "\(selected)") } else { Issue.record("accepted \(selected)") }
+            #expect(run(["id": 1, "on": true, "selected": selected]).failureCode == "invalidArgs", "\(selected)")
         }
         #expect(run(["id": 1]) == .failure(.invalidArgs("args: { id, on, selected? }")))
         machine.showMode.withLock { $0 = true }

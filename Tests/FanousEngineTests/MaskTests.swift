@@ -250,9 +250,8 @@ struct MaskTests {
         func median(_ masks: [MaskShape]) -> Double {
             var times: [Double] = []
             for _ in 0..<5 {
-                let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
-                let raster = OutputCompiler.maskRaster(masks, width: 3840, height: 2160) { _ in nil }
-                times.append(Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e6)
+                var raster = (width: 0, height: 0, bytes: [UInt8]())
+                times.append(cpuMillis { raster = OutputCompiler.maskRaster(masks, width: 3840, height: 2160) { _ in nil } })
                 #expect(raster.bytes.count == raster.width * raster.height)
             }
             return times.sorted()[times.count / 2]
@@ -282,20 +281,15 @@ struct MaskTests {
         let (w, h) = (3840, 2160)
         try Self.writeGrey((0..<(w * h)).map { UInt8(($0 % w) * 255 / w) ^ UInt8(($0 / w) & 0x3f) }, width: w, height: h, to: url)
         let device = try MetalContext().device
-        func cpu(_ body: () throws -> Void) rethrows -> Double {
-            let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
-            try body()
-            return Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e6
-        }
         var config = OutputConfig(id: 1)
         config.slices[0].masks = [MaskShape(mode: .subtract, image: MaskImage(folder: 1, file: 1)), MaskShape(path: Self.square(0.1, 0.1, 0.9, 0.9))]
         let compiler = OutputCompiler(device: device, media: { _ in url })
         var plan = try compiler.compile(config, index: 1, drawable: (w, h))
-        let first = try cpu { plan = try OutputCompiler(device: device, media: { _ in url }).compile(config, index: 1, drawable: (w, h)) }
+        let first = try cpuMillis { plan = try OutputCompiler(device: device, media: { _ in url }).compile(config, index: 1, drawable: (w, h)) }
         var steps: [Double] = []
         for i in 1...5 {
             config.slices[0].masks[1].path?[2] = MaskPoint(0.9 - Double(i) / 100, 0.9)
-            steps.append(try cpu { plan = try compiler.compile(config, index: 1, drawable: (w, h)) })
+            steps.append(try cpuMillis { plan = try compiler.compile(config, index: 1, drawable: (w, h)) })
         }
         let step = steps.sorted()[2]
         print(String(format: "4K image mask beside a path mask: first compile %.1f ms CPU, a drag step %.1f ms (median of 5)", first, step))
@@ -343,12 +337,7 @@ struct MaskTests {
         let compiler = OutputCompiler(device: device, media: { _ in file.withLock { $0 } })
         var config = OutputConfig(id: 1)
         config.slices[0].masks = [MaskShape(image: MaskImage(folder: 4, file: 2)), MaskShape(mode: .subtract, path: Self.square(0, 0, 0.25, 0.25))]
-        func bytes(_ texture: MTLTexture?) throws -> [UInt8] {
-            let texture = try #require(texture)
-            var out = [UInt8](repeating: 0, count: texture.width * texture.height)
-            texture.getBytes(&out, bytesPerRow: texture.width, from: MTLRegionMake2D(0, 0, texture.width, texture.height), mipmapLevel: 0)
-            return out
-        }
+        func bytes(_ texture: MTLTexture?) throws -> [UInt8] { try #require(texture).bytes() }
         let first = try compiler.compile(config, index: 1, drawable: (32, 16))
         #expect(try bytes(first.slices[0].mask)[8 * 32 + 16] == 255 && bytes(first.slices[0].mask)[0] == 0)
         #expect(try compiler.compile(config, index: 1, drawable: (32, 16)).slices[0] === first.slices[0], "the same file: a hit")
@@ -389,12 +378,7 @@ struct MaskTests {
         let compiler = OutputCompiler(device: try MetalContext().device, media: { library.still(MediaKey(folder: $0.folder, file: $0.file)) })
         var config = OutputConfig(id: 1)
         config.slices[0].masks = [MaskShape(mode: .subtract, image: MaskImage(folder: 3, file: 5))]
-        func centre(_ plan: OutputPlan) throws -> UInt8 {
-            let texture = try #require(plan.slices[0].mask)
-            var out = [UInt8](repeating: 0, count: texture.width * texture.height)
-            texture.getBytes(&out, bytesPerRow: texture.width, from: MTLRegionMake2D(0, 0, texture.width, texture.height), mipmapLevel: 0)
-            return out[8 * 16 + 8]
-        }
+        func centre(_ plan: OutputPlan) throws -> UInt8 { try #require(plan.slices[0].mask).bytes()[8 * 16 + 8] }
         let before = try compiler.compile(config, index: 1, drawable: (16, 16))
         #expect(try centre(before) == 0, "the door is cut out")
         // saved again as a darker picture, and scanned as FSEvents makes the library do: probing again

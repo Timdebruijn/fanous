@@ -36,9 +36,7 @@ import Testing
             parameters.write { slot in
                 slot.sequence = 1
                 for i in 0..<count { slot.layers[i].intensity = 1 }  // without media still nothing to show
-                slot.layers[grid].folder = 0
-                slot.layers[grid].file = 101
-                slot.layers[grid].fitMode = .stretch
+                slot.layers[grid].play(folder: 0, file: 101)
             }
             hub = try PreviewHub(make: PreviewHubTests.make(context, parameters)) { _ in (320, 180) }
             thumbnails = try ThumbnailStreamer(context: context, compositor: compositor)

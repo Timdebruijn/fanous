@@ -16,13 +16,6 @@ struct DMXStateBoundsTests {
 
     static func cid(_ n: Int) -> [UInt8] { [UInt8](repeating: 0xEE, count: 12) + withUnsafeBytes(of: UInt32(n).bigEndian, Array.init) }
 
-    static func milliseconds(_ body: () -> Void) -> Double {
-        let start = ContinuousClock.now
-        body()
-        let elapsed = ContinuousClock.now - start
-        return (Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18) * 1000
-    }
-
     static func store(_ patch: Patch, _ lines: HTTPSServerLogTests.Lines) -> DMXStore {
         DMXStore(patch: patch, logger: Logger(label: "test") { _ in HTTPSServerLogTests.Capture(lines: lines) })
     }
@@ -34,28 +27,22 @@ struct DMXStateBoundsTests {
     }
 
     /// Layer 1 is on A 0.0.0. The desk sends there; then one burst names every sACN universe, each from its own source.
-    /// Times are printed, not asserted (machines differ); counts are asserted.
     @Test func aBurstOfUniversesLeavesBoundedStateAndLog() {
         let lines = HTTPSServerLogTests.Lines()
         let store = Self.store(.standard(layers: 1, outputs: 1), lines)
-        var before = (snapshot: 0.0, tick: 0.0)
-        var after = before
         store.queue.sync {
             store.receive(artnet: ArtDmx(portAddress: 0, data: [10, 0]), from: "desk", at: 0)
-            before.tick = Self.milliseconds { store.tick(at: 0.1) }
+            store.tick(at: 0.1)
         }
-        before.snapshot = Self.milliseconds { _ = store.snapshot(at: 0.1) }
         store.queue.sync {
             for universe in 1...63999 {
                 store.receive(sacn: SACNData(cid: Self.cid(universe), sourceName: "burst \(universe)", universe: UInt16(universe), slots: [1]), at: 0.5)
             }
-            after.tick = Self.milliseconds { store.tick(at: 1) }
+            store.tick(at: 1)
         }
-        after.snapshot = Self.milliseconds { _ = store.snapshot(at: 1) }
         let universes = store.snapshot(at: 1).universes.count
         let receiving = Self.count(lines, "DMX receiving")
         let limits = Self.count(lines, "DMX limits reached")
-        print("B271 burst: \(universes) universes, \(receiving) receiving lines, \(limits) limit lines; snapshot \(before.snapshot) → \(after.snapshot) ms, tick \(before.tick) → \(after.tick) ms")
         #expect(universes <= 256 + store.currentPatch.universes.count, "\(universes) universes in the live document")
         #expect(receiving <= 256 + 1, "\(receiving) receiving lines")
         #expect(limits == 1, "\(limits) limit lines")
@@ -248,27 +235,5 @@ struct DMXStateBoundsTests {
         store.setPatch(Patch(entries: store.currentPatch.entries + [PatchEntry(fixture: .layer(2), universe: UniverseID(.sacn, 5000), address: 1)]))
         store.queue.sync { store.receive(sacn: SACNData(cid: Self.desk, sourceName: "desk", universe: 5000, slots: [1]), at: 0.1) }
         #expect(store.snapshot(at: 0.1).universes.contains { $0.id == "sacn:5000" && $0.active })
-    }
-
-    /// Allocations of 100 packets from a known source on a patched universe, with 1 and with 16 sources tracked there.
-    /// Printed, not asserted: the padded slots, the routing arrays and the source name still allocate per packet (B307).
-    @Test(.mallocCounter) func printKnownSourcePacketMallocs() throws {
-        try requireMallocCounter()
-        for sources in [1, 16] {
-            let store = Self.store(.standard(layers: 1, outputs: 1, transport: .sacn), HTTPSServerLogTests.Lines())
-            let packets = (1...100).map { SACNData(cid: Self.cid(1), sourceName: "desk", sequence: UInt8($0), universe: 1, slots: [77, 0]) }
-            var mallocs = 0
-            store.queue.sync {
-                for n in 1...sources { store.receive(sacn: SACNData(cid: Self.cid(n), sourceName: "desk", universe: 1, slots: [77, 0]), at: 0) }
-                mallocs = MallocCounter.count {
-                    var i = 0
-                    while i < packets.count {
-                        store.receive(sacn: packets[i], at: 0.1)
-                        i += 1
-                    }
-                }
-            }
-            print("B271 known-source packets × 100 with \(sources) sources: \(mallocs) allocations")
-        }
     }
 }

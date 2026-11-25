@@ -2,7 +2,6 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
-import CoreVideo
 import Foundation
 import Metal
 import Testing
@@ -17,15 +16,7 @@ struct MovieSourceSmallFrameTests {
     @Test func tinyProResOpensAndDecodes() async throws {
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         let url = try tempDir("fanous-tiny").appending(path: "tiny.mov")
-        try await offPool {
-            let writer = try MovieWriter(url: url, width: 64, height: 48, fps: 25, codec: .proRes422)
-            let buffer = try writer.makePixelBuffer()
-            CVPixelBufferLockBaseAddress(buffer, [])
-            memset(CVPixelBufferGetBaseAddress(buffer), 0x80, CVPixelBufferGetBytesPerRow(buffer) * 48)
-            CVPixelBufferUnlockBaseAddress(buffer, [])
-            for _ in 0..<3 { try writer.append(buffer) }
-            try writer.finish()
-        }
+        try await writePatternMovie(to: url, size: (64, 48), fps: 25, frames: 3, codec: .proRes422)
         let source = try await MovieSource.open(url: url, device: device, poolSize: 2)
         #expect(source.info.width == 64 && source.info.height == 48 && source.info.frameCount == 3)
         let slot = DecodedFrame(poolIndex: 0)

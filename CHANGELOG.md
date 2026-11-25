@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Tests: copies across the engine suites share one helper each (a loader rig, texture bytes, a CPU stopwatch, a
+  started ingest queue, command refusals, a decoded RGBA still), and a test that printed allocations without asserting
+  them is gone (PR #N).
 - Sync: a slave's audio reseeks when its master is retriggered (B395). The slave's clock followed the jump at
   once, but its audio was nudged towards the new clock 2 ms per callback (a jump of 20 to 100 ms; under 20 ms
   the lead stayed) instead of reseeked like the master's own. A locked tick that moves the clock by more than

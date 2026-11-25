@@ -181,12 +181,9 @@ struct ScreenInputTests {
     /// display says so; the factory's refusal (no screen grant) is the layer's text.
     @Test func loaderResolvesNumberedDisplaysToOneSharedInput() async throws {
         let context = try MetalContext(), device = context.device
-        let layers = (0..<4).map { RenderLayer(index: $0) }
-        let loader = MediaLoader(
-            layers: layers, media: [MediaEntry(folder: 0, file: 24, screen: "uuid-scene")], device: device, ringCapacity: 4, logger: testLogger)
         let catalog = LiveCatalog(.screens)
-        catalog.onChange = { [loader] in loader.changed(.screens) }
-        loader.screensCatalog = catalog
+        let rig = LoaderRig<CaptureInput>(device, layers: 4, media: [MediaEntry(folder: 0, file: 24, screen: "uuid-scene")], catalog: catalog)
+        let loader = rig.loader
         let displays = [Self.display(1, "uuid-a", "Built-in Retina Display"), Self.display(2, "uuid-b", "DELL U2720Q")]
         catalog.update(running: LiveCatalog.screens(displays, bound: []))
         let opened = Mutex<[String]>([]), refuse = Atomic<Bool>(false)
@@ -197,12 +194,7 @@ struct ScreenInputTests {
         }
         loader.start()
         defer { loader.stop() }
-        func playback(_ i: Int) -> CaptureInput? { layers[i].pending.withLock { $0.playback?.live as? CaptureInput } }
-        func status(_ i: Int) -> LayerMediaStatus { layers[i].mediaStatus.withLock { $0 } }
-        func select(_ i: Int, _ file: Int) {
-            layers[i].wanted.store(MediaKey(folder: 0, file: file).packed, ordering: .relaxed)
-            loader.wake.signal()
-        }
+        let (playback, status, select) = (rig.playback, rig.status, rig.select)
 
         select(0, 22)
         #expect(await waitUntil { playback(0) != nil })

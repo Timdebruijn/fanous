@@ -48,13 +48,7 @@ struct OutputCompileCacheTests {
         let warm = OutputCompiler(device: device)
         let base = Self.output(1)
         let basePlan = try warm.compile(base, index: 1, drawable: (320, 180))
-        func bytes(_ texture: MTLTexture?) -> [UInt8] {
-            guard let texture else { return [] }
-            let bpp = texture.pixelFormat == .r8Unorm ? 1 : 8
-            var out = [UInt8](repeating: 0, count: texture.width * texture.height * bpp)
-            texture.getBytes(&out, bytesPerRow: texture.width * bpp, from: MTLRegionMake2D(0, 0, texture.width, texture.height), mipmapLevel: 0)
-            return out
-        }
+        func bytes(_ texture: MTLTexture?) -> [UInt8] { texture?.bytes() ?? [] }
         let edits: [(String, (inout OutputConfig) -> Void)] = [
             ("mask feather", { $0.slices[0].masks[0].feather = 3 }),
             ("mask path", { $0.slices[0].masks[0].path?[2] = MaskPoint(0.5, 0.7) }),
@@ -173,11 +167,6 @@ struct OutputCompileCacheTests {
             (o.blend.lift, o.blend.liftFeather) = (0.04, 24)
             wall.append(o)
         }
-        func cpuMs(_ body: () throws -> Void) rethrows -> Double {
-            let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
-            try body()
-            return Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e6
-        }
         func median(_ cached: Bool) throws -> Double {
             var outputs = wall
             let shared = OutputCompiler(device: device)
@@ -186,7 +175,7 @@ struct OutputCompileCacheTests {
             for edit in 1...20 {
                 outputs[0].blend.right.overlap = 240 + Double(edit)
                 let compiler = cached ? shared : OutputCompiler(device: device)
-                times.append(try cpuMs { set = OutputSet(plans: try outputs.map { try compiler.compile($0, index: $0.id, drawable: (3840, 2160)) }) })
+                times.append(try cpuMillis { set = OutputSet(plans: try outputs.map { try compiler.compile($0, index: $0.id, drawable: (3840, 2160)) }) })
             }
             #expect(set.plans.count == 4)
             return times.sorted()[times.count / 2]
@@ -194,7 +183,7 @@ struct OutputCompileCacheTests {
         let (before, after) = (try median(false), try median(true))
         let compiler = OutputCompiler(device: device)
         let unchanged = try withExtendedLifetime(try compiler.compile(wall[1], index: 2, drawable: (3840, 2160))) {
-            try cpuMs { _ = try compiler.compile(wall[1], index: 2, drawable: (3840, 2160)) }
+            try cpuMillis { _ = try compiler.compile(wall[1], index: 2, drawable: (3840, 2160)) }
         }
         print(String(format: "compile per rebind, 2×2 wall of 1920×1080 with blends, 20 edits of one output (median CPU): before %.1f ms, after %.1f ms; an unchanged output (meshes only) %.2f ms", before, after, unchanged))
         #expect(after < before)

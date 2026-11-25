@@ -10,10 +10,6 @@ import Testing
 @testable import FanousEngine
 
 @Suite(.cleansTempFiles) struct LiveCatalogTests {
-    static func device(_ uid: String, _ name: String) -> LiveCatalog.Entry {
-        LiveCatalog.Entry(kind: .capture, file: 0, source: uid, name: name, runtimeID: uid)
-    }
-
     /// The Syphon state machine on capture devices (B73): files 1–20, `/capture` `{"1": {uid, name, model}}`, kept by uid.
     @Test func captureCatalogNumbersKeepsAndForgetsDevicesLikeSyphon() throws {
         let first = LiveCatalog(.capture)
@@ -65,7 +61,7 @@ import Testing
 
 /// Step 2b (B73): capture devices as folder 0 files 1–20.
 extension LiveCatalogTests {
-    static func device(_ uid: String, _ name: String, model: String, inUse: Bool = false) -> LiveCatalog.Entry {
+    static func device(_ uid: String, _ name: String, model: String = "", inUse: Bool = false) -> LiveCatalog.Entry {
         LiveCatalog.Entry(kind: .capture, file: 0, source: uid, name: name, runtimeID: uid, model: model, inUse: inUse)
     }
     static func numbered(_ file: Int, _ uid: String, _ name: String, model: String) -> LiveCatalog.Entry {

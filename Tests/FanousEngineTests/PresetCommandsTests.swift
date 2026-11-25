@@ -88,10 +88,7 @@ struct PresetCommandsTests {
     @Test func refusals() throws {
         let (store, machine) = try Self.makeStore(outputs: 1)
         _ = try Self.run(store, "output.preset.store", ["ids": [1], "number": 1]).get()
-        func refused(_ name: String, _ args: JSONValue) -> Bool {
-            if case .failure(let error) = Self.run(store, name, args) { return error.code == "invalidArgs" }
-            return false
-        }
+        func refused(_ name: String, _ args: JSONValue) -> Bool { Self.run(store, name, args).failureCode == "invalidArgs" }
         #expect(refused("output.set", ["id": 1, "path": "/presets", "value": []]))
         #expect(refused("output.set", ["id": 1, "path": "/presets/0/name", "value": "x"]))
         #expect(refused("output.preset.store", ["ids": [1], "number": 0]) && refused("output.preset.store", ["ids": [1], "number": 256]))
