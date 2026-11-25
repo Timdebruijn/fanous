@@ -72,7 +72,8 @@ public final class ProjectVersions: Sendable {
 
     public let directory: URL
     private let logger: Logger
-    /// Also serializes the file operations: the control queue (commands) and the versions queue (automatic) both write.
+    /// Also serializes the file operations: `project.snapshot` on its caller's thread (B286), `project.revert`'s save on
+    /// the control queue and the versions queue (automatic) all write.
     private let state = Mutex(State())
 
     public init(directory: URL, logger: Logger) {
