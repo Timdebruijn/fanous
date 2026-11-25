@@ -26,7 +26,8 @@ public final class TimecodeClock: @unchecked Sendable {
         /// Frames between the source's updates: LTC decodes every frame, MTC assembles a time every 2 (B65); 0 promises
         /// none (a locate), and the clock stays locked at that position.
         public var updateFrames: Int = 1
-        /// False while the source stands still: the clock holds that position, locked, until a running update.
+        /// False while the source stands still: the clock holds that position, locked, until a running update (it still
+        /// ages unless `updateFrames` is 0).
         public var running = true
 
         public var timecode: Timecode { Timecode(frameCount: max(0, frameCount), rate: rate) }

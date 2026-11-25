@@ -163,9 +163,9 @@ none.
 Start the timecode running before the first trigger and let it play
 through. A locate on the playback skips the cues between the old and the
 new position, which is intended: MTC sends a locate as its own message,
-which fires nothing; LTC has none, so there only a jump of 5 s or more
-skips, and a shorter one fires the cues it passes. Fire a skipped cue with
-Go to. Triggers
+which fires nothing; LTC has none, so a jump while LTC runs skips only at
+5 s or more, and a shorter one fires the cues it passes. Fire a skipped cue
+with Go to. Triggers
 use the incoming time as it is: the **Offset** on the Timecode panel moves
 the layers that chase timecode, not the triggers, so write the triggers at
 the times the timecode really shows. A follow is set each time the cue
