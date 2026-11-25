@@ -90,7 +90,7 @@ Empty: "No cues yet. Add one, then give it values and a fade."
 | **Number** | 0 or more, decimals allowed (2.5), unique |
 | **Name** | Free text |
 | **Fade (s)** | The cue's fade; empty is 0 |
-| **Trigger** | A timecode trigger, `hh:mm:ss:ff@rate`, for example `00:01:30:00@25`; rates 24, 25, 29.97df (drop frame), 29.97ndf (non-drop), 30; without `@rate` 25 |
+| **Trigger** | A timecode trigger, `hh:mm:ss:ff@rate`, for example `00:01:30:00@25`; rates 24, 25, 29.97df (drop frame), 29.97ndf (non-drop), 30; without `@rate` 25. **Now** next to it puts the timecode showing on the Timecode panel in it, with its rate; greyed while timecode is off or lost |
 | **Follow (s)** | Fires the next cue that many seconds after this one; empty is none |
 | Values, **Fixture** | Layer 1 to N, Master, and the patched Output n and Keystone n |
 | Values, **Parameter** | Grouped as the channel map groups them |

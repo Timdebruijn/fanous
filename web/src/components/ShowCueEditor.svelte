@@ -6,7 +6,8 @@
   import type { ChannelMap, ParamSpec } from '../lib/patch-screen';
   import type { JSONValue } from '../lib/protocol';
   import {
-    LOCKED_OPERATOR, TRIGGER_HINT, clampRaw, fixtureNames, formatNumber, groupSpecs, isNumberTaken, newValue, parseTrigger, retargetValue,
+    LOCKED_OPERATOR, TRIGGER_HINT, clampRaw, currentTrigger, fixtureNames, formatNumber, groupSpecs, isNumberTaken, newValue, parseTrigger,
+    retargetValue,
     specsFor, valueControl, withFade,
   } from '../lib/show';
   import { app, can, cmd, programmerLock } from '../lib/state.svelte';
@@ -20,6 +21,8 @@
   const lock = $derived(programmerLock());
   const editable = $derived(lock === undefined);
   const fixtures = $derived(fixtureNames(app.project.layerCount, app.project.patch));
+  /** the timecode showing now, for the Now button; null while timecode is off */
+  const now = $derived(currentTrigger(app.live.timecode));
   /** the last entry that was refused here, shown under the fields (the engine's refusals show in the app banner) */
   let problem = $state('');
 
@@ -132,12 +135,13 @@
         <span>Trigger</span>
         <input class="input mono left" type="text" autocomplete="off" spellcheck="false" placeholder="hh:mm:ss:ff@25" aria-describedby="editor-hint" value={c.trigger ?? ''} disabled={!editable} title={lock} onchange={(e) => onTrigger(c, e.currentTarget)} />
       </label>
+      <button type="button" class="btn" disabled={!editable || now === null} title={lock ?? (now === null ? 'No timecode to take: it is off, lost or at a rate triggers do not know' : `Set the trigger to ${now}`)} onclick={() => { if (now !== null) void save({ ...c, trigger: now }, () => {}); }}>Now</button>
       <label class="field">
         <span>Follow (s)</span>
         <input class="input mono" type="number" step="0.1" min="0" placeholder="none" value={c.follow ?? ''} disabled={!editable} title={lock} onchange={(e) => onFollow(c, e.currentTarget)} />
       </label>
     </div>
-    <p class="caption" id="editor-hint">Trigger fires the cue when the timecode passes it; empty is none. Format: {TRIGGER_HINT}. Follow fires the next cue that many seconds after this one.</p>
+    <p class="caption" id="editor-hint">Trigger fires the cue when the timecode passes it; empty is none. Format: {TRIGGER_HINT}. Now puts the timecode showing on the Timecode panel in it. Follow fires the next cue that many seconds after this one.</p>
     {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
 
     <h3>Values</h3>

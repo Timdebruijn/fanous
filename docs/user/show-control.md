@@ -135,6 +135,8 @@ frame rate: copy it from the Timecode panel's source line
 (`LTC · device · 25 fps`); 24, 25, 29.97df, 29.97ndf and 30 are accepted
 (case and spaces in the rate do not matter), and without `@rate` it means
 25. The cue editor also takes `;` before the frames and spaces around `@`.
+**Now** next to the field puts the timecode showing on the Timecode panel
+in it, with its rate; it is greyed while timecode is off or lost.
 Use 29.97df (drop frame) only when the source says so. Hours go to 23,
 minutes and seconds to 59, and frames count from 0 to one below the rate
 (29 at 29.97); 29.97df has no frames 00 and 01 at the start of a minute,
