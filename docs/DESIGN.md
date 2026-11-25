@@ -89,8 +89,8 @@ names the invariant.
 |---|---|---|---|---|
 | **Compositor** | `Thread` with its own RunLoop hosting the master `CAMetalDisplayLink` | `.userInteractive` | layer clocks, canvas render passes, output pass for outputs on the master display, preview downscale | zero allocations, no locks, no Swift Concurrency |
 | **Output-N** (one per non-master display) | `Thread` + RunLoop + `CAMetalDisplayLink` | `.userInteractive` | output pass + present for that display | reads latest completed canvas texture via atomic index; parameters from the DMX side's copy under its lock (one fixed-size copy per frame, ADR-0002 amendment) |
-| **Decode-L** (one per layer) | `Thread` | `.userInitiated` | demux + decode for layer L, frame ring producer | preallocated pixel-buffer/texture pool, no allocations after warm-up |
-| **HAP chunk pool** | fixed pool of P-core-count threads | `.userInitiated` | Snappy/DXT chunk decode for all HAP layers | work items are preallocated slots |
+| **Decode-L** (one per layer) | `Thread` | `.userInteractive` (B319) | demux + decode for layer L, frame ring producer | preallocated pixel-buffer/texture pool, no allocations after warm-up |
+| **HAP chunk pool** | `DispatchQueue.concurrentPerform` from the decode thread (as built) | the decode thread's (its iterations run at the caller's class) | Snappy/DXT chunk decode for all HAP layers | work items are preallocated slots |
 | **DMX** | serial `DispatchQueue` (Network.framework requires a queue) | `.userInteractive` | Art-Net/sACN receive, parse, universe buffers, parameter resolution | packet → parameters in one pass, no allocations; measured latency, see §13; one bounded lock per published snapshot, for the non-render copy (ADR-0002 amendment) |
 | **Control** | serial `DispatchQueue` | `.userInitiated` | project model, commands, undo, cue engine, OSC, publishes scene config + parameter snapshots to render side | may allocate; never touched by render threads |
 | **Audio out** | CoreAudio real-time render callback (`AVAudioSourceNode`) | RT | mixes per-layer PCM rings | RT-safe, no allocations/locks |

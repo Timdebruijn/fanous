@@ -6,6 +6,8 @@ import FanousCore
 import Foundation
 import Logging
 import Metal
+import QuartzCore
+import Synchronization
 import Testing
 
 @testable import FanousEngine
@@ -31,6 +33,75 @@ import Testing
         await waitUntil { ring.count == 4 }
         #expect(ring.peek(0)?.frameIndex == 7, "the first frame is the requested one")
         #expect(ring.peek(1)?.frameIndex == 6, "and the next ones follow in play direction")
+    }
+
+    /// B319: the decode thread runs at ADR-0002's class, above the control plane's `.userInitiated`.
+    @Test func theDecodeThreadIsUserInteractive() async throws {
+        let (_, decoder) = try await layer(frames: 4, capacity: 2)
+        defer { decoder.stop() }
+        #expect(decoder.thread?.qualityOfService == .userInteractive)
+    }
+
+    /// B319 measurement, `FANOUS_BENCH=1`: a 1080p ProRes 422 HQ clip decoded as fast as the ring is emptied (a
+    /// `.userInteractive` consumer, as the compositor is) for 2 s, alone and with twice as many spinning
+    /// `.userInitiated` threads as cores. Prints frames per second and the longest gap between two frames.
+    @Test(.offPool, .enabled(if: ProcessInfo.processInfo.environment["FANOUS_BENCH"] != nil))
+    func printDecodeRateUnderLoad() async throws {
+        let url = try tempDir("fanous-ingest-tests").appending(path: "clip.mov")
+        let frames = 50
+        try await writePatternMovie(to: url, size: (1920, 1080), fps: 25, frames: frames)
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let source = try await MovieSource.open(url: url, device: device, poolSize: 5)
+        let ring = FrameRing(capacity: 4)
+        let decoder = LayerDecoder(source: source, ring: ring, logger: testLogger)
+        decoder.start(name: "test.decode")
+        defer { decoder.stop() }
+        func run(_ label: String) {
+            let done = DispatchSemaphore(value: 0)
+            let consumer = Thread {
+                var popped = 0, maxGap = 0.0
+                let start = CACurrentMediaTime()
+                var last = start
+                decoder.request(frame: 0, direction: 1)
+                while CACurrentMediaTime() - start < 2 {
+                    guard !ring.isEmpty else {
+                        usleep(100)
+                        continue
+                    }
+                    let now = CACurrentMediaTime()
+                    maxGap = max(maxGap, now - last)
+                    last = now
+                    ring.pop()
+                    popped += 1
+                    decoder.request(frame: popped % frames, direction: 1)
+                }
+                print(String(format: "B319 decode %@: %.1f frames/s, longest gap %.1f ms", label, Double(popped) / 2, maxGap * 1000))
+                done.signal()
+            }
+            consumer.qualityOfService = .userInteractive
+            consumer.start()
+            done.wait()
+        }
+        func loaded() {
+            let spinning = Atomic<Bool>(true)
+            let threads = ProcessInfo.processInfo.activeProcessorCount * 2
+            let stopped = DispatchSemaphore(value: 0)
+            for _ in 0..<threads {
+                let thread = Thread {
+                    var x = 0.0
+                    while spinning.load(ordering: .relaxed) { x += 1 }
+                    if x < 0 { print(x) }
+                    stopped.signal()
+                }
+                thread.qualityOfService = .userInitiated
+                thread.start()
+            }
+            run("with \(threads) spinning .userInitiated threads")
+            spinning.store(false, ordering: .relaxed)
+            for _ in 0..<threads { stopped.wait() }
+        }
+        run("alone")
+        loaded()
     }
 
     @Test func aFullRingSleepsUntilTheRequestChanges() async throws {
