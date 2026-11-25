@@ -20,7 +20,8 @@ No dongle, no licence server, no account.</p>
   <a href="docs/user/getting-started.md">Getting started</a> ·
   <a href="docs/user/README.md">User guide</a> ·
   <a href="docs/user/show-day-checklist.md">Show-day checklist</a> ·
-  <a href="#help-test-it-on-a-real-desk">Test it on your desk</a>
+  <a href="#help-test-it-on-a-real-desk">Test it on your desk</a> ·
+  <a href="https://timdebruijn.nl/en/projects/fanous/">Project page</a>
 </p>
 
 You know the drill. The media server is a separate rig with its own UI, its own
