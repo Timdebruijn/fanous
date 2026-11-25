@@ -218,6 +218,20 @@ struct ProjectValueRangeTests {
         #expect(stored.name == "Wall" && stored.region?.h == 16384)
     }
 
+    /// Second review of B339: a project file with a larger side is clamped at load, so wall configure (which sizes the
+    /// overlaps from the region before it validates) and the preview see 16384 from the start, not the stored value.
+    @Test func aRegionSideAboveTheBoundIsClampedAtLoad() throws {
+        var project = testProject(layers: 1, outputs: 0)
+        var output = OutputConfig(id: 1)
+        output.region = PixelRect(x: 0, y: 0, w: 20000, h: 1080)
+        try project.set(try JSONValue(encoding: [output]), at: "/outputs")
+        let file = tempFile("fanous-project", ext: "json")
+        try ProjectDocument.save(project, to: file)
+        let loaded = try #require(ProjectDocument.load(from: file))
+        let region = try #require(ProjectDocument.outputs(from: loaded).first?.region)
+        #expect((region.w, region.h) == (16384, 1080))
+    }
+
     /// Every value above in one project file: it loads, and the loaded document is the file's as a JSON tree (what the
     /// engine writes at start, the live catalogs, is an edit of that tree, so the values stay); what the engine derives
     /// from it is computed without a trap.

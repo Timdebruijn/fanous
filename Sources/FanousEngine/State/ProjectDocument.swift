@@ -457,6 +457,12 @@ public enum ProjectDocument {
         if var list = document["outputs"]?.array {
             var changed = false
             for o in list.indices {
+                // B339: a region side above the bound (typed before it, or edited by hand) is clamped as `validate` clamps it,
+                // so wall configure, which sizes overlaps from the region before it validates, sees the clamped size too
+                for key in ["w", "h"] where (list[o]["region"]?[key]?.double ?? 0) > Double(maxRegionSide) {
+                    if let pointer = try? JSONPointer("/region/\(key)") { try? list[o].set(.number(Double(maxRegionSide)), at: pointer) }
+                    changed = true
+                }
                 if let slices = list[o]["slices"]?.array, let converted = convertMasks(slices) {
                     try? list[o].set(.array(converted), at: "/slices")
                     changed = true
