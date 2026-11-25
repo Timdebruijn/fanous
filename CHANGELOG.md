@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Timecode: changing the Offset, a layer offset or the Freewheel time no longer restarts the timecode input and clears
+  the clock, so a chase no longer freezes and jumps on each nudge; a change of Source, Device, Channel or the switch
+  still restarts it (B289) (PR #N).
 - Playback: a file's first frame is its start position (B294). The loader asked the decoder for frame 0 at start,
   before the compositor's hand-off asked for the in point and the direction, so a cut to an in point flashed the last
   pre-decoded frame (3 at a ring of 4) and a reverse mode showed frame 0 for about ten frames. The decoder now decodes
