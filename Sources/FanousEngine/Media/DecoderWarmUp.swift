@@ -46,7 +46,7 @@ public enum DecoderWarmUp {
         guard !started.exchange(true, ordering: .relaxed) else { return }
         let thread = Thread { log(run(target: target), logger: logger) }
         thread.name = "org.fanous.decode.warmup"
-        thread.qualityOfService = .userInitiated  // as the decode threads: it is half a second of work, and late is worse than busy
+        thread.qualityOfService = .userInitiated  // below the decode threads (B319), which play while it runs: half a second of work, late is worse than busy
         thread.start()
     }
 
