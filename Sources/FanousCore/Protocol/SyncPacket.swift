@@ -44,9 +44,14 @@ public struct SyncPacket: Equatable, Sendable {
     /// The engine's layer cap (DESIGN.md §6.1).
     public static let maxLayers = 32
     public static let maxSize = headerSize + maxLayers * layerSize
+    /// Bounds no real clock reaches (a day at 1000 fps is 8.64e7 frames), so a slave's `(position + rate × age) ×
+    /// slaveFps / fps` stays finite for any age (B316: a position near 1e300 made it infinite, its offset NaN).
+    public static let fpsRange: ClosedRange<Float> = 0.01...10_000
+    public static let maxPosition = 1e9
+    public static let maxRate: Float = 1e6
 
-    /// `badValue`: a layer field the slave clock cannot use (fps not finite and > 0, non-finite position or rate,
-    /// group outside 1–8, direction outside −1…1).
+    /// `badValue`: a layer field the slave clock cannot use (fps outside `fpsRange`, a position or rate beyond its
+    /// bound or not finite, group outside 1–8, direction outside −1…1).
     public enum ParseError: Error, Equatable { case tooShort, badMagic, badVersion, badLength, badValue }
 
     /// Install UUID of the sending machine.
@@ -101,7 +106,7 @@ public struct SyncPacket: Equatable, Sendable {
                 fps: Float(bitPattern: bytes.littleEndian(at: o + 4)),
                 position: Double(bitPattern: bytes.littleEndian(at: o + 8)), direction: Int8(bitPattern: bytes[o + 16]),
                 finished: bytes[o + 17] != 0, rate: Float(bitPattern: bytes.littleEndian(at: o + 18)))
-            guard l.fps.isFinite, l.fps > 0, l.position.isFinite, l.rate.isFinite,
+            guard fpsRange.contains(l.fps), abs(l.position) <= maxPosition, abs(l.rate) <= maxRate,  // NaN fails each
                 (1...LayerSync.groups).contains(Int(l.group)), (-1...1).contains(l.direction)
             else { throw ParseError.badValue }
             layers.append(l)

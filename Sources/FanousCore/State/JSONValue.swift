@@ -6,7 +6,8 @@ import Foundation
 
 fileprivate typealias PatchError = JSONPatch.PatchError
 
-/// A JSON document. Numbers are `Double`; whole numbers within ±2^53 encode without a fractional part.
+/// A JSON document. Numbers are `Double`; whole numbers within ±2^53 encode without a fractional part, a non-finite
+/// number as null.
 public enum JSONValue: Equatable, Sendable, Codable {
     case null
     case bool(Bool)
@@ -42,7 +43,9 @@ public enum JSONValue: Equatable, Sendable, Codable {
         case .null: try c.encodeNil()
         case .bool(let v): try c.encode(v)
         case .number(let v):
-            if v.rounded() == v, abs(v) <= 9_007_199_254_740_992 {  // 2^53
+            if !v.isFinite {
+                try c.encodeNil()  // JSON has no NaN or infinity; JSONEncoder would throw for the whole document (B316)
+            } else if v.rounded() == v, abs(v) <= 9_007_199_254_740_992 {  // 2^53
                 try c.encode(Int64(v))
             } else {
                 try c.encode(v)

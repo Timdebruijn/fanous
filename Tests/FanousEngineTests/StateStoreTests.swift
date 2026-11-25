@@ -115,6 +115,20 @@ struct StateStoreTests {
         #expect(client.patches.count == 1)  // no change, no patch
     }
 
+    /// B316: a NaN offset (a sync packet near 1e300) made every live message "{}" and every live patch `ops: []`.
+    @Test func aNonFiniteLiveNumberKeepsTheRestOfTheDocument() async throws {
+        let (store, _) = testStore(outputs: 0)
+        let client = RecordingClient(role: .monitor)
+        store.admit(client, role: client.role, caps: [:]) {}
+        store.updateLive(["layers": [["sync": ["offsetMs": .number(.nan)]]], "metrics": ["fps": 60]])
+        #expect(await waitUntil { !client.patches.isEmpty })
+        let ops = try #require(client.patches.first?["ops"]?.array)
+        #expect(Set(ops.compactMap { $0["path"]?.string }) == ["/layers", "/metrics"])
+        let welcome = try JSONDecoder().decode(JSONValue.self, from: Data(store.welcome(role: .monitor, caps: [:]).utf8))
+        #expect(welcome["live"]?["metrics"]?["fps"]?.int == 60)
+        #expect(welcome["live"]?["layers"]?[0]?["sync"]?["offsetMs"] == .null)
+    }
+
     @Test func laggingClientsDropLiveButNotProject() async throws {
         let (store, _) = testStore(outputs: 0)
         let client = RecordingClient(role: .programmer)

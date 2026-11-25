@@ -121,7 +121,21 @@ import Testing
         ("position infinite", { $0.position = -.infinity }), ("rate NaN", { $0.rate = .nan }),
         ("rate infinite", { $0.rate = .infinity }), ("group 0", { $0.group = 0 }), ("group 9", { $0.group = 9 }),
         ("direction 2", { $0.direction = 2 }), ("direction -2", { $0.direction = -2 }),
+        // B316: finite, but the slave's arithmetic overflows to infinity and its offset to NaN
+        ("position 1e300", { $0.position = 1e300 }), ("position -1e10", { $0.position = -1e10 }),
+        ("rate 1e30", { $0.rate = 1e30 }), ("fps 1e-30", { $0.fps = 1e-30 }), ("fps 1e30", { $0.fps = 1e30 }),
     ]
+
+    /// The bounds' edges still decode: they are far beyond any real clock, not a limit on one.
+    @Test func acceptsTheBoundsEdges() throws {
+        var layer = Self.layer(2)
+        layer.fps = SyncPacket.fpsRange.lowerBound
+        layer.position = -SyncPacket.maxPosition
+        layer.rate = SyncPacket.maxRate
+        var buffer: [UInt8] = []
+        SyncPacket(machineID: Self.machine, tick: 1, sendTime: 2, layers: [layer]).encode(into: &buffer)
+        #expect(try SyncPacket.decode(buffer).layers == [layer])
+    }
 
     @Test(arguments: badLayers.map(\.0)) func rejectsUnusableValues(_ name: String) {
         var layer = Self.layer(2)

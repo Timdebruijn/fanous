@@ -81,6 +81,12 @@ struct RFCExample: Sendable, CustomTestStringConvertible {
         #expect(document == (try value(example.expected)))
     }
 
+    /// B316: JSON has no NaN or infinity; one such number made JSONEncoder throw for the whole document.
+    @Test func aNonFiniteNumberEncodesAsNull() throws {
+        let doc: JSONValue = ["nan": .number(.nan), "inf": .number(-.infinity), "big": .number(1e300), "n": 1]
+        #expect(try encoded(doc) == #"{"big":1e+300,"inf":null,"n":1,"nan":null}"#)
+    }
+
     // MARK: RFC 6901
 
     @Test func pointerEvaluationPerRFC6901Section5() throws {
