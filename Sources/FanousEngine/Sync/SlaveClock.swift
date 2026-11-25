@@ -67,12 +67,15 @@ enum SlaveClock {
     /// A master whose clock shows the end frame it moves towards sends rate 0 (B383): the out point of a once mode (the
     /// in point in reverse) until the clock finishes, and a bounce's turning frame in its direction until it turns. A
     /// slave extrapolating `rate × age` from there would show the frame past the seam, which it cannot see (the packet
-    /// has no in or out point, and a slave ignores its own, §23.1). The slave's next locked tick then reads its own
-    /// extrapolation of the tick before as a correction of up to one frame: `offsetMs` shows it once and `jumped`
-    /// fires once, with the audio already silent at rate 0.
-    /// ponytail: holds for an entry younger than one frame of the content at its rate (a master that ticks at least once
-    /// per content frame); a master stepping more than a frame per tick can still show the frame past for a tick, and
-    /// a loop's wrap is not covered. Both need the in and out points in the packet (B426, a wire change).
+    /// has no in or out point, and a slave ignores its own, §23.1). With less than one content frame per tick (25p
+    /// on 50 Hz, 24p on 60 Hz) the master's position still moves within the end frame while it sends rate 0:
+    /// `offsetMs` shows the master's step on each tick of the hold and the correction on the drop or resume tick (up
+    /// to one frame); `jumped` fires at most once per seam at 100 %, with the audio already silent at rate 0.
+    /// ponytail: holds for an entry younger than one frame of the content at its rate (a master that ticks at least
+    /// once per content frame); a master stepping more than a frame per tick can still show the frame past for a tick,
+    /// and a loop's wrap is not covered. Both need the in and out points in the packet (B426, a wire change). A
+    /// two-frame bounce range is all end frames: the slave follows it frame by frame with ±20 ms `offsetMs` per tick
+    /// (audio silent).
     static func showsEndFrame(_ clock: LayerClock, mode: PlayMode, lo: Int, hi: Int) -> Bool {
         let frame = clock.frame(lo: lo, hi: hi)
         return switch mode {

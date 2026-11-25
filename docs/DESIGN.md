@@ -5390,10 +5390,15 @@ differs from the text above:
   from there showed the frame past the out point (from 1.7 ms of age at 25p
   on 50 Hz) or before the in point for one tick. It holds for an entry
   younger than one content frame; its audio stops up to one frame before the
-  master's. When the rate drops to 0 the slave's next locked tick reads its
-  own extrapolation of the tick before as a correction of up to one frame
-  (32–38 ms at 25p on 25 Hz): `offsetMs` shows it for that tick and `jumped`
-  fires once, with the audio already silent at rate 0. A loop's wrap with in and out points, and a
+  master's. With less than one content frame per tick (25p on 50 Hz, 24p on
+  60 Hz) the master's position still moves within the end frame while it
+  sends rate 0: `offsetMs` shows the master's step on each tick of the hold
+  and the correction on the drop or resume tick (up to one frame: 32–38 ms at
+  25p on 25 Hz for entries 1.7–8 ms old, in general about 40 ms minus the
+  age); `jumped` fires at most once per seam at 100 %, with the audio already
+  silent at rate 0. A two-frame bounce range is all end frames: the slave
+  follows it frame by frame with ±20 ms `offsetMs` per tick, audio silent. A
+  loop's wrap with in and out points, and a
   master stepping more than one frame per tick, can still show the frame past
   the seam for a tick: that needs the in and out points in the packet (B426).
 - `live.sync` carries packet totals (`packetsIn`, `packetsOut`,
