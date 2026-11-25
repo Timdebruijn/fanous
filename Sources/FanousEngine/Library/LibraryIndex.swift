@@ -129,6 +129,28 @@ public final class LibraryIndex: @unchecked Sendable {
     private let warms = Atomic<Bool>(false)  // set on the engine's thread, read on the scan and probe threads
     /// How long `stop()` waits for a probe in flight; shortened by a test only.
     var joinTimeout: DispatchTimeInterval = .seconds(10)
+    /// B328: the longest a probed entry waits for the cache write; lengthened by a test only.
+    var saveInterval: TimeInterval = 2
+    /// Cache writes and the bytes they wrote, for the tests (B328).
+    let cacheWrites = Atomic<Int>(0), cacheBytes = Atomic<Int>(0)
+    /// Show mode (DESIGN.md §14), set by the engine from `showMode.onChange`: cache writes and pruning wait (B328). Turning
+    /// it off wakes the library thread, which writes what waited.
+    public var paused: Bool {
+        get { pausedFlag.load(ordering: .sequentiallyConsistent) }
+        set {
+            pausedFlag.store(newValue, ordering: .sequentiallyConsistent)
+            guard !newValue else { return }
+            probeWake.signal()
+        }
+    }
+    private let pausedFlag = Atomic<Bool>(false)
+    /// The first incomplete scan is logged (B328: nothing is pruned while scans stay incomplete).
+    private let warnedIncomplete = Atomic<Bool>(false)
+    /// Replaced (B51): set under `writeLock` after its last write, so no write of it lands after the replacement read the
+    /// cache (which would bring back what the replacement pruned).
+    private let retired = Atomic<Bool>(false)
+    /// Runs between taking the entries and writing the file, for the tests (B328: holds a write in flight).
+    var beforeWrite: (@Sendable () -> Void)?
     private var stream: FSEventStreamRef?
     /// The path FSEvents watches (`watchPath(root)`, set in `watch()`): events carry real paths under it.
     private var watchedPath = ""
@@ -147,6 +169,11 @@ public final class LibraryIndex: @unchecked Sendable {
         var pendingProbes: [String] = []
         /// B267: the cache key that was in work when the engine stopped before this start, and how often that happened.
         var stoppedIn: (key: String, stops: Int)?
+        /// B328: cache changes since the last write, and when that was (system uptime).
+        var unsaved = 0
+        var savedAt = ProcessInfo.processInfo.systemUptime
+        /// B328: the last scan listed every folder it found; a failed listing (a volume grant reset, EIO) prunes nothing.
+        var scanComplete = false
     }
 
     /// B220: the wording of the probe's reason texts. A cached entry that carries a reason is probed again once when the
@@ -214,6 +241,8 @@ public final class LibraryIndex: @unchecked Sendable {
         probeWake.signal()
         // B267: a probe still running after the wait is cut off by a stop of our own (exit follows), not a crash: no blame
         if probeExited.wait(timeout: .now() + joinTimeout) == .timedOut { try? FileManager.default.removeItem(at: markerFile) }
+        // B328: what waited for the write, also in show mode (the engine stops); a replaced index wrote in `replacement`
+        if state.withLock({ $0.unsaved > 0 }) { saveCache() }
         probeThread = nil  // its block holds the index: a replaced index (B51) must be freed
         if let stream {
             FSEventStreamStop(stream)
@@ -233,12 +262,25 @@ public final class LibraryIndex: @unchecked Sendable {
     /// keeps running until the caller has swapped them and calls `stop()` (FSEvents released, probe thread joined).
     /// The cache is keyed by absolute path and shared, so switching back to a root probed before needs no new probes.
     public func replacement(root: URL) -> LibraryIndex {
+        // B328: this index's last write before the replacement reads the cache; none after, which would bring back entries
+        // the replacement pruned (their thumbnails deleted). What this index probes from now on is probed again when needed.
+        Self.writeLock.withLock { _ in
+            if state.withLock({ $0.unsaved > 0 }) { saveCacheLocked() }
+            retired.store(true, ordering: .relaxed)
+        }
         let next = LibraryIndex(root: root, cacheDirectory: cacheDirectory, logger: logger, readsStopMarker: false)
         next.thumbnailer = thumbnailer
         next.onChange = onChange
         next.warmsDecoders = warmsDecoders
+        next.paused = paused
         next.start()
         return next
+    }
+
+    /// The replacement was refused after `replacement(root:)` (B51): this index stays the engine's and writes again.
+    public func keep() {
+        retired.store(false, ordering: .relaxed)
+        probeWake.signal()  // its drain writes what it probed while retired
     }
 
     /// Why `path` cannot be the library root (B51); nil when it is an existing, readable folder.
@@ -259,13 +301,24 @@ public final class LibraryIndex: @unchecked Sendable {
         var fileCount = 0, invalidCount = 0
         var probes: [String] = []
         let rootExists = fm.fileExists(atPath: root.path)
+        var complete = true  // B328: every listing and stat below answered
+        func list(_ url: URL) -> [String] {
+            do { return try fm.contentsOfDirectory(atPath: url.path).filter { !$0.hasPrefix(".") && !$0.hasPrefix("_") } } catch {
+                complete = false
+                return []
+            }
+        }
         // plain code-point order decides who wins a duplicate number ("012_Show" before "12_Dup"): deterministic on every machine
-        let folderNames = ((try? fm.contentsOfDirectory(atPath: root.path)) ?? []).filter { !$0.hasPrefix(".") && !$0.hasPrefix("_") }.sorted()
+        let folderNames = list(root).sorted()
         var seenFolders: Set<Int> = []
         let cache = state.withLock { $0.cache }
         for folderName in folderNames {
             let folderURL = root.appending(path: folderName)
-            guard (try? folderURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
+            guard let isDirectory = (try? folderURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory else {
+                complete = false
+                continue
+            }
+            guard isDirectory else { continue }
             var number = Self.prefixNumber(folderName)
             var folderReason: String?
             if let n = number, !seenFolders.insert(n).inserted {
@@ -278,10 +331,13 @@ public final class LibraryIndex: @unchecked Sendable {
             var seenFiles: Set<Int> = []
             // a late movie (B161, a regular file) claims its number after everything else: one that shares a number with an
             // entry listed before B161 is the duplicate, so a show's folder/file numbers stay what they were
-            let entries = ((try? fm.contentsOfDirectory(atPath: folderURL.path)) ?? []).filter { !$0.hasPrefix(".") && !$0.hasPrefix("_") }
+            let entries = list(folderURL)
                 .compactMap { name -> (name: String, values: URLResourceValues, late: Bool)? in
                     let url = folderURL.appending(path: name)
-                    guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey]) else { return nil }
+                    guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey]) else {
+                        complete = false
+                        return nil
+                    }
                     return (name, values, values.isDirectory != true && Self.lateMovieExtensions.contains(url.pathExtension.lowercased()))
                 }
                 .sorted { ($0.late ? 1 : 0, $0.name) < ($1.late ? 1 : 0, $1.name) }
@@ -338,13 +394,17 @@ public final class LibraryIndex: @unchecked Sendable {
             s.snapshot = snapshot
             s.byKey = byKey
             s.pendingProbes = probes
+            s.scanComplete = complete
             return same
+        }
+        if !complete, rootExists, !warnedIncomplete.exchange(true, ordering: .relaxed) {
+            logger.warning("a library folder or file could not be read: the cache is not pruned until a scan reads them all", metadata: ["root": "\(root.path)"])
         }
         if !same {
             logger.info("library scanned", metadata: ["root": "\(root.path)", "folders": "\(folders.count)", "files": "\(fileCount)", "invalid": "\(invalidCount)", "toProbe": "\(probes.count)"])
             changed()
         }
-        if !probes.isEmpty { probeWake.signal() }
+        probeWake.signal()  // also with nothing to probe: the drain prunes what this scan no longer lists (B328)
     }
 
     /// Leading 1–3 digits (1–255) followed by a non-digit or the end: "012_Show" → 12.
@@ -365,6 +425,8 @@ public final class LibraryIndex: @unchecked Sendable {
             guard let path = state.withLock({ $0.pendingProbes.isEmpty ? nil : $0.pendingProbes.removeFirst() }) else {
                 // B267: nothing in work, so a marker kept from the last stop (its file changed or went) blames no one
                 try? FileManager.default.removeItem(at: markerFile)
+                prune()
+                saveCacheIfDue(drained: true)
                 probeWake.wait()
                 continue
             }
@@ -381,7 +443,7 @@ public final class LibraryIndex: @unchecked Sendable {
             s.stoppedIn = nil  // read once: a second probe of the file (a rescan meanwhile) starts from 0 again
             return stoppedIn.stops
         }
-        // ponytail: one small file written and removed per probe, beside the full cache rewrite of B328; not atomic, a torn
+        // ponytail: one small file written and removed per probe; not atomic, a torn
         // marker reads as none (the file is then not blamed). One marker per cache directory: while the root is replaced
         // (B51) two indexes probe on two threads, the marker names whichever file was written last and either removes it, so a
         // stop in that window can count against the other index's file (once: the second count needs another stop in it).
@@ -437,6 +499,7 @@ public final class LibraryIndex: @unchecked Sendable {
     private func apply(_ entry: CacheEntry, to item: LibraryItem) {
         state.withLock { s in
             s.cache[Self.cacheKey(item)] = entry
+            s.unsaved += 1
             for f in s.snapshot.folders.indices {
                 for i in s.snapshot.folders[f].items.indices where s.snapshot.folders[f].items[i].path == item.path {
                     var updated = s.snapshot.folders[f].items[i]
@@ -453,7 +516,7 @@ public final class LibraryIndex: @unchecked Sendable {
         }
         // a probe that outlived stop() (the join timed out): the cache file and the hook belong to the next index (B51)
         guard running.load(ordering: .relaxed) else { return }
-        saveCache()
+        saveCacheIfDue(drained: false)
         changed()
     }
 
@@ -514,6 +577,8 @@ public final class LibraryIndex: @unchecked Sendable {
     // MARK: Cache
 
     private var cacheFile: URL { cacheDirectory.appending(path: "library-index.json") }
+    /// Where the engine's `Thumbnailer` writes; the prune removes a pruned entry's thumbnail from here (B328).
+    public var thumbnailDirectory: URL { cacheDirectory.appending(path: "thumbnails") }
     var markerFile: URL { cacheDirectory.appending(path: "library-probing.json") }
 
     private func loadCache(readsStopMarker: Bool) {
@@ -542,10 +607,59 @@ public final class LibraryIndex: @unchecked Sendable {
         }
     }
 
-    private func saveCache() {
-        let cache = state.withLock { $0.cache }
+    /// Always whole and atomic (a stop mid-write leaves the last complete file). Every 200 probes, 2 s after the last write,
+    /// when the queue drains, and at stop: the file holds every entry, so a write per probe was quadratic (B328). A stop
+    /// before the write loses at most that many probes, which the next start probes again.
+    private func saveCache() { Self.writeLock.withLock { _ in saveCacheLocked() } }
+
+    /// One cache write at a time in the process (B51: two indexes share the file), so `replacement` sees a write in flight
+    /// finished: one that took the entries before it and renamed the file after the replacement read it would undo it.
+    private static let writeLock = Mutex(())
+
+    private func saveCacheLocked() {
+        guard !retired.load(ordering: .relaxed) else { return }
+        let cache = state.withLock { s in
+            s.unsaved = 0
+            s.savedAt = ProcessInfo.processInfo.systemUptime
+            return s.cache
+        }
+        beforeWrite?()
         try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
-        if let data = try? JSONEncoder().encode(cache) { try? data.write(to: cacheFile, options: .atomic) }
+        if let data = try? JSONEncoder().encode(cache), (try? data.write(to: cacheFile, options: .atomic)) != nil {
+            cacheWrites.wrappingAdd(1, ordering: .relaxed)
+            cacheBytes.wrappingAdd(data.count, ordering: .relaxed)
+        }
+    }
+
+    private func saveCacheIfDue(drained: Bool) {
+        guard !paused else { return }
+        let due = state.withLock { s in
+            s.unsaved > 0 && (drained || s.unsaved >= 200 || ProcessInfo.processInfo.systemUptime - s.savedAt >= saveInterval)
+        }
+        if due { saveCache() }
+    }
+
+    /// B328: at a drain, the entries under this root that no item of the last scan has the key of (the file went, or
+    /// changed and has a new key), and their thumbnails unless another entry names the same one (a v1 entry shares the
+    /// file name with its v2 successor). Entries under other roots stay: a switch back needs no probes (B51); so do those
+    /// of a root inside this one (`/Show/Act2` under `/Show`): only `folder/file` keys are this root's. Nothing while the
+    /// root is missing or lists no folder (an unplugged disk, a stale mountpoint), after a scan whose listing failed, in
+    /// show mode, or once replaced.
+    private func prune() {
+        guard !paused, !retired.load(ordering: .relaxed) else { return }
+        let thumbnails = state.withLock { s -> Set<String> in
+            guard s.snapshot.rootExists, s.scanComplete, !s.snapshot.folders.isEmpty else { return [] }  // an empty mountpoint
+            let listed = Set(s.snapshot.folders.lazy.flatMap(\.items).map(Self.cacheKey))
+            let prefix = root.path + "/"
+            let gone = s.cache.keys.filter {
+                $0.hasPrefix(prefix) && !listed.contains($0) && $0.dropFirst(prefix.count).prefix { $0 != "|" }.count(where: { $0 == "/" }) == 1
+            }
+            guard !gone.isEmpty else { return [] }
+            let names = Set(gone.compactMap { s.cache.removeValue(forKey: $0)?.thumbnail })
+            s.unsaved += 1
+            return names.subtracting(s.cache.values.compactMap(\.thumbnail))
+        }
+        for name in thumbnails { try? FileManager.default.removeItem(at: thumbnailDirectory.appending(path: name)) }
     }
 
     // MARK: FSEvents

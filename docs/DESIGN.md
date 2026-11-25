@@ -1372,6 +1372,12 @@ Fanous Library/
   `scannedAt`, on which every client refetches `/api/library` (B329). Metadata (codec, size, fps, duration, alpha, audio channels,
   colour primaries, file hash) and thumbnails are cached in
   `~/Library/Application Support/Fanous/cache/` keyed by path + mtime + size.
+  The cache file is written whole and atomically after 200 probes or 2 s,
+  when the probe queue drains and at stop, never in show mode (written when
+  it ends); a drain prunes the entries under the root whose file went or
+  changed, with their thumbnails (B328): not after a scan whose listing
+  failed, not the entries of a root inside this one, and a replaced index
+  (B51) writes once before its replacement reads the cache and never after.
 - **Playable** = ProRes/HAP in `.mov`, stills. Anything else (H.264/HEVC,
   `.mp4`, `.avi`, image sequences) is indexed as "needs transcode" with a
   one-click ingest action. Long-GOP codecs are deliberately not playable:

@@ -77,6 +77,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   `_originals`) start no rescan, and a rescan that finds no change keeps `scannedAt` (B329). Each rescan stamped a new
   `scannedAt`, so every client on Layers, Outputs and Media refetched the whole `/api/library` about once a second for
   the length of an upload or an ingest (PR #465).
+- Library: the cache file is written every 200 probes or 2 s, when the probe queue drains and at stop, not after every
+  probe, and not in show mode (B328). Each write holds every entry, so a write per probe was quadratic: 500 new files
+  wrote 500 files and 27 MB, now 3 and 0.24 MB. Entries and thumbnails of files that left the library are pruned (PR #469).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)

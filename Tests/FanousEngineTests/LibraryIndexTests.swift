@@ -372,6 +372,244 @@ struct LibraryIndexTests {
         #expect(try JSONDecoder().decode(LibraryIndex.CacheEntry.self, from: written).reason == "Cannot Open")
     }
 
+    // MARK: B328: cache writes
+
+    /// `count` stills that do not decode (16 zero bytes): a fast probe each, unreadable, cached.
+    private func brokenStills(_ count: Int) throws -> (root: URL, cache: URL) {
+        let root = try tempDir("fanous-library")
+        for n in 1...count { try Self.touch(root.appending(path: String(format: "%03d_Show/%03d_x.png", (n - 1) / 250 + 1, (n - 1) % 250 + 1))) }
+        return (root, try tempDir("fanous-library-cache"))
+    }
+
+    private func probed(_ index: LibraryIndex) async -> Bool {
+        await waitUntil(.seconds(30), every: .milliseconds(20)) { index.snapshot.folders.allSatisfy { $0.items.allSatisfy { $0.status != .probing } } }
+    }
+
+    /// 500 probes write the cache three times (at 200, at 400, at the drain), not 500 times; a wake with nothing new writes nothing.
+    @Test func probesWriteTheCacheInBatches() async throws {
+        let (root, cache) = try brokenStills(500)
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.saveInterval = 3600  // the count rule alone; the 2 s rule depends on the machine's speed
+        index.start()
+        defer { index.stop() }
+        #expect(await probed(index))
+        #expect(await waitUntil(every: .milliseconds(20)) { index.cacheWrites.load(ordering: .relaxed) == 3 })
+        print("B328 measure: 500 probes, \(index.cacheWrites.load(ordering: .relaxed)) writes, \(index.cacheBytes.load(ordering: .relaxed)) bytes")
+        index.rescan()  // wakes the library thread: nothing to probe, nothing to write
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(index.cacheWrites.load(ordering: .relaxed) == 3)
+        let again = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        again.rescan()
+        #expect(again.snapshot.folders.allSatisfy { $0.items.allSatisfy { $0.status == .unreadable } }, "every probe reached the file")
+    }
+
+    /// A gone file's entry goes at the next drain, with its thumbnail; the other file's stay.
+    @Test func aGoneFilesEntryAndThumbnailArePruned() async throws {
+        let root = try tempDir("fanous-library")
+        let gone = root.appending(path: "001_Show/001_gone.png"), kept = root.appending(path: "001_Show/002_kept.png")
+        try Self.png(gone)
+        try Self.png(kept)
+        let index = LibraryIndex(root: root, cacheDirectory: try tempDir("fanous-library-cache"), logger: testLogger)
+        index.saveInterval = 3600  // one write per drain, however slow the Mac
+        let directory = index.thumbnailDirectory
+        index.thumbnailer = { url, _, _ in
+            let name = url.lastPathComponent + ".jpg"
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            return (try? Data([1]).write(to: directory.appending(path: name))) != nil ? name : nil
+        }
+        index.start()
+        defer { index.stop() }
+        #expect(await probed(index))
+        #expect(await waitUntil(every: .milliseconds(20)) { index.cacheWrites.load(ordering: .relaxed) == 1 })
+        try FileManager.default.removeItem(at: gone)
+        index.rescan()
+        #expect(await waitUntil(every: .milliseconds(20)) { index.cacheWrites.load(ordering: .relaxed) == 2 })
+        let written = try JSONDecoder().decode([String: LibraryIndex.CacheEntry].self, from: Data(contentsOf: index.cacheDirectory.appending(path: "library-index.json")))
+        #expect(written.keys.map { String($0.prefix { $0 != "|" }) } == [kept.path])
+        #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "001_gone.png.jpg").path))
+        #expect(FileManager.default.fileExists(atPath: directory.appending(path: "002_kept.png.jpg").path))
+    }
+
+    /// Show mode holds the write until it is off; a stop writes what waited, also in show mode.
+    @Test func showModeHoldsTheCacheWriteAndAStopWritesIt() async throws {
+        let (root, cache) = try brokenStills(3)
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.paused = true
+        index.start()
+        defer { index.stop() }
+        #expect(await probed(index))
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(index.cacheWrites.load(ordering: .relaxed) == 0)
+        index.paused = false
+        #expect(await waitUntil(every: .milliseconds(20)) { index.cacheWrites.load(ordering: .relaxed) == 1 })
+
+        let (root2, cache2) = try brokenStills(3)
+        let stopped = LibraryIndex(root: root2, cacheDirectory: cache2, logger: testLogger)
+        stopped.paused = true
+        stopped.start()
+        #expect(await probed(stopped))
+        #expect(stopped.cacheWrites.load(ordering: .relaxed) == 0)
+        try await offPool { stopped.stop() }
+        #expect(stopped.cacheWrites.load(ordering: .relaxed) == 1)
+    }
+
+    /// The time rule: with no wait allowed, every probe writes (and the drain has nothing left to write).
+    @Test func probesWriteTheCacheAfterTheInterval() async throws {
+        let (root, cache) = try brokenStills(3)
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.saveInterval = 0
+        index.start()
+        defer { index.stop() }
+        #expect(await probed(index))
+        #expect(await waitUntil(every: .milliseconds(20)) { index.cacheWrites.load(ordering: .relaxed) == 3 })
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(index.cacheWrites.load(ordering: .relaxed) == 3)
+    }
+
+    /// A scan whose listing failed (a folder that cannot be read: a volume grant reset, an I/O error) prunes nothing: the
+    /// entries and thumbnails of the files it could not see stay.
+    @Test func aFailedListingPrunesNothing() async throws {
+        let root = try tempDir("fanous-library")
+        let folder = root.appending(path: "001_Show")
+        try Self.png(folder.appending(path: "001_a.png"))
+        try Self.png(folder.appending(path: "002_b.png"))
+        let index = LibraryIndex(root: root, cacheDirectory: try tempDir("fanous-library-cache"), logger: testLogger)
+        index.saveInterval = 3600
+        let directory = index.thumbnailDirectory
+        index.thumbnailer = { url, _, _ in
+            let name = url.lastPathComponent + ".jpg"
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            return (try? Data([1]).write(to: directory.appending(path: name))) != nil ? name : nil
+        }
+        index.start()
+        defer { index.stop() }
+        #expect(await probed(index))
+        #expect(await waitUntil(every: .milliseconds(20)) { index.cacheWrites.load(ordering: .relaxed) == 1 })
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: folder.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
+        index.rescan()
+        #expect(index.snapshot.fileCount == 0, "the folder cannot be listed")
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(index.cacheWrites.load(ordering: .relaxed) == 1, "nothing pruned, nothing written")
+        #expect(FileManager.default.fileExists(atPath: directory.appending(path: "001_a.png.jpg").path))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path)
+        index.rescan()
+        #expect(index.snapshot.folders.first?.items.map(\.status) == [.playable, .playable], "cache hits again")
+    }
+
+    /// A root that exists but lists no folder (a stale mountpoint, an empty automount) prunes nothing.
+    @Test func anEmptyRootPrunesNothing() async throws {
+        let (root, cache) = try brokenStills(2)
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.saveInterval = 3600
+        index.start()
+        defer { index.stop() }
+        #expect(await probed(index))
+        #expect(await waitUntil(every: .milliseconds(20)) { index.cacheWrites.load(ordering: .relaxed) == 1 })
+        try FileManager.default.moveItem(at: root.appending(path: "001_Show"), to: root.appending(path: "_away"))
+        index.rescan()
+        #expect(index.snapshot.folders.isEmpty)
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(index.cacheWrites.load(ordering: .relaxed) == 1, "nothing pruned, nothing written")
+    }
+
+    /// The entries of a root inside this one (`/Show/Act2` under `/Show`, used before) are not this root's to prune.
+    @Test func aNestedRootsEntriesAreNotPruned() async throws {
+        let outer = try tempDir("fanous-library"), cache = try tempDir("fanous-library-cache")
+        try Self.png(outer.appending(path: "Act2/001_A/001_a.png"))
+        try Self.png(outer.appending(path: "001_Show/001_b.png"))
+        let inner = LibraryIndex(root: outer.appending(path: "Act2"), cacheDirectory: cache, logger: testLogger)
+        inner.start()
+        #expect(await probed(inner))
+        try await offPool { inner.stop() }
+        let index = LibraryIndex(root: outer, cacheDirectory: cache, logger: testLogger)
+        index.saveInterval = 3600
+        index.start()
+        defer { index.stop() }
+        #expect(await probed(index))
+        #expect(await waitUntil(every: .milliseconds(20)) { index.cacheWrites.load(ordering: .relaxed) == 1 })
+        let written = try JSONDecoder().decode([String: LibraryIndex.CacheEntry].self, from: Data(contentsOf: cache.appending(path: "library-index.json")))
+        #expect(written.keys.contains { $0.hasPrefix(outer.appending(path: "Act2/001_A/001_a.png").path + "|") }, "\(written.keys)")
+    }
+
+    /// B51: the replaced index writes what it holds before the replacement reads the cache, and nothing after.
+    @Test func aReplacedIndexWritesBeforeTheReplacementReads() async throws {
+        let (root, cache) = try brokenStills(2)
+        let old = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        old.paused = true  // holds its writes
+        old.start()
+        #expect(await probed(old))
+        #expect(old.cacheWrites.load(ordering: .relaxed) == 0)
+        let next = old.replacement(root: root)
+        defer { next.stop() }
+        #expect(old.cacheWrites.load(ordering: .relaxed) == 1)
+        #expect(next.snapshot.folders.first?.items.map(\.status) == [.unreadable, .unreadable], "the replacement's scan hits the cache")
+        // retired: a probe of the old index after the replacement writes nothing, nor does its stop
+        old.paused = false
+        try Self.touch(root.appending(path: "001_Show/003_x.png"))
+        old.rescan()
+        #expect(await probed(old))
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(old.cacheWrites.load(ordering: .relaxed) == 1)
+        try await offPool { old.stop() }
+        #expect(old.cacheWrites.load(ordering: .relaxed) == 1)
+    }
+
+    /// B51: a swap refused after the replacement was made (`Engine.switchLibrary`'s re-check) keeps the old index, which
+    /// writes its cache again.
+    @Test func aKeptIndexWritesAgainAfterARefusedSwap() async throws {
+        let (root, cache) = try brokenStills(2)
+        let old = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        old.saveInterval = 3600
+        old.start()
+        #expect(await probed(old))
+        #expect(await waitUntil(every: .milliseconds(20)) { old.cacheWrites.load(ordering: .relaxed) == 1 })
+        let next = old.replacement(root: try tempDir("fanous-library"))
+        try await offPool { next.stop() }
+        old.keep()
+        try Self.touch(root.appending(path: "001_Show/003_x.png"))
+        old.rescan()
+        #expect(await probed(old))
+        try await offPool { old.stop() }
+        let written = try JSONDecoder().decode([String: LibraryIndex.CacheEntry].self, from: Data(contentsOf: cache.appending(path: "library-index.json")))
+        #expect(written.keys.contains { $0.contains("003_x.png") }, "a probe after a refused swap reaches the cache file")
+    }
+
+    /// B51: a write of the old index in flight (entries taken, file not yet renamed) when the replacement is made: the
+    /// replacement reads the cache after it lands, so its scan hits what the old index probed.
+    @Test func aReplacementWaitsForAWriteInFlight() async throws {
+        let root = try tempDir("fanous-library"), cache = try tempDir("fanous-library-cache")
+        try Self.png(root.appending(path: "001_Show/001_a.png"))
+        try Self.png(root.appending(path: "001_Show/002_b.png"))
+        let old = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        old.saveInterval = 3600
+        final class Gate: Sendable {
+            let entered = DispatchSemaphore(value: 0)
+            let hold = Atomic<Bool>(false)
+        }
+        let gate = Gate()
+        // the replacement takes this thumbnailer over: its own probes wait while the write is held, so its scan alone
+        // decides what it shows
+        old.thumbnailer = { _, _, _ in
+            while gate.hold.load(ordering: .relaxed) { usleep(10_000) }
+            return nil
+        }
+        old.beforeWrite = {
+            gate.hold.store(true, ordering: .relaxed)
+            gate.entered.signal()
+            usleep(300_000)
+        }
+        old.start()
+        #expect(try await offPool { gate.entered.wait(timeout: .now() + 10) == .success }, "the drain write")
+        let next = try await offPool { old.replacement(root: root) }
+        #expect(next.snapshot.folders.first?.items.map(\.status) == [.playable, .playable], "the replacement read the cache before the write landed")
+        gate.hold.store(false, ordering: .relaxed)
+        try await offPool {
+            next.stop()
+            old.stop()
+        }
+    }
+
     // MARK: B267: a file in work when the engine stopped
 
     /// Two stills; the cache key of the first, as a scan reads it.

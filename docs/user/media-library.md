@@ -252,7 +252,11 @@ second time it is listed as unreadable and not read again until it changes,
 so a file that crashes the engine while it is read cannot keep it from starting (a still used as an image mask that
 is listed so is treated as a missing mask). After an update that rewords the reasons, every file that is not playable
 (needs transcode, unreadable) is probed again once and shows "probing…" until then; playable files and files listed
-as stopping the engine twice are not touched.
+as stopping the engine twice are not touched. The cache is saved every 200 files or 2 seconds while files are read,
+when the reading is done and when the engine stops, and not in show mode (it is saved when show mode ends), so after a
+crash the files read in the last moments show "probing…" once more; in show mode nothing is saved until it ends, so
+after a crash during a show every file read in it is read again. The cached results and thumbnails of files that
+left the library are removed.
 
 ## Audio
 
