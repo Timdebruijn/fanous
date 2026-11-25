@@ -227,7 +227,8 @@ describe('next trigger', () => {
   });
   it('writes a countdown in seconds up to a minute, then m:ss, rounded up', () => {
     expect(countdownText(0.2)).toBe('1 s');
-    expect(countdownText(59.01)).toBe('60 s');
+    expect(countdownText(59.01)).toBe('1:00');
+    expect(countdownText(59)).toBe('59 s');
     expect(countdownText(60)).toBe('1:00');
     expect(countdownText(95.5)).toBe('1:36');
     expect(countdownText(-1)).toBe('0 s');
