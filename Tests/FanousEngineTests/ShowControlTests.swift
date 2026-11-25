@@ -1618,7 +1618,7 @@ struct ShowControlGPUTests {
         // a movie of 100 frames at 25 fps; the chase only needs its frameCount and frameRate: the decoder never starts
         let url = tempFile("fanous-chase", ext: "mov")
         try await writePatternMovie(to: url, size: (64, 36), fps: 25, frames: 100, codec: .hap(.hap))
-        let movie = try await MovieSource.open(url: url, device: context.device, poolSize: 2)
+        let movie = try await MovieSource.open(url: url, device: context.device, poolSize: 3)  // ring + 1, as the loader opens it (B386)
         let ring = FrameRing(capacity: 2)
         let decoder = LayerDecoder(source: movie, ring: ring, logger: testLogger)
         let playback = LayerPlayback(key: MediaKey(folder: 1, file: 1), movie: movie, decoder: decoder, ring: ring)
