@@ -274,7 +274,10 @@ public final class LibraryIndex: @unchecked Sendable {
     }
 
     /// The replacement was refused after `replacement(root:)` (B51): this index stays the engine's and writes again.
-    public func keep() { retired.store(false, ordering: .relaxed) }
+    public func keep() {
+        retired.store(false, ordering: .relaxed)
+        probeWake.signal()  // its drain writes what it probed while retired
+    }
 
     /// Why `path` cannot be the library root (B51); nil when it is an existing, readable folder.
     public static func rootProblem(_ path: String) -> String? {

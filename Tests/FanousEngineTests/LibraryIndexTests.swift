@@ -517,21 +517,36 @@ struct LibraryIndexTests {
     /// B51: a write of the old index in flight (entries taken, file not yet renamed) when the replacement is made: the
     /// replacement reads the cache after it lands, so its scan hits what the old index probed.
     @Test func aReplacementWaitsForAWriteInFlight() async throws {
-        let (root, cache) = try brokenStills(2)
+        let root = try tempDir("fanous-library"), cache = try tempDir("fanous-library-cache")
+        try Self.png(root.appending(path: "001_Show/001_a.png"))
+        try Self.png(root.appending(path: "001_Show/002_b.png"))
         let old = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
         old.saveInterval = 3600
-        final class Gate: Sendable { let entered = DispatchSemaphore(value: 0) }
+        final class Gate: Sendable {
+            let entered = DispatchSemaphore(value: 0)
+            let hold = Atomic<Bool>(false)
+        }
         let gate = Gate()
+        // the replacement takes this thumbnailer over: its own probes wait while the write is held, so its scan alone
+        // decides what it shows
+        old.thumbnailer = { _, _, _ in
+            while gate.hold.load(ordering: .relaxed) { usleep(10_000) }
+            return nil
+        }
         old.beforeWrite = {
+            gate.hold.store(true, ordering: .relaxed)
             gate.entered.signal()
             usleep(300_000)
         }
         old.start()
         #expect(try await offPool { gate.entered.wait(timeout: .now() + 10) == .success }, "the drain write")
         let next = try await offPool { old.replacement(root: root) }
-        defer { next.stop() }
-        #expect(next.snapshot.folders.first?.items.map(\.status) == [.unreadable, .unreadable], "the replacement read the cache before the write landed")
-        try await offPool { old.stop() }
+        #expect(next.snapshot.folders.first?.items.map(\.status) == [.playable, .playable], "the replacement read the cache before the write landed")
+        gate.hold.store(false, ordering: .relaxed)
+        try await offPool {
+            next.stop()
+            old.stop()
+        }
     }
 
     // MARK: B267: a file in work when the engine stopped
