@@ -11,7 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Outputs: `output.set` refuses a region wider or higher than 16384 px, and the preview size is computed without integer
-  overflow; a region height of 2^59 was accepted and trapped the engine when its preview opened (B339) (PR #N).
+  overflow; a region height of 2^59 was accepted and trapped the engine when its preview opened (B339) (PR #476).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
