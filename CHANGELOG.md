@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Library: the thumbnailer makes one thumbnail at a time (B358). While the library root was replaced, the old index's
+  probe thread and the new one's could both write its single-writer parameter buffer and run a compositor on it at
+  once; a lock in `Thumbnailer.make` serialises them (PR #N).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
