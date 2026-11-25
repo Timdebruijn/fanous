@@ -1774,6 +1774,7 @@ public final class Engine: @unchecked Sendable {
         // a job queued just before the hold, a folder gone during the scan, or the engine stopping
         if stopping.load(ordering: .relaxed) || libraryRootRefusal(root) != nil {
             next.stop()
+            old.keep()  // `replacement` retired it (B328): it stays the library, so it writes its cache again
             if let refusal = libraryRootRefusal(root) { libraryRootPutBack(old.root.path, refused: root, refusal) }
             return
         }

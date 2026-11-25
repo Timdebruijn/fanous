@@ -471,6 +471,26 @@ struct LibraryIndexTests {
         #expect(old.cacheWrites.load(ordering: .relaxed) == 1)
     }
 
+    /// B51: a swap refused after the replacement was made (`Engine.switchLibrary`'s re-check) keeps the old index, which
+    /// writes its cache again.
+    @Test func aKeptIndexWritesAgainAfterARefusedSwap() async throws {
+        let (root, cache) = try brokenStills(2)
+        let old = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        old.saveInterval = 3600
+        old.start()
+        #expect(await probed(old))
+        #expect(await waitUntil(every: .milliseconds(20)) { old.cacheWrites.load(ordering: .relaxed) == 1 })
+        let next = old.replacement(root: try tempDir("fanous-library"))
+        try await offPool { next.stop() }
+        old.keep()
+        try Self.touch(root.appending(path: "001_Show/003_x.png"))
+        old.rescan()
+        #expect(await probed(old))
+        try await offPool { old.stop() }
+        let written = try JSONDecoder().decode([String: LibraryIndex.CacheEntry].self, from: Data(contentsOf: cache.appending(path: "library-index.json")))
+        #expect(written.keys.contains { $0.contains("003_x.png") }, "a probe after a refused swap reaches the cache file")
+    }
+
     // MARK: B267: a file in work when the engine stopped
 
     /// Two stills; the cache key of the first, as a scan reads it.
