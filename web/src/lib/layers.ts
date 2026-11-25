@@ -316,6 +316,10 @@ export function thumbnailIndex(library: LibrarySnapshot | null): Map<string, str
   return index;
 }
 
+export function thumbnailFor(index: Map<string, string>, layer: LayerStatus | undefined): string | null {
+  return layer ? (index.get(`${layer.folder}/${layer.file}`) ?? null) : null;
+}
+
 /** One frame of the `thumbs` stream (B29, engine `ThumbnailAtlas.frame`): `[u8 layer number][u16 be w][u16 be h][JPEG]`;
  * w and h 0 (no JPEG) = the layer shows nothing. Null for a frame too short to have the header, or a size without JPEG
  * bytes (it would make a broken image). */
@@ -324,6 +328,11 @@ export function parseThumbFrame(payload: Uint8Array): { layer: number; w: number
   const w = (payload[1]! << 8) | payload[2]!;
   if (w > 0 && payload.length === 5) return null;
   return { layer: payload[0]!, w, h: (payload[3]! << 8) | payload[4]!, jpeg: payload.subarray(5) };
+}
+
+/** A layer row's picture: the live thumbnail while the engine sends one, otherwise the library thumbnail (or none). */
+export function rowThumb(live: string | undefined, library: string | null): { src: string | null; live: boolean } {
+  return live ? { src: live, live: true } : { src: library, live: false };
 }
 
 /** What the Layers screen preview shows: the whole canvas or the selected layer alone. */

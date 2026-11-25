@@ -10,7 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Cleanup: the web UI drops one-caller helpers (thumbnail, history, popover text), the snapshot's role and caps copies, a
+- Cleanup: the web UI drops two one-caller helpers (history, popover text), the snapshot's role and caps copies, a
   duplicate lock, an unused colour and dev-proxy entry, and shares the Slice picker, the tab buttons, the point clamp,
   the live-input dot and the 24-hour clock; nothing on screen or on the wire changes (PR #445).
 - Sync: a slave's audio reseeks when its master is retriggered (B395). The slave's clock followed the jump at

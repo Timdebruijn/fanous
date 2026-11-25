@@ -24,7 +24,7 @@
   import LayerRow from '../components/LayerRow.svelte';
   import LayerStrips from '../components/LayerStrips.svelte';
   import Preview from '../components/Preview.svelte';
-  import { layerNumbers, layerPreview, parseThumbFrame, thumbnailIndex, type LibrarySnapshot } from '../lib/layers';
+  import { layerNumbers, layerPreview, parseThumbFrame, rowThumb, thumbnailFor, thumbnailIndex, type LibrarySnapshot } from '../lib/layers';
   import { fetchLibrary } from '../lib/media';
   import { canvasTarget, layerCanvas } from '../lib/outputs';
   import { loadChannelMap, type ChannelMap } from '../lib/patch-screen';
@@ -171,7 +171,7 @@
               {layer}
               params={app.live.dmx.fixtures[`Layer ${n}`]}
               policy={app.live.dmx.policies[`Layer ${n}`] ?? app.project.policy}
-              thumb={{ src: live[n] || thumbs.get(`${layer?.folder}/${layer?.file}`) || null, live: !!live[n] }}
+              thumb={rowThumb(live[n], thumbnailFor(thumbs, layer))}
               selected={n === selected && fixture === null}
               onselect={() => {
                 ui.selected = n;

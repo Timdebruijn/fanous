@@ -24,6 +24,8 @@ import {
   positionCaption,
   reservedText,
   signalText,
+  rowThumb,
+  thumbnailFor,
   thumbnailIndex,
   valueText,
   layerNumbers,
@@ -140,8 +142,9 @@ describe('thumbnails', () => {
       scannedAt: 1,
       folders: [{ number: 2, items: [{ folder: 2, file: 5, thumbnail: 'abc.jpg' }, { folder: 2, file: 6, thumbnail: null }] }],
     });
-    expect(index.get('2/5')).toBe('/api/thumbnail/abc.jpg');
-    expect(index.has('2/6')).toBe(false);
+    expect(thumbnailFor(index, layer())).toBe('/api/thumbnail/abc.jpg');
+    expect(thumbnailFor(index, layer({ file: 6 }))).toBeNull();
+    expect(thumbnailFor(index, undefined)).toBeNull();
     expect(thumbnailIndex(null).size).toBe(0);
   });
 
@@ -152,6 +155,12 @@ describe('thumbnails', () => {
     expect(empty && { layer: empty.layer, w: empty.w, h: empty.h, bytes: empty.jpeg.length }).toEqual({ layer: 32, w: 0, h: 0, bytes: 0 });
     expect(parseThumbFrame(new Uint8Array([1, 0, 160, 0]))).toBeNull();
     expect(parseThumbFrame(new Uint8Array([1, 0, 160, 0, 90])), 'a size without JPEG bytes').toBeNull();
+  });
+
+  it('shows the live thumbnail while there is one, else the library thumbnail', () => {
+    expect(rowThumb('blob:live', '/api/thumbnail/abc.jpg')).toEqual({ src: 'blob:live', live: true });
+    expect(rowThumb(undefined, '/api/thumbnail/abc.jpg')).toEqual({ src: '/api/thumbnail/abc.jpg', live: false });
+    expect(rowThumb(undefined, null)).toEqual({ src: null, live: false });
   });
 });
 
