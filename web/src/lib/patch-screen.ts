@@ -16,7 +16,7 @@ export const MAX_OUTPUTS = 8;
 /** 11 hues at one lightness: dark backgrounds that carry light mono text. */
 export const FIXTURE_COLOURS = ['#4A3A1E', '#1E4A3A', '#1F3B5E', '#3E2A5E', '#5E2A4A', '#2A5E4A', '#5E4A2A', '#2A4A5E', '#4A2A5E', '#5E2A2A', '#2A5E5E'] as const;
 
-/** A fixture mode of the channel map: "layer", "master", "output", "keystone", or one a newer engine adds. */
+/** A fixture mode of the channel map: "layer", "master", "timecode", "output", "keystone", or one a newer engine adds. */
 export type FixtureType = string;
 
 /** One entry of the channel map's `fixtures` (DESIGN §6.6 item 3). */
@@ -34,10 +34,11 @@ export interface FixtureMode {
 export const FALLBACK_FIXTURES: readonly FixtureMode[] = [
   { mode: 'layer', name: 'Layer', per: 'layer', optional: false },
   { mode: 'master', name: 'Master', per: 'machine', optional: false },
+  { mode: 'timecode', name: 'Timecode', per: 'machine', optional: true },
   { mode: 'output', name: 'Output', per: 'output', optional: false },
   { mode: 'keystone', name: 'Keystone', per: 'output', optional: true },
 ];
-export const FALLBACK_FOOTPRINTS: Record<FixtureType, number> = { layer: 64, master: 8, output: 8, keystone: 16 };
+export const FALLBACK_FOOTPRINTS: Record<FixtureType, number> = { layer: 64, master: 8, timecode: 8, output: 8, keystone: 16 };
 
 export const STANDARD_UNIVERSES: readonly string[] = [
   'artnet:0.0.0', 'artnet:0.0.1', 'artnet:0.0.2', 'artnet:0.0.3',
@@ -478,6 +479,7 @@ export function groupSlots(g: Group, start: Slot): Map<string, Slot | null> {
   const slots = new Map<string, Slot | null>();
   let from: Slot | null = start;
   for (const m of g.modes) {
+    if (slotless(g, m)) continue;
     for (const r of g.rows) if (r.type === m.mode) slots.set(r.name, from && slotOf(r.number, from, m.footprint));
     from = from && slotOf(g.max + 1, from, m.footprint);
   }
@@ -545,8 +547,17 @@ function after(g: Group, start: Slot): Slot | null {
     return next ? { universe: next, address: 1 } : null;
   }
   let from: Slot | null = start;
-  for (const m of g.modes) from = from && slotOf(g.max + 1, from, m.footprint);
+  for (const m of g.modes) if (!slotless(g, m)) from = from && slotOf(g.max + 1, from, m.footprint);
   return from;
+}
+
+/**
+ * An optional mode of the machine group (the Timecode fixture) has no slot in the standard layout: the Master's block
+ * stays 8 channels and the outputs keep their standard position after it (`Patch.standard` in Core). Patch next to
+ * it takes the first free channels on the Master's universe from the Master's slot (`patchTarget`).
+ */
+function slotless(g: Group, m: FixtureMode & { footprint: number }): boolean {
+  return g.kind === 'machine' && m.optional;
 }
 
 /**
@@ -601,7 +612,7 @@ export function moveAfterLayers(groups: readonly Group[]): PatchEntry[] | null {
  * has no block: then it is placed by hand.
  */
 export function patchTarget(g: Group, r: FixtureRow, rows: readonly FixtureRow[]): Slot | null {
-  const slot = g.block.start && groupSlots(g, g.block.start).get(r.name);
+  const slot = g.block.start && (groupSlots(g, g.block.start).get(r.name) ?? (r.optional && g.kind === 'machine' ? g.block.start : null));
   if (!slot) return null;
   for (let address = slot.address; address + r.footprint - 1 <= UNIVERSE_SIZE; address++) {
     if (takenBy(rows, { universe: slot.universe, address }, r.footprint, r.name).length === 0) return { universe: slot.universe, address };

@@ -26,6 +26,7 @@ as its own fixture on the console.
 |---|---|---|---|
 | **Layer** | 64 | layer | Everything about one layer: intensity, folder and file, play mode, speed, in and out points, dissolve, position, scale, rotation, colour, blend mode, two effects, crop, audio, sync |
 | **Master** | 8 | machine | Master intensity (multiplies every output), Freeze all or Blackout, a test pattern on every output, Master speed |
+| **Timecode** | 8 | machine, optional | The timecode generator (not built yet: `docs/timecode-out.md`): Stop, Run or Locate, the time it is set to, its rate, and whether it counts on its own or follows a layer |
 | **Output** | 8 | output (outputs 1 to 8) | Output intensity, Blackout or Freeze, a test pattern, Blend on or Raw, mapping preset and its fade |
 | **Keystone** | 16 | output, optional | Moves the output's four corners on top of its alignment ([Warp, slices and masks](warp-and-masks.md#keystone-from-the-console)) |
 
@@ -79,6 +80,9 @@ A fresh project is patched like this:
 - A Keystone is not in the standard patch. **Patch** next to it puts
   Keystone n at `73 + 16 × (n − 1)` on the Master's universe (73, 89, …),
   or on the first free 16 channels after that.
+- The Timecode fixture has no slot in the standard layout either, so the
+  outputs keep their place after the Master. **Patch** next to it takes the
+  first free channels on the Master's universe after the Master.
 
 | Fixture | Universe | Addresses |
 |---|---|---|

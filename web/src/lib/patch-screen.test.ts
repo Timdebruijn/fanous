@@ -13,12 +13,13 @@ import {
 
 const spec = (name: string, key: string, channel: number, bits: 8 | 16 = 8) => ({ name, key, channel, bits });
 const map: ChannelMap = {
-  footprints: { layer: 64, master: 8, output: 8, keystone: 16 },
+  footprints: { layer: 64, master: 8, timecode: 8, output: 8, keystone: 16 },
   modes: {
     layer: [spec('Opacity', 'opacity', 1, 16), spec('Volume', 'volume', 3), spec('Scale', 'scale', 10, 16)],
     master: [spec('Dimmer', 'dimmer', 1)],
     output: [],
     keystone: [spec('Top-left X', 'topLeftX', 1, 16)],
+    timecode: [],
   },
   fixtures: [...FALLBACK_FIXTURES],
 };
@@ -90,12 +91,12 @@ describe('universe naming and lists', () => {
 describe('buildFixtures', () => {
   it('lists layers (patched or not), Master, then outputs 1–8 in numeric order, each with its Keystone', () => {
     const rows = buildFixtures([at('Output 8', 'sacn:1', 100), at('Layer 2', 'artnet:0.0.0', 65), at('Output 2', 'sacn:1', 200)], 3, map, [8, 10, 2]);
-    expect(rows.map((r) => r.name)).toEqual(['Layer 1', 'Layer 2', 'Layer 3', 'Master', 'Output 2', 'Keystone 2', 'Output 8', 'Keystone 8']);
-    expect(rows[6]).toMatchObject({ kind: 'output', number: 8, optional: false, patched: true });
+    expect(rows.map((r) => r.name)).toEqual(['Layer 1', 'Layer 2', 'Layer 3', 'Master', 'Timecode', 'Output 2', 'Keystone 2', 'Output 8', 'Keystone 8']);
+    expect(rows[7]).toMatchObject({ kind: 'output', number: 8, optional: false, patched: true });
     expect(buildFixtures([], 40, null).filter((r) => r.kind === 'layer')).toHaveLength(32); // layers above 32 never render
-    expect(rows[5]).toMatchObject({ type: 'keystone', typeLabel: 'Keystone', footprint: 16, patched: false });
+    expect(rows[6]).toMatchObject({ type: 'keystone', typeLabel: 'Keystone', footprint: 16, patched: false });
     const keystone = buildFixtures([at('Keystone 3', 'sacn:1', 9)], 0, null, [3]);
-    expect(keystone.map((r) => [r.name, r.footprint, r.end])).toEqual([['Master', 8, 0], ['Output 3', 8, 0], ['Keystone 3', 16, 24]]);
+    expect(keystone.map((r) => [r.name, r.footprint, r.end])).toEqual([['Master', 8, 0], ['Timecode', 8, 0], ['Output 3', 8, 0], ['Keystone 3', 16, 24]]);
     expect(paramAt(map, 'keystone', 2)).toMatchObject({ spec: { key: 'topLeftX' }, fine: true });
     expect(rows[0]).toMatchObject({ patched: false, address: 0, end: 0 });
     expect(rows[1]).toMatchObject({ patched: true, address: 65, end: 128, footprint: 64, typeLabel: 'Layer' });
@@ -105,14 +106,14 @@ describe('buildFixtures', () => {
 
   it('falls back to 64/8/8 without a channel map and ignores layers above layerCount', () => {
     const rows = buildFixtures([at('Layer 1', 'artnet:0.0.0', 1), at('Master', 'artnet:0.0.0', 65), at('Layer 9', 'artnet:0.0.0', 1)], 2, null);
-    expect(rows.map((r) => [r.name, r.footprint])).toEqual([['Layer 1', 64], ['Layer 2', 64], ['Master', 8]]);
+    expect(rows.map((r) => [r.name, r.footprint])).toEqual([['Layer 1', 64], ['Layer 2', 64], ['Master', 8], ['Timecode', 8]]);
     expect(rows.every((r) => r.collisions.length === 0)).toBe(true);
-    expect(buildFixtures([], 0, null).map((r) => r.name)).toEqual(['Master']);
+    expect(buildFixtures([], 0, null).map((r) => r.name)).toEqual(['Master', 'Timecode']);
   });
 
   it('lists every output, patched or not, and no Output fixture without its output', () => {
     const rows = buildFixtures([at('Output 1', 'artnet:0.0.1', 9), at('Output 4', 'artnet:0.0.1', 33)], 0, map, [1, 5]);
-    expect(rows.map((r) => [r.name, r.patched])).toEqual([['Master', false], ['Output 1', true], ['Keystone 1', false], ['Output 5', false], ['Keystone 5', false]]);
+    expect(rows.map((r) => [r.name, r.patched])).toEqual([['Master', false], ['Timecode', false], ['Output 1', true], ['Keystone 1', false], ['Output 5', false], ['Keystone 5', false]]);
   });
 
   it('treats address 0 as unpatched', () => {
@@ -131,7 +132,7 @@ describe('buildFixtures', () => {
     expect(rows[3]!.collisions).toEqual([]); // same address, other universe
     expect(rowStatus(rows[0]!, 'dmx')).toEqual({ tone: 'bad', text: 'collides with Layer 2 · 40–64' });
     expect(rowStatus(rows[2]!, 'dmx')).toEqual({ tone: 'ok', text: 'ok' });
-    expect(summarize(rows)).toEqual({ fixtures: 5, universes: 2, collisions: 1 });
+    expect(summarize(rows)).toEqual({ fixtures: 6, universes: 2, collisions: 1 });
   });
 
   it('counts every colliding pair and mentions the extra ones', () => {
@@ -390,6 +391,17 @@ describe('blocks', () => {
     expect(group(groups, 'layer').block).toMatchObject({ start: { universe: 'artnet:0.0.0', address: 1 }, required: 8, unplaced: 0, off: 0 });
   });
 
+  it('gives the Timecode fixture no slot in the standard layout, and Patch next to it the first free channels after the Master', () => {
+    const { groups, rows } = buildPatch(standard, 8, map, [1, 2]);
+    const machine = group(groups, 'machine');
+    expect(machine.rows.map((r) => r.name)).toEqual(['Master', 'Timecode']);
+    expect(groupSlots(machine, { universe: 'artnet:0.0.1', address: 1 }).has('Timecode')).toBe(false);
+    expect(standardStart(groups, 2)).toEqual({ universe: 'artnet:0.0.1', address: 9 }); // the outputs stay where Patch.standard puts them
+    const timecode = machine.rows.find((r) => r.name === 'Timecode')!;
+    expect(patchTarget(machine, timecode, rows)).toEqual({ universe: 'artnet:0.0.1', address: 25 }); // after Master 1–8 and Outputs 1–2 at 9–24
+    expect(layEntries(machine, { universe: 'artnet:0.0.1', address: 1 }).entries.map((e) => e.fixture)).toEqual(['Master']);
+  });
+
   it('handles a project without outputs', () => {
     const { groups } = buildPatch(standard.slice(0, 9), 8, map, []);
     const outputs = group(groups, 'output');
@@ -423,11 +435,11 @@ describe('blocks', () => {
     const { rows } = buildPatch([], 1, map, [1]);
     const words = (policy: string) => rows.map((r: FixtureRow) => `${r.name}: ${rowStatus(r, policy).tone} ${rowStatus(r, policy).text}`);
     expect(words('dmx')).toEqual([
-      'Layer 1: warn no address · stays dark', 'Master: faint no address · at defaults', 'Output 1: faint no address · at defaults', 'Keystone 1: faint not used',
+      'Layer 1: warn no address · stays dark', 'Master: faint no address · at defaults', 'Timecode: faint not used', 'Output 1: faint no address · at defaults', 'Keystone 1: faint not used',
     ]);
     for (const policy of ['internal', 'ltp', 'htp']) {
       expect(words(policy)).toEqual([
-        'Layer 1: faint no address · Fanous only', 'Master: faint no address · Fanous only', 'Output 1: faint no address · Fanous only', 'Keystone 1: faint not used',
+        'Layer 1: faint no address · Fanous only', 'Master: faint no address · Fanous only', 'Timecode: faint not used', 'Output 1: faint no address · Fanous only', 'Keystone 1: faint not used',
       ]);
     }
   });

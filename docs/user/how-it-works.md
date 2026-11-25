@@ -37,7 +37,9 @@ is doing: frames, universes, outputs, clients.
    **Master fixture** (8 channels) and one **Output fixture** per projector
    (8 channels) act on the finished picture: master and output intensity,
    blackout, freeze, test patterns, mapping presets. An optional **Keystone
-   fixture** (16 channels) moves an output's corners from the desk. You patch
+   fixture** (16 channels) moves an output's corners from the desk, and an
+   optional **Timecode fixture** (8 channels) is reserved for the timecode
+   generator ([Console setup](console-setup.md)). You patch
    them on the console from the GDTF file Fanous exports. See
    [Console setup](console-setup.md).
 2. **Who controls decides which value counts.** Besides the console, values

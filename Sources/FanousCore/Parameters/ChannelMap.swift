@@ -13,6 +13,7 @@ public enum ChannelMap {
         case .master: 7...8
         case .output: 8...8
         case .keystone: nil
+        case .timecode: 8...8
         }
     }
 
@@ -22,6 +23,7 @@ public enum ChannelMap {
         case .master: master
         case .output: output
         case .keystone: keystone
+        case .timecode: timecode
         }
     }
 
@@ -161,6 +163,27 @@ public enum ChannelMap {
         p(.output(.preset), "Mapping preset", 6, 8, 0, .index(max: 255), "Mapping"),
         // the morph when ch 6 changes, read at that change: 0 = cut, as Layer Dissolve (M2.5)
         p(.output(.fade), "Mapping fade", 7, 8, 0, .curve([CurvePoint(0, 0), CurvePoint(255, 25.5)], unit: "s"), "Mapping"),
+    ]
+
+    // MARK: - Timecode (8 channels, docs/timecode-out.md §2)
+
+    /// Rate bands written out so the last one runs to 255 (as `syncBands`): no raw value falls back.
+    static let rateBands: ParameterKind = .bands(
+        [Band(from: 0, to: 50, name: "24", value: 0), Band(from: 51, to: 101, name: "25", value: 1), Band(from: 102, to: 152, name: "29.97 DF", value: 2),
+         Band(from: 153, to: 203, name: "29.97 NDF", value: 3), Band(from: 204, to: 255, name: "30", value: 4)],
+        fallback: 1)
+
+    public static let timecode: [ParameterSpec] = [
+        p(.timecode(.control), "Control", 1, 8, 0, bands(width: 64, ["Stop", "Run", "Locate", "Locate and run"]), "Control"),
+        // the generator clamps a raw value above the range (`physical(fromRaw:)` does not)
+        p(.timecode(.hours), "Hours", 2, 8, 1, .index(max: 23), "Time"),
+        p(.timecode(.minutes), "Minutes", 3, 8, 0, .index(max: 59), "Time"),
+        p(.timecode(.seconds), "Seconds", 4, 8, 0, .index(max: 59), "Time"),
+        p(.timecode(.frames), "Frames", 5, 8, 0, .index(max: 29), "Time"),
+        p(.timecode(.rate), "Rate", 6, 8, 51, rateBands, "Time"),
+        // 231–255 take the fallback, Internal
+        // 32 = the layers the engine renders (`ParameterSnapshotSlot.maxLayers`); a layer above the project's count stands
+        p(.timecode(.source), "Source", 7, 8, 0, bands(width: 7, ["Internal"] + (1...32).map { "Layer \($0)" }), "Control"),
     ]
 
     // MARK: - Keystone (16 channels, DESIGN.md §6.4a)

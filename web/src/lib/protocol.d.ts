@@ -138,7 +138,7 @@ export interface CommandArgs {
   'output.set': { id: number; path: string; value: JSONValue };
   /** Compare, a lease (DESIGN.md §9.10 items 3 and 4): outputs 1–8 show mapping preset 1–255 for 5 s, over Output ch 6; the UI renews it every 2 s while Compare is held and the latest call wins; preset 0 ends it. Never saved or undone; refused in show mode. Role: programmer, refused under show lock. */
   'output.show': { ids: number[]; preset: number };
-  /** Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0 (any fixture); an address only for a fixture that exists: a layer up to the layer count (1–32), an Output or Keystone fixture of an output that exists (1–8). Role: programmer, refused under show lock, undoable. */
+  /** Patch a fixture (layer, master, timecode, output, keystone) to a universe and address, or unpatch it with address 0 (any fixture); an address only for a fixture that exists: a layer up to the layer count (1–32), an Output or Keystone fixture of an output that exists (1–8). Role: programmer, refused under show lock, undoable. */
   'patch.set': { fixture: string; universe: string; address: number };
   /** Patch or unpatch several fixtures in one step (one undo): each entry is checked as patch.set checks it; one bad entry, or a fixture listed twice, refuses all. Role: programmer, refused under show lock, undoable. */
   'patch.setMany': { entries: { fixture: string; universe: string; address: number }[] };

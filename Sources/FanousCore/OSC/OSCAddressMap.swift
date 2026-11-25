@@ -26,6 +26,7 @@ public enum OSCAddressMap {
         case .master: "\(prefix)/master/\(parameter.key)"
         case .output(let n): "\(prefix)/output/\(n)/\(parameter.key)"
         case .keystone(let n): "\(prefix)/keystone/\(n)/\(parameter.key)"
+        case .timecode: "\(prefix)/timecode/\(parameter.key)"
         }
     }
 
@@ -65,8 +66,10 @@ public enum OSCAddressMap {
             guard parts.count == 2, let flag = args.first?.asBool else { return nil }
             return parts[1] == "lock" ? .showLock(flag) : parts[1] == "mode" ? .showMode(flag) : nil
         case "timecode":
-            guard parts.count == 2, parts[1] == "enable", let flag = args.first?.asBool else { return nil }
-            return .timecodeEnable(flag)
+            guard parts.count == 2 else { return nil }
+            // the operator's switch keeps its address; every other key is the Timecode fixture's (docs/timecode-out.md §2)
+            if parts[1] == "enable" { return args.first?.asBool.map { .timecodeEnable($0) } }
+            return parameterCommand(.timecode, parts[1], args)
         case "project":
             guard parts.count == 2, parts[1] == "load", case .string(let name)? = args.first else { return nil }
             return .projectLoad(name)

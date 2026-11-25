@@ -32,6 +32,13 @@ public enum GDTFExporter {
         case .master(.testPattern), .output(.testPattern):
             return a("TestPattern", "Pattern", "Control", "Control", "None")
         case .layer(.speed), .master(.speed): return a("PlaySpeed", "Speed", "Media", "Media", "Percent")
+        case .timecode(.control): return a("TimecodeControl", "TC", "Control", "Timecode", "None")
+        case .timecode(.hours): return a("TimecodeHours", "Hours", "Control", "Timecode", "None")
+        case .timecode(.minutes): return a("TimecodeMinutes", "Minutes", "Control", "Timecode", "None")
+        case .timecode(.seconds): return a("TimecodeSeconds", "Seconds", "Control", "Timecode", "None")
+        case .timecode(.frames): return a("TimecodeFrames", "Frames", "Control", "Timecode", "None")
+        case .timecode(.rate): return a("TimecodeRate", "Rate", "Control", "Timecode", "None")
+        case .timecode(.source): return a("TimecodeSource", "Source", "Control", "Timecode", "None")
         case .layer(.folder): return a("MediaFolder", "Folder", "Media", "Media", "None")
         case .layer(.file): return a("MediaFile", "File", "Media", "Media", "None")
         case .layer(.playMode): return a("PlayMode", "Play", "Media", "Media", "None")
@@ -101,7 +108,7 @@ public enum GDTFExporter {
         var x = ""
         x += "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n"
         x += "<GDTF DataVersion=\"\(dataVersion)\">\n"
-        x += "  <FixtureType Name=\"\(Attribution.projectName)\" ShortName=\"\(Attribution.projectName)\" LongName=\"\(Attribution.projectName) Media Server\" Manufacturer=\"\(Attribution.projectName)\" Description=\"\(esc(Attribution.projectName)) media server v\(esc(version)): layer, master, output and keystone fixtures. \(esc(Attribution.repositoryURL))\" FixtureTypeID=\"\(fixtureTypeID)\" Thumbnail=\"\" RefFT=\"\" CanHaveChildren=\"No\">\n"
+        x += "  <FixtureType Name=\"\(Attribution.projectName)\" ShortName=\"\(Attribution.projectName)\" LongName=\"\(Attribution.projectName) Media Server\" Manufacturer=\"\(Attribution.projectName)\" Description=\"\(esc(Attribution.projectName)) media server v\(esc(version)): layer, master, timecode, output and keystone fixtures. \(esc(Attribution.repositoryURL))\" FixtureTypeID=\"\(fixtureTypeID)\" Thumbnail=\"\" RefFT=\"\" CanHaveChildren=\"No\">\n"
         x += "    <AttributeDefinitions>\n      <ActivationGroups/>\n      <FeatureGroups>\n"
         for group in groups.keys.sorted() {
             x += "        <FeatureGroup Name=\"\(group)\" Pretty=\"\(group)\">\n"

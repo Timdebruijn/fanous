@@ -346,7 +346,7 @@ public enum ProjectDocument {
             case .output(let n), .keystone(let n):
                 guard n <= ParameterSnapshotSlot.maxOutputs else { throw CommandError.invalidArgs("console control covers outputs 1–\(ParameterSnapshotSlot.maxOutputs)") }
                 throw CommandError.invalidArgs("there is no output \(n): add the output first")
-            case .master:
+            case .master, .timecode:
                 break
             }
         }
@@ -396,10 +396,11 @@ public enum ProjectDocument {
         return patch
     }
 
-    /// The fixtures that exist (DESIGN.md §6.6), patched or not: Layer 1…min(`layerCount`, 32), the Master, and Output n
-    /// and Keystone n of every output n ≤ `ParameterSnapshotSlot.maxOutputs`. Each has a resolver.
+    /// The fixtures that exist (DESIGN.md §6.6), patched or not: Layer 1…min(`layerCount`, 32), the Master, the Timecode
+    /// fixture (docs/timecode-out.md §2), and Output n and Keystone n of every output n ≤ `ParameterSnapshotSlot.maxOutputs`.
+    /// Each has a resolver.
     public static func fixtures(layerCount: Int, outputs: [Int]) -> Set<FixtureRef> {
-        var fixtures: Set<FixtureRef> = [.master]
+        var fixtures: Set<FixtureRef> = [.master, .timecode]
         for n in 1...ParameterSnapshotSlot.maxLayers where n <= layerCount { fixtures.insert(.layer(n)) }
         for n in outputs where (1...ParameterSnapshotSlot.maxOutputs).contains(n) { fixtures.formUnion([.output(n), .keystone(n)]) }
         return fixtures
@@ -588,7 +589,7 @@ public enum ProjectDocument {
         store.register(
             CommandSpec(
                 name: "patch.set", role: .programmer,
-                summary: "Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0 (any fixture); an address only for a fixture that exists: a layer up to the layer count (1–32), an Output or Keystone fixture of an output that exists (1–8).",
+                summary: "Patch a fixture (layer, master, timecode, output, keystone) to a universe and address, or unpatch it with address 0 (any fixture); an address only for a fixture that exists: a layer up to the layer count (1–32), an Output or Keystone fixture of an output that exists (1–8).",
                 argsType: "{ fixture: string; universe: string; address: number }"
             ) { project, args in
                 let (fixture, entry) = try checkedEntry(args, in: project, fixtures: fixtures(from: project))
@@ -981,6 +982,7 @@ extension FixtureRef {
         case ("layer", 2): guard let n = Int(parts[1]), n >= 1 else { return nil }; self = .layer(n)
         case ("output", 2): guard let n = Int(parts[1]), n >= 1 else { return nil }; self = .output(n)
         case ("keystone", 2): guard let n = Int(parts[1]), n >= 1 else { return nil }; self = .keystone(n)
+        case ("timecode", 1): self = .timecode
         default: return nil
         }
     }
@@ -989,7 +991,7 @@ extension FixtureRef {
     var outputNumber: Int? {
         switch self {
         case .output(let n), .keystone(let n): n
-        case .layer, .master: nil
+        case .layer, .master, .timecode: nil
         }
     }
 }
