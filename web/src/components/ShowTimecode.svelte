@@ -4,7 +4,7 @@
 <script lang="ts">
   import LevelMeter from './LevelMeter.svelte';
   import type { JSONValue } from '../lib/protocol';
-  import { lockTitle, offsetText, timecodeBadge, timecodeOn, timecodeSource } from '../lib/show';
+  import { formatNumber, lockTitle, nextTrigger, offsetText, timecodeBadge, timecodeOn, timecodeSource } from '../lib/show';
   import { app, can, cmd, programmerLock } from '../lib/state.svelte';
   import { plural, typedNumber } from '../lib/system';
 
@@ -13,6 +13,7 @@
   const badge = $derived(timecodeBadge(live.state));
   // The switch is the operator's `timecode.enable` (also under show lock); the source and the rest are configuration.
   const on = $derived(timecodeOn(tc));
+  const next = $derived(nextTrigger(app.project.cues, live));
 
   // Settings are configuration (programmer, refused under show lock); the switch is the operator's.
   const editTitle = $derived(programmerLock());
@@ -68,6 +69,7 @@
       <span class="pill pill-{badge.tone}"><span class="dot"></span>{badge.label}</span>
       <span class="mono">{timecodeSource(live)}</span>
       <span class="caption">{plural(live.seen, 'frame')} seen</span>
+      {#if next}<span class="caption" aria-live="off">next trigger: cue {formatNumber(next.cue.number)}{next.cue.name ? ` · ${next.cue.name}` : ''} in {Math.ceil(next.seconds)} s</span>{/if}
     </div>
   </div>
   {#if tc.source === 'ltc'}<LevelMeter level={live.level} label="LTC level" none={on ? 'no audio' : 'timecode switched off'} />{/if}

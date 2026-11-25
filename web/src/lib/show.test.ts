@@ -17,6 +17,8 @@ import {
   midiParameterTarget,
   midiTargetText,
   refusalNote,
+  nextTrigger,
+  triggerSeconds,
 } from './show';
 
 const cue = (id: string, number: number, extra: Partial<CueDoc> = {}): CueDoc => ({ id, number, name: `Cue ${number}`, fade: 0, values: [], ...extra });
@@ -192,6 +194,25 @@ describe('parseTrigger', () => {
     expect(parseTrigger('00:01:00;01@29.97df')).toMatchObject({ ok: false });
     expect(parseTrigger('00:10:00:00@29.97df')).toMatchObject({ ok: true });
     expect(parseTrigger('00:01:00:00@29.97ndf')).toMatchObject({ ok: true });
+  });
+});
+
+describe('next trigger', () => {
+  it('counts a trigger in seconds the way the engine does, drop frame included', () => {
+    expect(triggerSeconds('00:01:30:00@25')).toBe(90);
+    expect(triggerSeconds('00:01:30:00')).toBe(90);
+    expect(triggerSeconds('00:01:00;02@29.97 DF')).toBeCloseTo(1800 / (30000 / 1001), 9);
+    expect(triggerSeconds('00:01:00:02@29.97 NDF')).toBeCloseTo(1802 / (30000 / 1001), 9);
+    expect(triggerSeconds('junk')).toBeNull();
+    expect(triggerSeconds('00:01:00:02@50')).toBeNull();
+  });
+  it('names the lowest trigger ahead of the time showing, in any list order and rate, and nothing while off', () => {
+    const cues = [cue('c3', 3, { trigger: '00:02:00:00@25' }), cue('c1', 1), cue('c2', 2, { trigger: '00:01:40:00@25' }), cue('c4', 4, { trigger: '00:01:30:00@30' })];
+    const live = { state: 'locked' as const, frames: 2375, rate: '25' }; // 95 s
+    expect(nextTrigger(cues, live)).toEqual({ cue: cues[2], seconds: 5 });
+    expect(nextTrigger(cues, { ...live, frames: 2500 })).toEqual({ cue: cues[0], seconds: 20 });
+    expect(nextTrigger(cues, { ...live, frames: 3000 })).toBeNull();
+    expect(nextTrigger(cues, { ...live, state: 'off' })).toBeNull();
   });
 });
 
