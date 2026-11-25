@@ -4666,9 +4666,11 @@ later deliverable (`[OPEN-20]`).
   one time every 2 frames, 80 ms at 25 fps), so MTC no longer flickers to
   Freewheel between its updates (B65). **B292 (2026-11-25):** a full-frame
   locate sets the clock to that position stopped (`Sample.running` false:
-  locked, not extrapolated) until quarter frames run again; one source feeds
-  the clock, the first to deliver a time, until it is unplugged or has been
-  silent for the freewheel time; SysEx longer than a full frame is dropped.
+  not extrapolated; no update promised, so it stays locked) until quarter
+  frames run again, and fires no cue (`CueEngine.timecode` takes it like a
+  jump); one source feeds the clock, the first to deliver a time, until it is
+  unplugged or has been silent for the freewheel time (0.5 s at least); SysEx
+  longer than a full frame is dropped.
 - One active source per project; offset per project and per layer (Layer
   timecode chase = `tc − projectOffset − layerOffset` at the file's fps,
   looped within in/out if the layer's loop flag is set).

@@ -55,8 +55,8 @@ public final class CueRunner: @unchecked Sendable {
     public func goto(_ number: Double) { queue.async { [self] in act { $0.goto(number: number, at: CACurrentMediaTime()) } } }
 
     /// From the timecode clock (any thread): fires cues whose trigger was crossed.
-    public func timecode(_ timecode: Timecode) {
-        queue.async { [self] in act { $0.timecode(timecode, at: CACurrentMediaTime()) } }
+    public func timecode(_ timecode: Timecode, running: Bool = true) {
+        queue.async { [self] in act { $0.timecode(timecode, at: CACurrentMediaTime(), running: running) } }
     }
 
     private func act(_ body: (inout CueEngine) -> Void) {

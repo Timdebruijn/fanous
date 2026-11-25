@@ -11,9 +11,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Timecode: three MTC fixes (B292). A full-frame locate holds the clock at the locate position, Locked, until quarter
-  frames run again; it was taken as running time, so a chasing layer played on and froze 2 s past it. With All sources,
-  one source drives the clock (the first to send, until it is unplugged or silent for the Freewheel time) instead of
-  every source in turn. SysEx longer than a full frame is dropped instead of growing the buffer (PR #467).
+  frames run again, and fires no cue; it was taken as running time, so a chasing layer played on and froze 2 s past it,
+  and a locate up to 5 s forward fired the cues it passed. With All sources, one source drives the clock (the first to
+  send, until it is unplugged or silent for the Freewheel time, half a second at least) instead of every source in
+  turn. SysEx longer than a full frame is dropped instead of growing the buffer (PR #467).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in

@@ -23,9 +23,10 @@ public final class TimecodeClock: @unchecked Sendable {
         public var hostTime: Double = 0
         public var state: State = .off
         public var source: String = ""
-        /// Frames between the source's updates: LTC decodes every frame, MTC assembles a time every 2 (B65).
+        /// Frames between the source's updates: LTC decodes every frame, MTC assembles a time every 2 (B65); 0 promises
+        /// none (a locate), and the clock stays locked at that position.
         public var updateFrames: Int = 1
-        /// False after an MTC full-frame locate (B292): the clock stands at that position, locked, until a running update.
+        /// False while the source stands still: the clock holds that position, locked, until a running update.
         public var running = true
 
         public var timecode: Timecode { Timecode(frameCount: max(0, frameCount), rate: rate) }
@@ -39,14 +40,15 @@ public final class TimecodeClock: @unchecked Sendable {
         set { freewheelBits.store(newValue.bitPattern, ordering: .relaxed) }
     }
     private let freewheelBits = Atomic<UInt64>(2.0.bitPattern)
-    /// Every decoded frame, on the source's thread (cue triggers; the engine dispatches onward).
-    nonisolated(unsafe) public var onFrame: ((Timecode, Double) -> Void)?
+    /// Every decoded frame, on the source's thread (cue triggers; the engine dispatches onward), with `running`.
+    nonisolated(unsafe) public var onFrame: ((Timecode, Double, Bool) -> Void)?
     public let framesSeen = Atomic<Int>(0)
 
     public init() {}
 
     /// Source thread: one decoded frame at the host time its last bit ended; `everyFrames` is the update interval
-    /// the source promises, which sets the lock window. `running: false` is a locate: the time stands still there.
+    /// the source promises, which sets the lock window (0: none). `running: false`: the source stands still and the clock
+    /// holds `timecode`.
     public func update(_ timecode: Timecode, at hostTime: Double, source: String, everyFrames: Int = 1, running: Bool = true) {
         sample.withLock { s in
             s.frameCount = timecode.frameCount
@@ -58,7 +60,7 @@ public final class TimecodeClock: @unchecked Sendable {
             s.running = running
         }
         framesSeen.wrappingAdd(1, ordering: .relaxed)
-        onFrame?(timecode, hostTime)
+        onFrame?(timecode, hostTime, running)
     }
 
     public func stop() { sample.withLock { $0 = Sample() } }
@@ -74,19 +76,15 @@ public final class TimecodeClock: @unchecked Sendable {
     }
 
     /// Locked within 1.5 update intervals of the last decode, freewheeling up to `freewheel` seconds, then lost; a
-    /// stopped clock stays locked where it was set.
+    /// stopped clock holds its position through all three, and one that promised no update stays locked there.
     static func extrapolate(_ s: Sample, at now: Double, freewheel: Double) -> Sample {
-        guard s.state != .off, s.running else { return s }
+        guard s.state != .off, s.updateFrames > 0 else { return s }
         var out = s
         let age = now - s.hostTime
         let interval = Double(s.updateFrames) / s.rate.exactFrameRate
-        if age > freewheel {
-            out.state = .lost
-            out.frameCount = s.frameCount + Int((freewheel * s.rate.exactFrameRate).rounded(.down))
-        } else {
-            out.state = age > interval * 1.5 ? .freewheel : .locked
-            out.frameCount = s.frameCount + Int((max(0, age) * s.rate.exactFrameRate).rounded(.down))
-        }
+        out.state = age > freewheel ? .lost : age > interval * 1.5 ? .freewheel : .locked
+        let counted = s.running ? min(max(0, age), freewheel) : 0
+        out.frameCount = s.frameCount + Int((counted * s.rate.exactFrameRate).rounded(.down))
         return out
     }
 
@@ -385,7 +383,8 @@ public final class MTCInput: @unchecked Sendable {
     private(set) var listener: MIDISourceListener!
     private var parsers: [MIDIUniqueID: Parse] = [:]
     /// The source whose times the clock takes and the host time of its last one (B292): another takes over only once
-    /// this one is unplugged or has been silent for the freewheel time, so two senders never feed the clock in turn.
+    /// this one is unplugged or has been silent for the freewheel time, half a second at least (MIDI jitter stretches
+    /// one 80 ms update gap past a 0.1 s freewheel), so two senders never feed the clock in turn.
     private var feeding: (uid: MIDIUniqueID, at: Double)?
     private let logger: Logger
     public let status = Mutex(Status())
@@ -439,10 +438,10 @@ public final class MTCInput: @unchecked Sendable {
         var parse = parsers[uid] ?? Parse()
         for (word, hostTime) in words {
             guard let (timecode, running) = parse.feed(word) else { continue }
-            if let feeding, feeding.uid != uid, hostTime - feeding.at < clock.freewheelSeconds { continue }
+            if let feeding, feeding.uid != uid, hostTime - feeding.at < max(clock.freewheelSeconds, 0.5) { continue }
             if feeding?.uid != uid { logger.info("MTC input: timecode from \(listener.names[uid] ?? "source \(uid)")") }
             feeding = (uid, hostTime)
-            clock.update(timecode, at: hostTime, source: "MTC", everyFrames: 2, running: running)
+            clock.update(timecode, at: hostTime, source: "MTC", everyFrames: running ? 2 : 0, running: running)
         }
         parsers[uid] = parse
     }

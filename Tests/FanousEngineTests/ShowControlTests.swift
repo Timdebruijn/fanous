@@ -322,7 +322,7 @@ struct ShowControlTests {
         let input = MTCInput(clock: clock, logger: testLogger)
         input.queue.sync { input.listener.setSources([1: "Pad", 2: "Console"]) }
         let seen = Mutex<[Int]>([])
-        clock.onFrame = { tc, _ in seen.withLock { $0.append(tc.frameCount) } }
+        clock.onFrame = { tc, _, _ in seen.withLock { $0.append(tc.frameCount) } }
         func send(hours: Int, seconds: Int, uid: MIDIUniqueID, at t: Double) {
             let words = Self.quarterFrames(Timecode(hours: hours, minutes: 0, seconds: seconds, frames: 0, rate: .fps25))
             input.queue.sync { input.receive(words.map { ($0, t) }, uid: uid) }
@@ -340,6 +340,44 @@ struct ShowControlTests {
         #expect(seen.withLock { $0.last } == 90_127, "the pad takes over at once")
     }
 
+    /// B292: at the shortest freewheel (0.1 s) the feeding source still holds the clock for half a second, so MIDI jitter
+    /// on its 80 ms updates never hands the clock to a second sender.
+    @Test func mtcFeedingSourceHoldsHalfASecondAtTheShortestFreewheel() {
+        let clock = TimecodeClock()
+        clock.freewheelSeconds = 0.1
+        let input = MTCInput(clock: clock, logger: testLogger)
+        input.queue.sync { input.listener.setSources([1: "Pad", 2: "Console"]) }
+        let seen = Mutex<[Int]>([])
+        clock.onFrame = { tc, _, _ in seen.withLock { $0.append(tc.frameCount) } }
+        func send(hours: Int, uid: MIDIUniqueID, at t: Double) {
+            let words = Self.quarterFrames(Timecode(hours: hours, minutes: 0, seconds: 0, frames: 0, rate: .fps25))
+            input.queue.sync { input.receive(words.map { ($0, t) }, uid: uid) }
+        }
+        send(hours: 1, uid: 1, at: 10)
+        send(hours: 2, uid: 2, at: 10.12)  // the pad's next update is late: 120 ms
+        send(hours: 2, uid: 2, at: 10.49)
+        #expect(seen.withLock { $0 } == [90_002], "the console waits half a second")
+        send(hours: 2, uid: 2, at: 10.51)
+        #expect(seen.withLock { $0.last } == 180_002, "and then takes over")
+    }
+
+    /// B292: a locate fires no cue. The cue runner took the stopped time as running: a locate up to 5 s forward fired the
+    /// cues in between while the sender stood still. The quarter frames after it fire only what they pass.
+    @Test func mtcLocateFiresNoCue() {
+        let clock = TimecodeClock()
+        let input = MTCInput(clock: clock, logger: testLogger)
+        func tc(_ seconds: Int, _ frames: Int = 0) -> Timecode { Timecode(hours: 1, minutes: 0, seconds: seconds, frames: frames, rate: .fps25) }
+        let cues = Mutex(CueEngine(list: CueList(cues: [Cue(number: 1, timecodeTrigger: tc(2)), Cue(number: 2, timecodeTrigger: tc(3, 3))])))
+        clock.onFrame = { timecode, _, running in cues.withLock { $0.timecode(timecode, at: 0, running: running) } }
+        Self.feed(input, Self.quarterFrames(tc(0)), at: 10)  // running at 01:00:00:02
+        Self.feed(input, Self.fullFrame(tc(3)), at: 10.5)  // the sender parks at 01:00:03:00
+        #expect(cues.withLock { $0.current } == nil, "the locate passed cue 1 and fired it")
+        Self.feed(input, Self.quarterFrames(tc(3)), at: 12)  // runs from the locate: 01:00:03:02
+        #expect(cues.withLock { $0.current } == nil)
+        Self.feed(input, Self.quarterFrames(tc(3, 2)), at: 12.08)  // 01:00:03:04 passes cue 2
+        #expect(cues.withLock { $0.current?.number } == 2)
+    }
+
     /// B64: one parse state per source (two senders interleaved still assemble), and the source feeding the clock
     /// leaving is signal loss (freewheel, then lost), with late words from it dropped. Since B292 only the first source to
     /// deliver feeds the clock.
@@ -350,7 +388,7 @@ struct ShowControlTests {
         let a = Self.quarterFrames(Timecode(hours: 1, minutes: 0, seconds: 0, frames: 0, rate: .fps25))
         let b = Self.quarterFrames(Timecode(hours: 2, minutes: 0, seconds: 0, frames: 0, rate: .fps25))
         let seen = Mutex<[Int]>([])
-        clock.onFrame = { tc, _ in seen.withLock { $0.append(tc.frameCount) } }
+        clock.onFrame = { tc, _, _ in seen.withLock { $0.append(tc.frameCount) } }
         for i in 0..<8 {
             input.queue.sync {
                 input.receive([(a[i], 10)], uid: 1)
@@ -359,11 +397,11 @@ struct ShowControlTests {
         }
         #expect(seen.withLock { $0 } == [90_002], "the pad delivered first and feeds the clock")
         #expect(input.status.withLock { $0.connected } == ["Console", "Pad"])
-        // the console is unplugged; the pad stays
-        input.queue.sync { input.listener.setSources([1: "Pad"]) }
-        #expect(input.status.withLock { $0.connected } == ["Pad"], "the device list drops it at once")
+        // the pad, which feeds, is unplugged; the console stays
+        input.queue.sync { input.listener.setSources([2: "Console"]) }
+        #expect(input.status.withLock { $0.connected } == ["Console"], "the device list drops it at once")
         #expect(clock.current(at: 10.5).state == .freewheel, "an unplugged source is signal loss: freewheel")
-        input.queue.sync { input.receive(b.map { ($0, 11) }, uid: 2) }
+        input.queue.sync { input.receive(a.map { ($0, 11) }, uid: 1) }
         #expect(clock.current(at: 11).state == .freewheel, "words in flight from the gone source are dropped")
         #expect(clock.current(at: 12.5).state == .lost, "lost after the freewheel time (2 s)")
         #expect(clock.frames(at: 12.5) == nil)
