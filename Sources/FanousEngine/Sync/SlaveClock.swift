@@ -29,14 +29,14 @@ enum SlaveClock {
     /// `offsetMs`: how far the entry's position is from where the slave's clock would have been without it (its
     /// previous position advanced by the entry's rate), i.e. the correction a locked tick applies; a whole-file jump
     /// (the master looping) does not count. `jumped`: a locked tick set the clock more than `jumpMillis` away from
-    /// where it would have run on, both in host time (`elapsed` seconds since the previous tick; the audio
-    /// extrapolates its clock in host time, so a slave tick that starts late moved no audio) and in target time
-    /// (`dt`; a local master's entry steps with the target, so the same late tick reads as a step there): the master
-    /// was retriggered, or the slave locked on (first, or again after freewheeling or a freeze); its audio then
-    /// reseeks to the new clock instead of nudging towards it (B395). A tick that clamps the clock to the file (the
-    /// master's file is longer) is no jump: the clock stands at the last frame. At the master's loop wrap the fold
-    /// leaves the clamped last frame's remainder, under one frame: past 20 ms only below 50 fps, where the producer
-    /// reseeks at the wrap anyway (a slave reads no loop range).
+    /// where it would have run on, both in host time (`elapsed` seconds since the previous tick; a remote master's
+    /// entry is extrapolated in host time, so a slave tick that starts late is no step there) and in target time
+    /// (`dt`; a local master's entry steps with the target, so the same late tick is no step there, while it is one in
+    /// host time): the master was retriggered, or the slave locked on (first, or again after freewheeling or a freeze);
+    /// its audio then reseeks to the new clock instead of nudging towards it (B395). A tick that clamps the clock to
+    /// the file (the master's file is longer) is no jump: the clock stands at the last frame. At the master's loop wrap
+    /// the fold leaves the clamped last frame's remainder, under one frame: past 20 ms only below 50 fps, where the
+    /// producer reseeks at the wrap anyway (a slave reads no loop range).
     static func follow(
         _ clock: inout LayerClock, entry: SyncPacket.Layer, age: Double, dt: Double, elapsed: Double? = nil, interval: Double, fps: Double,
         frameCount: Int
