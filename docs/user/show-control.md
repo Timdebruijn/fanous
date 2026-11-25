@@ -156,7 +156,7 @@ none.
 | Timecode does | The trigger |
 |---|---|
 | Passes the trigger time while running | Fires; several cues in the same frame fire in number order |
-| Starts, after an engine start or a jump back, exactly at the trigger time | Nothing fires: a trigger needs a frame before it. Write the first trigger at least one frame after the time the timecode starts at |
+| Starts, after an engine start or a jump back, at the trigger time or up to two frames before it | Nothing fires: the engine takes its first time a frame or two after the start, and a trigger needs a time before it. Write the first trigger at least three frames after the time the timecode starts at |
 | Jumps back, or repeats | Nothing fires; the cues after the new position are armed again |
 | Jumps forward by 5 s or more in its value | Nothing fires: the cues in between are skipped, not caught up. A pause that resumes at the same value is no jump |
 | Is in Freewheel or Lost | Nothing fires; triggers come from decoded frames only. After a gap of less than 5 s in the value, the triggers passed in the gap fire together on the first frame back |
@@ -301,7 +301,7 @@ so set them before you lock.
   only.
 - Lock timecode and keep it Locked, with a healthy level on the meter for
   LTC and the Microphone permission granted; write the triggers at the
-  incoming time, with a frame to spare after the start.
+  incoming time, with three frames to spare after the start.
 - Lock the show (L), so a stray click cannot change a cue; GO, Back, Go to
   and the timecode switch keep working.
 - After a crash or an engine restart in show mode the current cue and its

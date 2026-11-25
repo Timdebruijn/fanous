@@ -4670,7 +4670,18 @@ later deliverable (`[OPEN-20]`).
   fed samples and emits frames (24/25/29.97 DF/NDF/30 auto-detected), with
   sub-frame phase for jitter-free chasing. Lock / freewheel (configurable,
   default 2 s) / lost states. Requires the microphone permission (TCC); the
-  engine prompts once with an explanation.
+  engine prompts once with an explanation. **As built (B291, 2026-11-25):** a
+  decoded frame reaches the clock and the cue triggers only when its fields are
+  in range for the rate and it carries the expected address (the last believed
+  one plus one for every sync word since); any other frame (a start, a jump of
+  the sender) needs an even word parity (the polarity correction bit) and is
+  believed only when the next frame continues it, so one corrupted frame costs
+  one update instead of a jump. A repeat of the last believed address is held
+  (parity or not), and a frame that repeats the held one is a sender parked on
+  a still frame: from that second repeat it holds the clock there,
+  stopped (`TimecodeClock.Sample.running` false), Locked while the repeats
+  come, then Freewheel and Lost at that position when they stop. A dropout or
+  a restarted sender keeps the last detected rate.
 - **MTC**: CoreMIDI input (quarter-frame + full-frame), any port; same
   `TimecodeSource` interface. **As built (B64, 2026-10-27):** `MTCInput`
   follows hot-plug like `MIDIInput` (§15.4): its client is made on the main

@@ -188,6 +188,49 @@ struct ShowControlTests {
         #expect(clock.current(at: 22.1).state == .lost)
     }
 
+    /// B291: a sender parked on a still frame repeats one address; from the second repeat on each is believed and holds
+    /// the chase there, Locked, and it runs on from there with no jump back. The continuity check took a repeat for a corrupted frame:
+    /// the clock freewheeled past the still frame, went lost and jumped back when the sender ran again. A sender that
+    /// is parked when the input starts locks on its second frame; when its signal ends the clock freewheels and goes
+    /// lost at the still frame.
+    @Test func ltcStillFrameHoldsTheChase() throws {
+        let sampleRate = 48_000.0
+        let still = 90_010
+        let frames = (90_000...still).map { Timecode(frameCount: $0, rate: .fps25) }
+            + Array(repeating: Timecode(frameCount: still, rate: .fps25), count: 50)
+            + (still + 1...still + 10).map { Timecode(frameCount: $0, rate: .fps25) }
+        func chase(_ frames: [Timecode], read: (TimecodeClock, Double) -> Void) -> TimecodeClock {
+            let samples = LTCEncoder.samples(frames: frames, sampleRate: sampleRate)
+            var decoder = LTCDecoder(sampleRate: sampleRate, nominalFrameRate: 25)
+            let clock = TimecodeClock()
+            for index in stride(from: 0, to: samples.count, by: 512) {
+                for frame in decoder.process(Array(samples[index..<min(samples.count, index + 512)])) {
+                    clock.update(frame.timecode, at: Double(frame.endSampleIndex) / sampleRate, source: "LTC", running: frame.running)
+                }
+                read(clock, Double(index + 512) / sampleRate)
+            }
+            return clock
+        }
+        var previous = 0.0
+        _ = chase(frames) { clock, now in
+            // the second repeat ends at 13/25 s (the park is believed there), the last at 61/25 s; the sender runs on
+            guard now > 13.0 / 25 else { return }
+            let state = clock.current(at: now).state
+            let read = clock.frames(at: now) ?? 0
+            if now <= 61.0 / 25 {
+                #expect(state == .locked && read == Double(still), "at \(now) s: \(state), \(read - 90_000)")
+            }
+            #expect(read >= previous, "at \(now) s: \(read - 90_000) after \(previous - 90_000)")
+            previous = read
+        }
+        #expect(previous > Double(still + 8), "ran on to \(previous - 90_000)")
+        // parked from the start, then the signal ends at 2 s
+        let parked = chase(Array(repeating: Timecode(frameCount: still, rate: .fps25), count: 50)) { _, _ in }
+        #expect(parked.current(at: 2).state == .locked && parked.current(at: 2).frameCount == still)
+        #expect(parked.current(at: 2.1).state == .freewheel && parked.current(at: 2.1).frameCount == still)
+        #expect(parked.current(at: 4.1).state == .lost && parked.current(at: 4.1).frameCount == still)
+    }
+
     /// The LTC level (B137): the peak of each tenth of a second, across buffer boundaries, as dBFS; nothing before
     /// the first window or once the last one is older than half a second (a device that stopped delivering).
     @Test func ltcPeakWindow() {
