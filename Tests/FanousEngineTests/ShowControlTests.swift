@@ -495,6 +495,35 @@ struct ShowControlTests {
         #expect(ShowCommands.timecodeSettings(from: store.project).layerOffsets == ["1": 0, "12": 5])
     }
 
+    /// B289: `timecode.set` on an offset, a layer offset or the freewheel time restarted the input and cleared the
+    /// clock, so the chase froze and jumped on every nudge. MTC, as an LTC input asks for the microphone, on a device no
+    /// source has, as no device connects every MIDI source and a real one would feed the clock.
+    @Test func timecodeOffsetsChangeWithoutRestartingTheInput() throws {
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
+        let (store, _) = testStore(outputs: 0)
+        ShowCommands.register(on: store, hooks: .noop)
+        engine.store = store
+        store.onProjectChanged = { [engine] in engine.projectChanged($0) }
+        let set = { (path: String, value: JSONValue) in _ = try store.execute("timecode.set", args: ["path": .string(path), "value": value], role: .programmer).get() }
+        try set("/device", "B289 none")
+        try set("/source", "mtc")
+        let input = try #require(engine.mtc)
+        engine.timecodeClock.update(Timecode(frameCount: 90_000, rate: .fps25), at: 100, source: "MTC")
+        try set("/offset", 5)
+        try set("/layerOffsets/1", -3)
+        try set("/freewheel", 4)
+        #expect(engine.mtc === input, "the input was restarted")
+        let sample = engine.timecodeClock.current(at: 100)
+        #expect(sample.state == .locked && sample.frameCount == 90_000, "the clock was cleared: \(sample)")
+        #expect(engine.timecodeClock.freewheelSeconds == 4)
+        // what opens the input still restarts it, and clears the clock
+        try set("/device", "B289 other")
+        #expect(engine.mtc != nil && engine.mtc !== input)
+        #expect(engine.timecodeClock.current(at: 100).state == .off)
+        try set("/source", "off")  // no MTC input left open
+        #expect(engine.mtc == nil)
+    }
+
     /// B262 review: a key an older build stored ("01") is kept, and the other settings stay editable, also from the
     /// Inputs screen, which sends the stored object back at path ""; only a key the command adds is refused.
     @Test func timecodeSetKeepsAStoredNonCanonicalKey() throws {

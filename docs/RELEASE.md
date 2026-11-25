@@ -57,7 +57,7 @@ With Fanous and the console software on one subnet (Little Snitch: allow
 
 - [ ] grandMA3 onPC, ChamSys MagicQ PC, ETC Eos Nomad: GDTF import
       (`Patch › Export GDTF`), DMX end to end (intensity, folder/file, play
-      mode). CITP on MagicQ PC only (grandMA3 and Eos have none, see
+      mode). CITP on MagicQ PC only (the grandMA3 and Eos manuals document none, see
       `feature-gaps.md` §0): Fanous appears as a media server, thumbnails show,
       the canvas stream plays
 - [ ] packet captures of what the consoles send go to
