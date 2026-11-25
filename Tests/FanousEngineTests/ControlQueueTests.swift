@@ -180,6 +180,26 @@ struct ControlQueueTests {
         #expect(client.patches.isEmpty)
     }
 
+    /// A welcome or snapshot the send queue refuses (above its hard limit) drops the client, as a refused project patch
+    /// does: otherwise the web client waits in `resync` until it reconnects. On the previous head the result was ignored
+    /// and the client stayed a member.
+    @Test func aRefusedSnapshotDropsTheClient() throws {
+        final class FullClient: StateClient, Sendable {
+            let role: Role = .programmer
+            let disconnected = Atomic<Bool>(false)
+            func send(text: String, droppable: Bool) -> Bool { !text.contains(#""t":"snapshot""#) }
+            func disconnect(reason: String) { disconnected.store(true, ordering: .relaxed) }
+        }
+        let (store, _) = testStore()
+        let client = FullClient()
+        store.admit(client, role: client.role, caps: [:]) {}
+        #expect(store.clientCount == 1)
+        store.resnapshot(client, role: client.role)
+        let disconnected = client.disconnected.load(ordering: .relaxed)
+        #expect(disconnected)
+        #expect(store.clientCount == 0)
+    }
+
     /// Only commands marked `unqueued` skip the queue; any other goes through `execute`, with its checks.
     @Test func onlyUnqueuedCommandsSkipTheQueue() throws {
         let store = try Self.bigStore()

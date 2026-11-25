@@ -366,7 +366,12 @@ public final class StateStore: @unchecked Sendable {
         queue.sync {
             let held = clients[id]?.held
             clients[id]?.held = nil
-            _ = client.send(document: text)  // also to a client detached meanwhile: its session is closed
+            // refused only above the hard limit: a client that cannot keep up, dropped as for a project patch (`deliver`);
+            // one detached meanwhile has a closed session and is gone already
+            guard client.send(document: text) else {
+                if clients.removeValue(forKey: id) != nil { client.disconnect(reason: "cannot keep up with project changes") }
+                return
+            }
             for message in held ?? [] { deliver(message.text, droppable: message.droppable, to: id) }
         }
     }
