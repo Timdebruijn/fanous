@@ -12,6 +12,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Timecode: the LTC chase and LTC cue triggers are on the frame, no longer one frame late (B290). An LTC frame's address
   is decoded when its sync word ends, as the next frame starts; the clock took it as the time at that moment (PR #459).
+- Timecode: three MTC fixes (B292). A full-frame locate holds the clock at the locate position, Locked, until quarter
+  frames run again, and fires no cue; it was taken as running time, so a chasing layer played on and froze 2 s past it,
+  and a locate up to 5 s forward fired the cues it passed. With All sources, one source drives the clock (the first to
+  send, until it is unplugged or silent for the Freewheel time, half a second at least) instead of every source in
+  turn. SysEx longer than a full frame is dropped instead of growing the buffer (PR #467).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)

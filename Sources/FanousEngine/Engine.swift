@@ -477,7 +477,7 @@ public final class Engine: @unchecked Sendable {
                 logger.warning("cue position not resumed: the cue is no longer in the cue list", metadata: ["stored": "\(stored)", "values": "\(values)"])
             }
         }
-        timecodeClock.onFrame = { [weak self] timecode, _ in self?.cues?.timecode(timecode) }
+        timecodeClock.onFrame = { [weak self] timecode, _, running in self?.cues?.timecode(timecode, running: running) }
         ControlCommands.register(on: store, hooks: ControlCommands.Hooks(set: { dmx.setUI($0, $1, raw: $2) }, release: { dmx.releaseUI($0) }, keep: { dmx.keepUI($0) }))
         ShowCommands.register(
             on: store,
