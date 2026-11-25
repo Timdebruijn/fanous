@@ -346,7 +346,8 @@ public final class StateStore: @unchecked Sendable {
     }
 
     /// B286: a welcome or snapshot is redacted and encoded off the control queue, from the documents copied in the turn
-    /// that `setup` runs in; a member's patches broadcast meanwhile are held and go out after it, in order.
+    /// that `setup` runs in; a member's patches broadcast meanwhile are held and go out after it, in order. The encoding
+    /// runs on `encodeQueue`, one at a time: 20 clients joining take one core, as when it ran on the control queue.
     private func send(to client: StateClient, setup: () -> Void, make: ((UInt64, JSONValue, JSONValue)) -> String) {
         let id = ObjectIdentifier(client)
         let copied = queue.sync {
@@ -355,7 +356,7 @@ public final class StateStore: @unchecked Sendable {
             return (revision, projectDocument, liveDocument)
         }
         whileWelcoming?()
-        let text = make(copied)
+        let text = encodeQueue.sync { make(copied) }
         queue.sync {
             let held = clients[id]?.held
             clients[id]?.held = nil
@@ -363,6 +364,9 @@ public final class StateStore: @unchecked Sendable {
             for message in held ?? [] { deliver(message.text, droppable: message.droppable, to: id) }
         }
     }
+
+    /// Welcome and snapshot encoding, one at a time (see `send(to:setup:make:)`).
+    private let encodeQueue = DispatchQueue(label: "org.fanous.control.encode", qos: .utility)
 
     /// Test hook: called between the copy and the encoding of a welcome or snapshot.
     nonisolated(unsafe) var whileWelcoming: (@Sendable () -> Void)?

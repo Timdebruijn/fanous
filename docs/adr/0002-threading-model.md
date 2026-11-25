@@ -137,9 +137,10 @@ completion handlers must not block the queue they run on.
 
 Control stays the one serial queue for the project model and the commands that
 change it. Work that grows with the project and changes nothing leaves it: a
-welcome or snapshot copies the documents there and is redacted and encoded on
-the connection's queue (68 ms for a 1.6 MB welcome of a large show, optimised
-build, on a loaded Mac), and `project.snapshot` writes its version file on the
+welcome or snapshot copies the documents there and is redacted and encoded off
+it, one at a time on a serial `.utility` queue, so 20 clients joining take one
+core as they did on Control (68 ms for a 1.6 MB welcome of a large show,
+optimised build, on a loaded Mac), and `project.snapshot` writes its version file on the
 caller's thread (the versions' lock orders the writes). `cue.go`, `cue.back`
 and `cue.goto` from OSC and MIDI run on the engine's command queue without
 Control: they read no project, and the cue runner's own serial queue keeps them

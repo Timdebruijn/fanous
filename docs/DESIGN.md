@@ -3718,8 +3718,8 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   requests by that order.
 - Patches are RFC 6902 ops on a revision counter; a client that misses a
   revision (gap) re-requests a snapshot. A welcome or snapshot copies the
-  documents and the revision on Control and is redacted and encoded off it
-  (B286); a joining client is a member from that copy on, and the patches
+  documents and the revision on Control and is redacted and encoded off it,
+  one at a time on a serial queue of its own (B286); a joining client is a member from that copy on, and the patches
   broadcast to a client while its welcome or snapshot is encoded wait and
   follow it in order (a snapshot overtaken by a later patch would be a gap, and
   the client would ask again).
