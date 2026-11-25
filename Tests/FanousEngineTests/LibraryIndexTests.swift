@@ -584,8 +584,8 @@ struct LibraryIndexGPUTests {
         await #expect { _ = try await MovieSource.open(url: movie, device: device, poolSize: 2) } throws: { "\($0)" == "frame rate above 1000 fps" }
     }
 
-    /// Review of B336: a movie at exactly 1000 fps (its rate reads as about 1000.0001 through Float) is at the bound, not
-    /// above it: playable, and `MovieSource` opens it.
+    /// Review of B336: a movie at 1000 fps is at the bound, not above it: playable, and `MovieSource` opens it; a rate a
+    /// hair above 1000 (from a frame count over a duration) is allowed too.
     @Test func aMovieAtExactly1000FpsIsPlayable() async throws {
         let folder = try tempDir("fanous-library").appending(path: "001_Show")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -599,8 +599,7 @@ struct LibraryIndexGPUTests {
         #expect(item.status == .playable, "listed \(item.status), \(item.reason ?? "no reason"), \(item.metadata?.frameRate ?? 0) fps")
         let device = try #require(MTLCreateSystemDefaultDevice())
         _ = try await MovieSource.open(url: movie, device: device, poolSize: 2)
-        // this writer's header gives exactly 1000; a rate rounded through Float, as a header can give it, is at the bound too
-        #expect(MovieSource.playable(frameRate: Double(Float(1000.0001))) && !MovieSource.playable(frameRate: 1000.01))
+        #expect(MovieSource.playable(frameRate: 1000.0001) && !MovieSource.playable(frameRate: 1000.01))
     }
 
     /// B264: an edit list of 2^32 − 1 s at movie timescale 1 is taken as the track's length (measured: `asset.duration`

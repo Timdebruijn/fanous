@@ -2110,7 +2110,7 @@ source file(s) ──▶ _incoming/ (remote upload) or in-place (local path)
 - Audio is transcoded to interleaved LPCM so playback never needs a compressed
   audio decoder; the source's sample rate, channel count, layout and bit depth
   are kept (a compressed source decodes to 24-bit) within 8–192 kHz and
-  8/16/24/32-bit, the layer's `AudioTrackReader` (which reads 8–768 kHz,
+  8/16/24/32-bit, the layer's `AudioTrackReader` (which reads 1 Hz–768 kHz,
   B336) converts to 48 kHz stereo float at playback (B19); more than two channels
   with a layout (5.1, 7.1) are folded to the pair with Apple's matrix for that
   layout (`kAudioFormatProperty_MatrixMixMap`: L + 0.7071 (C + Ls), R + 0.7071

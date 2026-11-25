@@ -175,7 +175,7 @@ public final class MovieSource: @unchecked Sendable {
     /// decode, and ingest tries to write. No playable export runs faster (a high-speed camera's footage is exported at a
     /// playback rate).
     static let maxFrameRate = 1000.0
-    /// `maxFrameRate` with room for a header's rounding: an exact 1000 fps track reads as 1000.0001 through Float.
+    /// `maxFrameRate` with room for a rate taken from a frame count over a duration that comes out a hair above 1000.
     static func playable(frameRate: Double) -> Bool { frameRate <= maxFrameRate + 1e-3 }
 
     public static func open(url: URL, device: MTLDevice, poolSize: Int) async throws -> MovieSource {

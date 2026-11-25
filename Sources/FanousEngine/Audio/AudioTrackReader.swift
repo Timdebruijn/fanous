@@ -62,10 +62,11 @@ public final class AudioTrackReader: @unchecked Sendable {
     private var basePTS = 0.0  // media time of the first output frame after the last seek
     private var framesSinceSeek = 0
 
-    /// B336: the source rates read, DXD (352.8 and 384 kHz) included, which played before and still does (ingest clamps its
-    /// output to 8–192 kHz). `mSampleRate > 0` let +infinity through, which trapped in `chunkFrames`; a huge finite rate made
-    /// the staging buffer unbounded and `seek`'s `Int32(sampleRate)` trapped above 2^31.
-    static let sampleRates = 8_000.0...768_000.0
+    /// B336: the source rates read: every rate that played before (below 8 kHz, a copied telephone recording; DXD's 352.8
+    /// and 384 kHz) still does (ingest clamps its output to 8–192 kHz). `mSampleRate > 0` let +infinity through, which
+    /// trapped in `chunkFrames`; a huge finite rate made the staging buffer unbounded and `seek`'s `Int32(sampleRate)`
+    /// trapped above 2^31.
+    static let sampleRates = 1.0...768_000.0
 
     /// The source formats the reader converts: interleaved LPCM with a frame size, channels and a rate in `sampleRates`.
     static func reads(_ source: AudioStreamBasicDescription) -> Bool {
