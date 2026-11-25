@@ -21,6 +21,8 @@ public final class WebSocketSession: @unchecked Sendable {
     /// Gets the session's open, text messages and close, on the connection's queue.
     private let handler: StateServer.Connection
     private let queued = Atomic<Int>(0)
+    /// The part of `queued` that is welcomes and snapshots (`send(document:)`).
+    private let documentBytes = Atomic<Int>(0)
     private let closed = Atomic<Bool>(false)
     private let ended = Atomic<Bool>(false)
     private var fragment: (opcode: WebSocketFrame.Opcode, payload: [UInt8])?
@@ -45,6 +47,12 @@ public final class WebSocketSession: @unchecked Sendable {
     @discardableResult
     public func send(binary: [UInt8], droppable: Bool) -> Bool { send(WebSocketFrame.binary(binary), droppable: droppable) }
 
+    /// A welcome or snapshot (B286): queued like any message, but the limits for what follows it leave it out, so a
+    /// 1.6 MB document does not make the patches right behind it look like a client that cannot keep up (they went out
+    /// in the same control-queue turn, before any byte of the document could leave). Refused above the hard limit of
+    /// everything queued, earlier documents included; patches and streams after it still meet both limits.
+    public func send(document text: String) -> Bool { send(WebSocketFrame.text(text), droppable: false, document: true) }
+
     public func close(code: UInt16 = 1000, reason: String = "") {
         guard !closed.exchange(true, ordering: .acquiringAndReleasing) else { return }
         let frame = WebSocketFrame.close(code: code, reason: reason).serialized()
@@ -60,14 +68,23 @@ public final class WebSocketSession: @unchecked Sendable {
     /// dead one (B269).
     func ping() { _ = send(WebSocketFrame(opcode: .ping), droppable: false) }
 
-    private func send(_ frame: WebSocketFrame, droppable: Bool) -> Bool {
+    private func send(_ frame: WebSocketFrame, droppable: Bool, document: Bool = false) -> Bool {
         guard !isClosed else { return false }
         let bytes = frame.serialized()
-        let pending = queued.load(ordering: .relaxed)
+        let pending = queued.load(ordering: .relaxed) - documentBytes.load(ordering: .relaxed)
         if droppable && pending > Self.maxQueuedBytes { return false }
         if pending > Self.hardLimitBytes { return false }
+        // a document is judged against everything queued, earlier documents included: at most one large one in flight
+        // (the web client never has two), so a client that asks for snapshots and never reads is refused, then dropped
+        if document && queued.load(ordering: .relaxed) > Self.hardLimitBytes { return false }
         queued.add(bytes.count, ordering: .relaxed)
-        connection.send(content: Data(bytes), completion: .contentProcessed { [self] _ in queued.subtract(bytes.count, ordering: .relaxed) })
+        if document { documentBytes.add(bytes.count, ordering: .relaxed) }
+        connection.send(
+            content: Data(bytes),
+            completion: .contentProcessed { [self] _ in
+                queued.subtract(bytes.count, ordering: .relaxed)  // first: in between, `pending` errs low, never high
+                if document { documentBytes.subtract(bytes.count, ordering: .relaxed) }
+            })
         return true
     }
 

@@ -72,7 +72,8 @@ public final class ProjectVersions: Sendable {
 
     public let directory: URL
     private let logger: Logger
-    /// Also serializes the file operations: the control queue (commands) and the versions queue (automatic) both write.
+    /// Also serializes the file operations: `project.snapshot` on its caller's thread (B286), `project.revert`'s save on
+    /// the control queue and the versions queue (automatic) all write.
     private let state = Mutex(State())
 
     public init(directory: URL, logger: Logger) {
@@ -366,16 +367,20 @@ extension ProjectVersions {
             CommandSpec(
                 name: "project.snapshot", role: .programmer, mutatesConfig: false, undoable: false,
                 summary: "Save a version of the project now; with a name it never expires, without one it is an automatic version.",
-                argsType: "{ name?: string }"
-            ) { [self] project, args in
-                let name = args["name"]?.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                guard name.count <= Self.maxNameLength else { throw CommandError.invalidArgs("name: at most \(Self.maxNameLength) characters") }
-                do {
-                    return try save(project, name: name.isEmpty ? Reason.manual.rawValue : name, automatic: name.isEmpty).json
-                } catch {
-                    throw CommandError("failed", "cannot save the version: \(error)")
+                argsType: "{ name?: string }",
+                // B286: the file write runs in `prepare`, off the control queue, on the project as it is then; the
+                // versions' own lock orders it with the automatic ones
+                prepare: { [self, weak store] args in
+                    let name = args["name"]?.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    guard name.count <= Self.maxNameLength else { throw CommandError.invalidArgs("name: at most \(Self.maxNameLength) characters") }
+                    guard let project = store?.project else { throw CommandError("failed", "the engine is stopping") }
+                    do {
+                        return ["version": try save(project, name: name.isEmpty ? Reason.manual.rawValue : name, automatic: name.isEmpty).json]
+                    } catch {
+                        throw CommandError("failed", "cannot save the version: \(error)")
+                    }
                 }
-            })
+            ) { _, args in args["version"] })
         store.register(
             CommandSpec(
                 name: "project.versions", role: .monitor, mutatesConfig: false, undoable: false,

@@ -153,15 +153,15 @@ public enum ShowCommands {
     }
 
     public static func register(on store: StateStore, hooks: Hooks) {
-        store.register(CommandSpec(name: "cue.go", role: .operator, mutatesConfig: false, undoable: false, summary: "Fire the next cue.") { _, _ in
+        store.register(CommandSpec(name: "cue.go", role: .operator, mutatesConfig: false, undoable: false, summary: "Fire the next cue.", unqueued: true) { _, _ in
             hooks.go()
             return nil
         })
-        store.register(CommandSpec(name: "cue.back", role: .operator, mutatesConfig: false, undoable: false, summary: "Fire the previous cue.") { _, _ in
+        store.register(CommandSpec(name: "cue.back", role: .operator, mutatesConfig: false, undoable: false, summary: "Fire the previous cue.", unqueued: true) { _, _ in
             hooks.back()
             return nil
         })
-        store.register(CommandSpec(name: "cue.goto", role: .operator, mutatesConfig: false, undoable: false, summary: "Fire the cue with this number.", argsType: "{ number: number }") { _, args in
+        store.register(CommandSpec(name: "cue.goto", role: .operator, mutatesConfig: false, undoable: false, summary: "Fire the cue with this number.", argsType: "{ number: number }", unqueued: true) { _, args in
             guard let number = args["number"]?.double else { throw CommandError.invalidArgs("args: { number }") }
             hooks.goto(number)
             return nil

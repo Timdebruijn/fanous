@@ -3753,14 +3753,25 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   the client matches acks by `id`. A leave waits for an entry still on that
   queue and is done before the connection's next command runs.
 - Patches are RFC 6902 ops on a revision counter; a client that misses a
-  revision (gap) re-requests a snapshot. Every change to `project` is a
-  **command** on Control: validated, applied, inverse recorded for undo,
-  diffed into a patch, snapshot-scheduled.
+  revision (gap) re-requests a snapshot. A welcome or snapshot copies the
+  documents and the revision on Control and is redacted and encoded off it,
+  one at a time on a serial queue of its own (B286); a joining client is a
+  member from that copy on, and the patches broadcast to a client while its
+  welcome or snapshot is encoded wait and follow it in order (a snapshot
+  overtaken by a later patch would be a gap, and the client would ask again).
+  Every change to `project` is a **command** on Control: validated, applied,
+  inverse recorded for undo, diffed into a patch, snapshot-scheduled.
 - `live` updates are coalesced per path (latest value wins) and sent every
   50 ms (20 Hz) per client; per-client send queues are bounded (256 KB);
   overflow drops *live* patches and marks the client "lagging" (it then
   re-snapshots `live`). `project` patches are never dropped: a client that
-  cannot keep up is disconnected and reconnects.
+  cannot keep up is disconnected and reconnects. A welcome or snapshot is left
+  out of the bound for what follows it (B286: the patches held behind a 1.6 MB
+  snapshot went out before a byte of it could leave, so every live one was
+  dropped and the client asked for a snapshot again, for good); it is refused
+  above the hard limit (1 MB) of everything queued, earlier documents
+  included, so at most one large one is in flight and a client that asks for
+  snapshots without reading them is dropped.
 - Subscriptions bound bandwidth: a client only receives DMX monitor data for
   the universe it is looking at (at most 16 DMX streams per connection: the
   next `sub` gets
@@ -4028,9 +4039,10 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   millisecond get a counter in the id. Writes are atomic; a file that does not
   load as a project or has no `snapshot` member is skipped and logged once.
   Commands: `project.snapshot {name?}` (programmer, allowed under show lock;
-  without a name it is an automatic "Manual" version), `project.versions`
-  (monitor; id, at, name, automatic, layer/output/canvas/cue counts, newest
-  first), `project.revert {id}` (programmer, `mutatesConfig`, refused in show
+  without a name it is an automatic "Manual" version; written off the control
+  queue, on the project as it was when the command started, B286),
+  `project.versions` (monitor; id, at, name, automatic, layer/output/canvas/cue
+  counts, newest first), `project.revert {id}` (programmer, `mutatesConfig`, refused in show
   mode with `showMode`), `project.deleteVersion {id}` (named only). A revert is
   an ordinary undoable command. It refuses a version a live command could not
   have made (layer count 1–64, a patch that parses, 1–4 valid canvases within
@@ -4766,8 +4778,12 @@ two UDP flows start at the same moment, where a few datagrams of one flow were
 seen coming out of the other flow's `NWConnection` receive callback, cause
 inside Network.framework not established; B230, B252),
 so the DMX queue never waits on the control queue or the readiness
-checks; a repeated `show.mode true` is dropped while one is queued or running (a
-stale clear lets at most one more through). `show.mode` commands have a serial
+checks; `cue.go`, `cue.back` and `cue.goto` from there do not wait for the
+control queue either (B286, `StateStore.executeUnqueued`): they read and change
+no project, and a cue list changed by a command reached the cue runner's queue
+while that command committed, so a GO queued there after its ack sees it; a
+repeated `show.mode true` is dropped while one is queued or running (a stale
+clear lets at most one more through). `show.mode` commands have a serial
 queue of their own (B200), so cue commands never wait for an entry's checks;
 each line keeps its order, the order between a `show.mode` and a cue command is
 not kept. OSC feedback

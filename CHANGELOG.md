@@ -88,6 +88,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   no longer publishes (0.12 ms each: a 64 KiB bundle of one message cost about 0.5 s), `GET /api/live` is served from the
   live feed's last snapshot, the DMX monitor looks a universe up once per tick, and a connection holds at most 16 DMX
   streams (PR #470).
+- Show control: a cue GO no longer waits behind work on the control queue that grows with the project (B286). Welcomes
+  and snapshots were redacted and encoded there (68 ms for a 1.6 MB show), so 20 clients joining held a GO for 1.4 s;
+  they are now encoded off it, one at a time, OSC and MIDI GO, back and goto skip the control queue, and
+  `project.snapshot` writes its file off it. The same GO now waits 0.004 ms (OSC, MIDI) or 0.05 ms
+  (WebSocket) (PR #480).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)

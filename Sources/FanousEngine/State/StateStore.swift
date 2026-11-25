@@ -5,6 +5,7 @@
 import Foundation
 import FanousCore
 import Logging
+import Synchronization
 
 /// A command on the `project` document (DESIGN.md §11.2): validated, applied, diffed into a patch;
 /// the inverse patch is recorded for undo. `run` mutates a copy of the project; the store diffs
@@ -31,6 +32,10 @@ public struct CommandSpec: Sendable {
     /// `executeLocked`'s own checks (show lock, and whatever the queue's state is by then), so it must do nothing those
     /// could still refuse.
     public var prepare: (@Sendable (JSONValue) throws -> JSONValue)?
+    /// B286: `executeUnqueued` runs it on the caller's thread without the control queue: for a command that neither reads
+    /// nor changes the project and is refused by nothing but its role (`cue.go`, `cue.back`, `cue.goto`: OSC and MIDI fire
+    /// them, and a GO must not wait behind a welcome or a project change). Needs `mutatesConfig` false.
+    public var unqueued = false
     public var run: @Sendable (inout JSONValue, JSONValue) throws -> JSONValue?
 }
 
@@ -52,7 +57,13 @@ public struct CommandError: Error, Equatable, Sendable {
 public protocol StateClient: AnyObject, Sendable {
     var role: Role { get }
     func send(text: String, droppable: Bool) -> Bool
+    /// A welcome or snapshot: outside the send-queue limits for what follows it (`WebSocketSession.send(document:)`).
+    func send(document text: String) -> Bool
     func disconnect(reason: String)
+}
+
+extension StateClient {
+    public func send(document text: String) -> Bool { send(text: text, droppable: false) }
 }
 
 public struct CommandResult: Sendable, Equatable {
@@ -79,7 +90,8 @@ public final class StateStore: @unchecked Sendable {
     }
     /// Consecutive same-path edits from one client closer together than this (a drag) become one undo step.
     public static let coalesceWindow: TimeInterval = 1
-    private struct Client { var client: StateClient; var lagging = false }
+    /// `held`: set while `admit` builds the client's welcome off the queue; patches wait there and go out after it.
+    private struct Client { var client: StateClient; var lagging = false; var held: [(text: String, droppable: Bool)]? }
 
     private var projectDocument: JSONValue
     private var liveDocument: JSONValue = [:]
@@ -91,6 +103,8 @@ public final class StateStore: @unchecked Sendable {
     private var pendingLive: [JSONPatch.Operation] = []
     private var liveTimer: DispatchSourceTimer?
     private let logger: Logger
+    /// The `unqueued` commands, readable without the queue (B286).
+    private let unqueuedCommands = Mutex<[String: CommandSpec]>([:])
     /// Called on `queue` after every project change (autosave), before the change goes out to clients.
     public var onProjectChanged: (@Sendable (JSONValue) -> Void)?
 
@@ -111,7 +125,11 @@ public final class StateStore: @unchecked Sendable {
 
     // MARK: Registry and snapshots
 
-    public func register(_ spec: CommandSpec) { queue.sync { commands[spec.name] = spec } }
+    public func register(_ spec: CommandSpec) {
+        precondition(!spec.unqueued || !spec.mutatesConfig, "an unqueued command must not change the configuration")
+        queue.sync { commands[spec.name] = spec }
+        unqueuedCommands.withLock { $0[spec.name] = spec.unqueued ? spec : nil }
+    }
     public var commandSpecs: [CommandSpec] { queue.sync { commands.values.sorted { $0.name < $1.name } } }
 
     public var rev: UInt64 { queue.sync { revision } }
@@ -138,6 +156,22 @@ public final class StateStore: @unchecked Sendable {
             return .failure(CommandError("failed", "\(error)"))
         }
         return queue.sync { executeLocked(name, args: prepared, role: role, client: client) }
+    }
+
+    /// OSC and MIDI (B286): an `unqueued` command runs here on the caller's thread, with no project (`run` gets null) and
+    /// rev 0 in its result; any other goes through `execute`. A WebSocket command always goes through `execute`, so its
+    /// ack keeps the revision.
+    public func executeUnqueued(_ name: String, args: JSONValue = [:], role: Role) -> Result<CommandResult, CommandError> {
+        guard let spec = unqueuedCommands.withLock({ $0[name] }) else { return execute(name, args: args, role: role) }
+        guard role >= spec.role else { return .failure(.forbidden) }
+        var none = JSONValue.null
+        do {
+            return .success(CommandResult(rev: 0, value: try spec.run(&none, args)))
+        } catch let error as CommandError {
+            return .failure(error)
+        } catch {
+            return .failure(CommandError("failed", "\(error)"))
+        }
     }
 
     private func executeLocked(_ name: String, args: JSONValue, role: Role, client: ObjectIdentifier? = nil) -> Result<CommandResult, CommandError> {
@@ -300,31 +334,74 @@ public final class StateStore: @unchecked Sendable {
     public var laggingClients: Int { queue.sync { clients.values.filter(\.lagging).count } }
 
     /// The `welcome`/`snapshot` payload for one client.
-    public func welcome(role: Role, caps: JSONValue) -> String { queue.sync { welcomeMessage(role: role, caps: caps) } }
+    public func welcome(role: Role, caps: JSONValue) -> String { Self.welcomeMessage(documents, role: role, caps: caps) }
 
-    /// Makes `client` a member at `role` and sends its welcome in one turn on the queue, so no broadcast (built for
-    /// the new role) can reach it before the redacted document it patches.
+    /// Makes `client` a member at `role` and sends its welcome before any broadcast (built for the new role) reaches it.
     public func admit(_ client: StateClient, role: Role, caps: JSONValue, setRole: () -> Void) {
-        queue.sync {
+        send(to: client, setup: {
             setRole()
-            clients[ObjectIdentifier(client)] = clients[ObjectIdentifier(client)] ?? Client(client: client)
-            _ = client.send(text: welcomeMessage(role: role, caps: caps), droppable: false)
+            let id = ObjectIdentifier(client)
+            if clients[id] == nil { clients[id] = Client(client: client, held: nil) }
+        }) { Self.welcomeMessage($0, role: role, caps: caps) }
+    }
+
+    /// A client's `snapshot` request (a gap, or lagging): clears its lagging flag and sends the snapshot before any
+    /// patch with a later revision.
+    public func resnapshot(_ client: StateClient, role: Role) {
+        send(to: client, setup: { clients[ObjectIdentifier(client)]?.lagging = false }) { Self.snapshotMessage($0, role: role) }
+    }
+
+    /// B286: a welcome or snapshot is redacted and encoded off the control queue, from the documents copied in the turn
+    /// that `setup` runs in; a member's patches broadcast meanwhile are held and go out after it, in order. The encoding
+    /// runs on `encodeQueue`, one at a time: 20 clients joining take one core, as when it ran on the control queue.
+    private func send(to client: StateClient, setup: () -> Void, make: ((UInt64, JSONValue, JSONValue)) -> String) {
+        let id = ObjectIdentifier(client)
+        let copied = queue.sync {
+            setup()
+            clients[id]?.held = []  // one send at a time per client: all of them run on its connection's queue
+            return (revision, projectDocument, liveDocument)
+        }
+        whileWelcoming?()
+        let text = encodeQueue.sync { make(copied) }
+        queue.sync {
+            let held = clients[id]?.held
+            clients[id]?.held = nil
+            // refused only above the hard limit: a client that cannot keep up, dropped as for a project patch (`deliver`);
+            // one detached meanwhile has a closed session and is gone already
+            guard client.send(document: text) else {
+                if clients.removeValue(forKey: id) != nil { client.disconnect(reason: "cannot keep up with project changes") }
+                return
+            }
+            for message in held ?? [] { deliver(message.text, droppable: message.droppable, to: id) }
         }
     }
 
-    /// Queue only.
-    private func welcomeMessage(role: Role, caps: JSONValue) -> String {
-        var message = snapshotObject(role: role)
+    /// Welcome and snapshot encoding, one at a time (see `send(to:setup:make:)`); entered with `sync`, so the work runs at
+    /// the waiting connection's QoS, as it did on the control queue.
+    private let encodeQueue = DispatchQueue(label: "org.fanous.control.encode")
+
+    /// Test hook: called between the copy and the encoding of a welcome or snapshot.
+    nonisolated(unsafe) var whileWelcoming: (@Sendable () -> Void)?
+
+    /// The revision and both documents, copied on the queue (shared storage: no copy of the documents).
+    private var documents: (UInt64, JSONValue, JSONValue) { queue.sync { (revision, projectDocument, liveDocument) } }
+
+    private static func welcomeMessage(_ documents: (UInt64, JSONValue, JSONValue), role: Role, caps: JSONValue) -> String {
+        var message = snapshotObject(documents, role: role)
         message["t"] = "welcome"
         message["role"] = .string(role.rawValue)
         message["caps"] = caps
-        return encode(.object(message))
+        return JSONValue.encodeCompact(.object(message))
     }
 
-    public func snapshot(role: Role) -> String { queue.sync { snapshotMessage(type: "snapshot", role: role) } }
+    private static func snapshotMessage(_ documents: (UInt64, JSONValue, JSONValue), role: Role) -> String {
+        var message = snapshotObject(documents, role: role)
+        message["t"] = "snapshot"
+        return JSONValue.encodeCompact(.object(message))
+    }
 
-    /// Clears the lagging flag once a client re-snapshotted.
-    public func clearLagging(_ client: StateClient) { queue.sync { clients[ObjectIdentifier(client)]?.lagging = false } }
+    /// The snapshot text for `role` (tests); a client's request goes through `resnapshot`.
+    public func snapshot(role: Role) -> String { Self.snapshotMessage(documents, role: role) }
 
     /// One patch message per role present (Redaction): a redacted patch may be empty but still goes out, keeping the revision chain.
     private func broadcast(doc: String, patch: JSONPatch, droppable: Bool) {
@@ -332,28 +409,31 @@ public final class StateStore: @unchecked Sendable {
         for (id, entry) in clients {
             let role = entry.client.role
             if messages[role] == nil { messages[role] = patchMessage(doc: doc, patch: Redaction.patch(patch, doc: doc, role: role)) }
-            if entry.client.send(text: messages[role]!, droppable: droppable) { continue }
-            if droppable {
-                if !entry.lagging { logger.warning("client lagging; live patches dropped") }
-                clients[id]?.lagging = true
+            if entry.held != nil {
+                clients[id]?.held?.append((messages[role]!, droppable))  // its welcome is being built (`admit`)
             } else {
-                entry.client.disconnect(reason: "cannot keep up with project changes")
-                clients.removeValue(forKey: id)
+                deliver(messages[role]!, droppable: droppable, to: id)
             }
         }
     }
 
-    private func snapshotObject(role: Role) -> [String: JSONValue] {
-        [
-            "rev": .number(Double(revision)), "project": Redaction.document(projectDocument, doc: "project", role: role),
-            "live": Redaction.document(liveDocument, doc: "live", role: role),
-        ]
+    /// Queue only: a full send queue marks the client lagging (live) or drops it (project).
+    private func deliver(_ text: String, droppable: Bool, to id: ObjectIdentifier) {
+        guard let entry = clients[id], !entry.client.send(text: text, droppable: droppable) else { return }
+        if droppable {
+            if !entry.lagging { logger.warning("client lagging; live patches dropped") }
+            clients[id]?.lagging = true
+        } else {
+            entry.client.disconnect(reason: "cannot keep up with project changes")
+            clients.removeValue(forKey: id)
+        }
     }
 
-    private func snapshotMessage(type: String, role: Role) -> String {
-        var message = snapshotObject(role: role)
-        message["t"] = .string(type)
-        return encode(.object(message))
+    private static func snapshotObject(_ documents: (rev: UInt64, project: JSONValue, live: JSONValue), role: Role) -> [String: JSONValue] {
+        [
+            "rev": .number(Double(documents.rev)), "project": Redaction.document(documents.project, doc: "project", role: role),
+            "live": Redaction.document(documents.live, doc: "live", role: role),
+        ]
     }
 
     private func patchMessage(doc: String, patch: JSONPatch) -> String {

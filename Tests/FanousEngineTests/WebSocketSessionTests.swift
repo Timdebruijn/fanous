@@ -120,6 +120,36 @@ struct WebSocketSessionTests {
 
     static let hello = Array(#"{"t":"hello","clientId":"a","schema":1}"#.utf8)
 
+    /// A welcome or snapshot leaves the send-queue limits for what follows it (B286): the patches held behind a 1.6 MB
+    /// snapshot go out in the same turn, before a byte of it left (here: on the connection's queue, where the completions
+    /// run). A droppable message after it is taken; after 300 KB of other messages it is dropped, and past the hard limit
+    /// so is any message. On the previous head the droppable patch right after the document was refused, so the client
+    /// was marked lagging, saw a gap and asked for a snapshot again, for as long as live changed.
+    @Test func aDocumentDoesNotCountForWhatFollowsIt() async throws {
+        let pair = try await Pair.make()
+        defer { pair.stop() }
+        let document = String(repeating: "x", count: 1_600_000)
+        let results = pair.queue.sync {
+            [
+                pair.session.send(document: document), pair.session.send(text: "patch", droppable: true),
+                pair.session.send(text: String(repeating: "y", count: 300_000), droppable: false), pair.session.send(text: "patch", droppable: true),
+                pair.session.send(text: String(repeating: "z", count: 800_000), droppable: false), pair.session.send(text: "project", droppable: false),
+            ]
+        }
+        #expect(results == [true, true, true, false, true, false])
+    }
+
+    /// A second document while a large one is still queued is refused (the store then drops the client): a client that
+    /// sends `snapshot` in a loop and never reads must not queue 1.6 MB after 1.6 MB. On the previous head all ten were
+    /// taken.
+    @Test func aSecondLargeDocumentInFlightIsRefused() async throws {
+        let pair = try await Pair.make()
+        defer { pair.stop() }
+        let document = String(repeating: "x", count: 1_600_000)
+        let results = pair.queue.sync { (0..<10).map { _ in pair.session.send(document: document) } }
+        #expect(results == [true] + Array(repeating: false, count: 9))
+    }
+
     /// One hello in two frames gets one welcome: delivering each fragment alone would be two bad messages.
     @Test func fragmentedTextIsOneMessage() async throws {
         let pair = try await Pair.make()

@@ -148,3 +148,20 @@ last snapshot, and the DMX monitor looks each universe up once per tick, also
 one never received. The DMX queue does not push a copy to the readers itself:
 the copy costs the queue the same time either way, and pushing it would add a
 lock and allocations on the queue.
+
+**B286, Control.** Control stays the one serial queue for the project model
+and the commands that change it. Work that grows with the project and changes
+nothing leaves it: a welcome or snapshot copies the documents there and is
+redacted and encoded off it, one at a time on a serial queue of its own
+(`queue.sync` from the connection, so at the connection's QoS), so 20 clients
+joining take one core as they did on Control (68 ms for a 1.6 MB welcome of a
+large show, optimised build, on a loaded Mac), and `project.snapshot` writes
+its version file on the caller's thread (the versions' lock orders the writes). `cue.go`, `cue.back`
+and `cue.goto` from OSC and MIDI run on the engine's command queue without
+Control: they read no project, and the cue runner's own serial queue keeps them
+after a list change that was acknowledged before them. A GO sent while 20
+clients joined waited 1.4 s on Control before; now 0.004 ms from OSC or MIDI
+and 0.05 ms from another client's WebSocket (its `execute` still takes
+Control, behind the welcomes' copies only). A WebSocket GO from a client whose
+own snapshot is being encoded waits for it, behind the welcomes queued ahead of
+it on the encoding queue: no longer than on Control before.
