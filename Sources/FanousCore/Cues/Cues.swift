@@ -172,7 +172,10 @@ public struct CueEngine: Sendable {
     /// MTC locate, B292) fires nothing, like a jump: the cues it passes are skipped.
     public mutating func timecode(_ timecode: Timecode, at time: TimeInterval, running: Bool = true) {
         let seconds = timecode.secondsValue
-        defer { lastTimecodeSeconds = seconds }
+        // an LTC park: the last running frame R went in as R + 1 (B290), the still frame as R; the last time stays, so the
+        // cue at R + 1 is not armed again to fire a second time on play
+        let park = !running && lastTimecodeSeconds.map { seconds < $0 && $0 - seconds <= 2.01 / timecode.rate.exactFrameRate } == true
+        defer { if !park { lastTimecodeSeconds = seconds } }
         // compare in seconds: the trigger may be written at another rate than the incoming clock
         guard running, let last = lastTimecodeSeconds, seconds > last, seconds - last < 5 else { return }
         let eps = 1e-6

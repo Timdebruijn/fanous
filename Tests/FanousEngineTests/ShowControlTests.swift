@@ -189,41 +189,52 @@ struct ShowControlTests {
     }
 
     /// B291: a sender parked on a still frame repeats one address; from the second repeat on each is believed and holds
-    /// the chase there, Locked, and it runs on from there with no jump back. The continuity check took a repeat for a corrupted frame:
-    /// the clock freewheeled past the still frame, went lost and jumped back when the sender ran again. A sender that
-    /// is parked when the input starts locks on its second frame; when its signal ends the clock freewheels and goes
-    /// lost at the still frame.
+    /// the chase there, Locked, and it runs on from there. The continuity check took a repeat for a corrupted frame: the
+    /// clock freewheeled past the still frame, went lost and jumped back when the sender ran again. Through
+    /// `LTCInput.timeAtEnd` (B290) the last running frame goes in as the still frame + 1, so the park is one step back of
+    /// under three frames, and a cue at the still frame + 1 fires once, not again on play. A sender that is parked when
+    /// the input starts locks on its second frame; when its signal ends the clock freewheels and goes lost at the still
+    /// frame.
     @Test func ltcStillFrameHoldsTheChase() throws {
         let sampleRate = 48_000.0
         let still = 90_010
         let frames = (90_000...still).map { Timecode(frameCount: $0, rate: .fps25) }
             + Array(repeating: Timecode(frameCount: still, rate: .fps25), count: 50)
             + (still + 1...still + 10).map { Timecode(frameCount: $0, rate: .fps25) }
-        func chase(_ frames: [Timecode], read: (TimecodeClock, Double) -> Void) -> TimecodeClock {
+        func chase(_ frames: [Timecode], onFrame: @escaping (Timecode, Bool) -> Void = { _, _ in }, read: (TimecodeClock, Double) -> Void) -> TimecodeClock {
             let samples = LTCEncoder.samples(frames: frames, sampleRate: sampleRate)
             var decoder = LTCDecoder(sampleRate: sampleRate, nominalFrameRate: 25)
             let clock = TimecodeClock()
+            clock.onFrame = { timecode, _, running in onFrame(timecode, running) }
             for index in stride(from: 0, to: samples.count, by: 512) {
                 for frame in decoder.process(Array(samples[index..<min(samples.count, index + 512)])) {
-                    clock.update(frame.timecode, at: Double(frame.endSampleIndex) / sampleRate, source: "LTC", running: frame.running)
+                    clock.update(LTCInput.timeAtEnd(of: frame), at: Double(frame.endSampleIndex) / sampleRate, source: "LTC", running: frame.running)
                 }
                 read(clock, Double(index + 512) / sampleRate)
             }
             return clock
         }
-        var previous = 0.0
-        _ = chase(frames) { clock, now in
+        var cues = CueEngine(list: CueList(cues: [Cue(number: 1, timecodeTrigger: Timecode(frameCount: still + 1, rate: .fps25))]))
+        var fired = 0
+        var revision = 0
+        var previous: Double?
+        var stepsBack: [Double] = []
+        _ = chase(frames, onFrame: { cues.timecode($0, at: 0, running: $1) }) { clock, now in
+            let after = cues.revision
+            if after != revision { fired += 1 }
+            revision = after
+            guard let read = clock.frames(at: now) else { return }
             // the second repeat ends at 13/25 s (the park is believed there), the last at 61/25 s; the sender runs on
-            guard now > 13.0 / 25 else { return }
-            let state = clock.current(at: now).state
-            let read = clock.frames(at: now) ?? 0
-            if now <= 61.0 / 25 {
+            if now > 13.0 / 25 && now <= 61.0 / 25 {
+                let state = clock.current(at: now).state
                 #expect(state == .locked && read == Double(still), "at \(now) s: \(state), \(read - 90_000)")
             }
-            #expect(read >= previous, "at \(now) s: \(read - 90_000) after \(previous - 90_000)")
+            if let previous, read < previous { stepsBack.append(previous - read) }
             previous = read
         }
-        #expect(previous > Double(still + 8), "ran on to \(previous - 90_000)")
+        #expect(fired == 1, "the cue at the still frame + 1 fired \(fired) times")
+        #expect(stepsBack.count == 1 && stepsBack[0] < 3, "steps back \(stepsBack)")
+        #expect((previous ?? 0) > Double(still + 8), "ran on to \((previous ?? 0) - 90_000)")
         // parked from the start, then the signal ends at 2 s
         let parked = chase(Array(repeating: Timecode(frameCount: still, rate: .fps25), count: 50)) { _, _ in }
         #expect(parked.current(at: 2).state == .locked && parked.current(at: 2).frameCount == still)
@@ -249,8 +260,10 @@ struct ShowControlTests {
         #expect(LTCInput(clock: TimecodeClock(), logger: testLogger).level == nil)
     }
 
-    /// Acceptance: chase accuracy ±1 frame against a generated LTC file (the decoder → clock path of `LTCInput`).
-    @Test func ltcFileChasesWithinOneFrame() throws {
+    /// Acceptance: the chase against a generated LTC file (the decoder → clock path of `LTCInput`) is on the frame being
+    /// transmitted, to a hundredth of a frame (B290: it ran one frame late and the old ±1 tolerance passed either way).
+    /// The host time is the sample index, so the only error left is the threshold crossing within one sample.
+    @Test func ltcFileChasesToAHundredthOfAFrame() throws {
         let sampleRate = 48_000.0
         let rate = TimecodeRate.fps25
         let frames = (0..<75).map { Timecode(frameCount: 90_000 + $0, rate: rate) }  // 3 s from 01:00:00:00
@@ -262,24 +275,24 @@ struct ShowControlTests {
         // chase is read "live", right after the buffer that contains t has been processed
         let t = 61.0 / 25  // frame 61 (01:00:02:11) is being transmitted
         var index = 0
-        var chased: Double?
-        var later: Double?
+        var chased: (now: Double, frames: Double)?
+        var later: (now: Double, frames: Double)?
         while index < samples.count {
             let chunk = Array(samples[index..<min(samples.count, index + 512)])
             for frame in decoder.process(chunk) {
-                clock.update(frame.timecode, at: Double(frame.endSampleIndex) / sampleRate, source: "LTC")
+                clock.update(LTCInput.timeAtEnd(of: frame), at: Double(frame.endSampleIndex) / sampleRate, source: "LTC")
                 decoded += 1
             }
             index += 512
             let now = Double(index) / sampleRate
-            if chased == nil, now >= t { chased = clock.frames(at: now) }
-            if later == nil, now >= t + 0.02 { later = clock.frames(at: now) }
+            if chased == nil, now >= t { chased = clock.frames(at: now).map { (now, $0) } }
+            if later == nil, now >= t + 0.02 { later = clock.frames(at: now).map { (now, $0) } }
         }
         #expect(decoded >= 70, "decoded \(decoded) of 75 frames")
-        let atT = try #require(chased)
-        #expect(abs(atT - Double(90_000 + 61)) <= 1, "chased \(atT - 90_000) at t ≈ \(t) s")
-        let atLater = try #require(later)
-        #expect(abs(atLater - Double(90_000 + 61.5)) <= 1, "chased \(atLater - 90_000) half a frame later")
+        for (label, read) in [("at t", try #require(chased)), ("half a frame later", try #require(later))] {
+            let transmitted = 90_000 + read.now * rate.exactFrameRate  // the frame on the wire at `now`, with its phase
+            #expect(abs(read.frames - transmitted) < 0.01, "\(label): chased \(read.frames - 90_000), transmitted \(transmitted - 90_000)")
+        }
     }
 
     /// F1 quarter-frame UMP system messages (pieces 0…7) for `tc` at 25 fps (rate code 1).

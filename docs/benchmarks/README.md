@@ -626,8 +626,10 @@ LTC chase (`ShowControlTests.ltcFileChasesWithinOneFrame`): 3 s of generated
 25 fps LTC at 48 kHz, fed to the decoder in 512-sample buffers as the audio
 thread would, host time from the sample index. 70+ of 75 frames decoded
 (the first frames are sync), chase error at frame 61 and half a frame later
-**≤ 1 frame** (acceptance). MTC: eight quarter frames lock the clock two
-frames behind the quarter-frame time, a full-frame SysEx sets it directly.
+**≤ 1 frame** (acceptance; the chase ran one frame late, B290, and the
+test, now `ltcFileChasesToAHundredthOfAFrame`, holds it to 0.01 frame since
+2026-11-25). MTC: eight quarter frames lock the clock two frames behind the
+quarter-frame time, a full-frame SysEx sets it directly.
 
 CITP/MSEX loopback (`CITPServerTests`, debug build): `CInf` → `SInf`,
 `GELI`, `GEIn`, `GETh`, first `LSta`, `RqSt` → first `StFr`, `Nack`, stream
