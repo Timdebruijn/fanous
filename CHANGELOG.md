@@ -13,6 +13,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Show control: a GO from the browser no longer waits behind the readiness checks of a `show.mode` sent just before it
   on the same connection (B287). The checks ran on the connection's queue, up to about 12 s; an entering `show.mode`
   now runs on a queue of its own and its ack still comes after the checks, so the GO's ack can come first (PR #466).
+- Docs: a design note for the pixel mapper in three dimensions and for pixels on winches (`docs/pixelmap-3d.md`,
+  row B407): a point list with x/y/z per LED, three sampling modes, a height map for kinetic groups, and what
+  changes on the wire when Fanous sends Art-Net/sACN (PR #481)
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
