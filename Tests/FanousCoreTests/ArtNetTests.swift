@@ -18,6 +18,47 @@ import Testing
         #expect(dmx.data == [10, 20, 30, 40])
     }
 
+    /// ArtTimeCode as a console broadcasts it (Art-Net 4 table, `docs/timecode-out.md` §4): stream 0, 01:00:12:05 at 25.
+    static let timeCodeFixture: [UInt8] = Array("Art-Net\0".utf8) + [0x00, 0x97, 0x00, 0x0E, 0x00, 0x00, 5, 12, 0, 1, 1]
+
+    @Test func parsesArtTimeCode() throws {
+        guard case .timeCode(let tc) = try ArtNet.parse(Self.timeCodeFixture) else { return #expect(Bool(false)) }
+        #expect(tc.streamID == 0)
+        #expect(tc.timecode == Timecode(hours: 1, minutes: 0, seconds: 12, frames: 5, rate: .fps25))
+        #expect(Self.timeCodeFixture.count == ArtTimeCode.size)
+    }
+
+    @Test func roundTripsArtTimeCodeAtEveryType() throws {
+        for (rate, type) in [(TimecodeRate.fps24, UInt8(0)), (.fps25, 1), (.fps2997df, 2), (.fps30, 3)] {
+            let packet = ArtTimeCode(streamID: 7, timecode: Timecode(hours: 23, minutes: 59, seconds: 59, frames: rate.nominalFrames - 1, rate: rate))
+            let bytes = packet.encoded()
+            #expect(bytes.count == 19)
+            #expect(bytes[18] == type)
+            #expect(try ArtNet.parse(bytes) == .timeCode(packet))
+        }
+        // no non-drop 29.97 type on the wire: sent as SMPTE 30, read back at 30
+        let ndf = ArtTimeCode(timecode: Timecode(hours: 0, minutes: 1, seconds: 0, frames: 2, rate: .fps2997ndf)).encoded()
+        #expect(ndf[18] == 3)
+        guard case .timeCode(let back) = try ArtNet.parse(ndf) else { return #expect(Bool(false)) }
+        #expect(back.timecode == Timecode(hours: 0, minutes: 1, seconds: 0, frames: 2, rate: .fps30))
+    }
+
+    @Test func refusesArtTimeCodeOutOfRange() {
+        var bytes = Self.timeCodeFixture
+        bytes[14] = 25  // frames at 25 fps go to 24
+        #expect(throws: ArtNet.ParseError.badField) { try ArtNet.parse(bytes) }
+        bytes = Self.timeCodeFixture
+        bytes[18] = 4  // no such type
+        #expect(throws: ArtNet.ParseError.badField) { try ArtNet.parse(bytes) }
+        bytes = Self.timeCodeFixture
+        bytes[18] = 2
+        bytes[15] = 0
+        bytes[16] = 1
+        bytes[14] = 1  // 00:01:00;01 does not exist at drop frame
+        #expect(throws: ArtNet.ParseError.badField) { try ArtNet.parse(bytes) }
+        #expect(throws: ArtNet.ParseError.tooShort) { try ArtNet.parse(Array(Self.timeCodeFixture.prefix(18))) }
+    }
+
     @Test func roundTripsAndPadsOddLengths() throws {
         let packet = ArtDmx(sequence: 1, portAddress: 0x7FFF, data: [1, 2, 3])
         let bytes = packet.encoded()

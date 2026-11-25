@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Core: `ArtTimeCode` (Art-Net timecode, OpCode 0x9700) is encoded and parsed, with its Type byte mapped to the
+  timecode rates and out-of-range fields refused; the engine's Art-Net listener ignores it until the Art-Net timecode
+  source lands (`docs/timecode-out.md` step 1). No behaviour change (PR #NNN).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)

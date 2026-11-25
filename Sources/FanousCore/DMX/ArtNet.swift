@@ -15,16 +15,18 @@ public enum ArtNet {
         case poll = 0x2000
         case pollReply = 0x2100
         case dmx = 0x5000
+        case timeCode = 0x9700
     }
 
     public enum Packet: Equatable, Sendable {
         case poll(ArtPoll)
         case dmx(ArtDmx)
+        case timeCode(ArtTimeCode)
     }
 
-    public enum ParseError: Error, Equatable { case tooShort, badHeader, badVersion, badLength }
+    public enum ParseError: Error, Equatable { case tooShort, badHeader, badVersion, badLength, badField }
 
-    /// nil for every OpCode but ArtPoll and ArtDmx: the engine acts on nothing else.
+    /// nil for every OpCode but ArtPoll, ArtDmx and ArtTimeCode: the engine acts on nothing else.
     public static func parse(_ bytes: [UInt8]) throws -> Packet? {
         guard bytes.count >= 10 else { throw ParseError.tooShort }
         guard Array(bytes[0..<8]) == header else { throw ParseError.badHeader }
@@ -41,6 +43,13 @@ public enum ArtNet {
             guard bytes.count >= 14 else { throw ParseError.tooShort }
             try checkVersion(bytes)
             return .poll(ArtPoll(flags: bytes[12], diagPriority: bytes[13]))
+        case .timeCode:
+            guard bytes.count >= ArtTimeCode.size else { throw ParseError.tooShort }
+            try checkVersion(bytes)
+            guard let rate = ArtTimeCode.rate(ofType: bytes[18]) else { throw ParseError.badField }
+            let timecode = Timecode(hours: Int(bytes[17]), minutes: Int(bytes[16]), seconds: Int(bytes[15]), frames: Int(bytes[14]), rate: rate)
+            guard timecode.isValid else { throw ParseError.badField }
+            return .timeCode(ArtTimeCode(streamID: bytes[13], timecode: timecode))
         default:
             return nil
         }
@@ -92,6 +101,46 @@ public struct ArtDmx: Equatable, Sendable {
         return ArtNet.header + ArtNet.opCodeBytes(.dmx)
             + [0, UInt8(ArtNet.protocolVersion), sequence, physical, UInt8(portAddress & 0xFF), UInt8(portAddress >> 8)]
             + [UInt8(length >> 8), UInt8(length & 0xFF)] + payload
+    }
+}
+
+/// ArtTimeCode (Art-Net 4, OpTimeCode 0x9700): one timecode frame, 19 bytes, as a console or a media server
+/// broadcasts it once per frame (`docs/timecode-out.md` §4). `streamID` tells streams apart; 0 is the master.
+public struct ArtTimeCode: Equatable, Sendable {
+    public static let size = 19
+    public var streamID: UInt8
+    public var timecode: Timecode
+
+    public init(streamID: UInt8 = 0, timecode: Timecode) {
+        self.streamID = streamID
+        self.timecode = timecode
+    }
+
+    /// The packet's Type byte: 0 Film (24), 1 EBU (25), 2 DF (29.97), 3 SMPTE (30). The packet has no non-drop 29.97
+    /// type, so 29.97 NDF goes out as 3 and a receiver reads it at 30 fps timing, as MA3 and Pixera show an NDF source.
+    public static func type(of rate: TimecodeRate) -> UInt8 {
+        switch rate {
+        case .fps24: 0
+        case .fps25: 1
+        case .fps2997df: 2
+        case .fps2997ndf, .fps30: 3
+        }
+    }
+
+    /// The rate a Type byte names; nil for the values the specification does not define.
+    public static func rate(ofType type: UInt8) -> TimecodeRate? {
+        switch type {
+        case 0: .fps24
+        case 1: .fps25
+        case 2: .fps2997df
+        case 3: .fps30
+        default: nil
+        }
+    }
+
+    public func encoded() -> [UInt8] {
+        ArtNet.header + ArtNet.opCodeBytes(.timeCode)
+            + [0, UInt8(ArtNet.protocolVersion), 0, streamID, UInt8(timecode.frames), UInt8(timecode.seconds), UInt8(timecode.minutes), UInt8(timecode.hours), Self.type(of: timecode.rate)]
     }
 }
 
