@@ -745,6 +745,26 @@ struct LibraryIndexTests {
         #expect(await waitUntil(every: .milliseconds(20)) { index.snapshot.folders.first?.items.first?.status == .playable })
     }
 
+    /// Review of B336: a cache entry listed playable before the frame-rate bound (a header claiming 8.9e7 fps) is probed
+    /// again instead of staying a hit; an entry with a normal rate stays one. On the previous head both were hits.
+    @Test func aCachedEntryAboveTheFrameRateBoundIsProbedAgain() throws {
+        let (root, cache, first, key) = try twoStills()
+        let scan = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        scan.rescan()
+        let second = try #require(scan.snapshot.folders.first?.items.last)
+        var fast = MediaMetadata(), normal = MediaMetadata()
+        (fast.frameRate, normal.frameRate) = (8.9e7, 25)
+        let entries = [
+            key: LibraryIndex.CacheEntry(metadata: fast, thumbnail: nil, status: .playable, reason: nil),
+            LibraryIndex.cacheKey(second): LibraryIndex.CacheEntry(metadata: normal, thumbnail: nil, status: .playable, reason: nil),
+        ]
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        try JSONEncoder().encode(entries).write(to: cache.appending(path: "library-index.json"))
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.rescan()
+        #expect(index.snapshot.folders.first?.items.map(\.status) == [.probing, .playable], "\(first.lastPathComponent) probed again")
+    }
+
     /// An update that rewords the reasons does not send a file that stopped the engine twice through two more stops.
     @Test func aStoppedTwiceEntryOutlivesAReasonsVersionChange() throws {
         let (root, cache, _, key) = try twoStills()
@@ -890,6 +910,44 @@ struct LibraryIndexGPUTests {
         #expect(item.status == .unreadable && item.reason == "unknown duration")
         let device = try #require(MTLCreateSystemDefaultDevice())
         await #expect { _ = try await MovieSource.open(url: movie, device: device, poolSize: 2) } throws: { "\($0)" == "unknown duration" }
+    }
+
+    /// B336: a track that claims 8.9e7 fps (timescale 89 000 000, one tick per frame) has a frame count inside the Int32
+    /// bound, so it was listed playable; it is unreadable with its own reason, and `MovieSource` refuses it the same way.
+    @Test func aMovieWithAnAbsurdFrameRateIsUnreadable() async throws {
+        let folder = try tempDir("fanous-library").appending(path: "001_Show")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let movie = folder.appending(path: "001_too_fast.mov")
+        try await writePatternMovie(to: movie, size: (64, 64), fps: 25, frames: 2)
+        try patchAtom(movie, "mdhd", at: 20, to: 89_000_000)
+        try patchAtom(movie, "mdhd", at: 24, to: 2)
+        try patchAtom(movie, "stts", at: 20, to: 1)  // one entry: both frames one tick long
+        let index = LibraryIndex(root: folder.deletingLastPathComponent(), cacheDirectory: folder.appending(path: "_cache"), logger: testLogger)
+        index.start()
+        defer { index.stop() }
+        #expect(await waitUntil(every: .milliseconds(50)) { index.snapshot.folders.first?.items.first.map { $0.status != .probing } == true })
+        let item = try #require(index.snapshot.folders.first?.items.first)
+        #expect(item.status == .unreadable && item.reason == "frame rate above 1000 fps", "listed \(item.status), \(item.reason ?? "no reason")")
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        await #expect { _ = try await MovieSource.open(url: movie, device: device, poolSize: 2) } throws: { "\($0)" == "frame rate above 1000 fps" }
+    }
+
+    /// Review of B336: a movie at 1000 fps is at the bound, not above it: playable, and `MovieSource` opens it; a rate a
+    /// hair above 1000 (from a frame count over a duration) is allowed too.
+    @Test func aMovieAtExactly1000FpsIsPlayable() async throws {
+        let folder = try tempDir("fanous-library").appending(path: "001_Show")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let movie = folder.appending(path: "001_thousand.mov")
+        try await writePatternMovie(to: movie, size: (64, 64), fps: 1000, frames: 4)
+        let index = LibraryIndex(root: folder.deletingLastPathComponent(), cacheDirectory: folder.appending(path: "_cache"), logger: testLogger)
+        index.start()
+        defer { index.stop() }
+        #expect(await waitUntil(every: .milliseconds(50)) { index.snapshot.folders.first?.items.first.map { $0.status != .probing } == true })
+        let item = try #require(index.snapshot.folders.first?.items.first)
+        #expect(item.status == .playable, "listed \(item.status), \(item.reason ?? "no reason"), \(item.metadata?.frameRate ?? 0) fps")
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        _ = try await MovieSource.open(url: movie, device: device, poolSize: 2)
+        #expect(MovieSource.playable(frameRate: 1000.0001) && !MovieSource.playable(frameRate: 1000.01))
     }
 
     /// B264: an edit list of 2^32 − 1 s at movie timescale 1 is taken as the track's length (measured: `asset.duration`

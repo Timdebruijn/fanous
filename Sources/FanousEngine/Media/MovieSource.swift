@@ -31,6 +31,8 @@ public enum MovieError: Error, CustomStringConvertible {
     case unexpectedPixelFormat(OSType)
     case noSample
     case unknownDuration
+    /// B336: a header rate above `MovieSource.maxFrameRate`.
+    case frameRate
 
     public var description: String {
         switch self {
@@ -40,6 +42,7 @@ public enum MovieError: Error, CustomStringConvertible {
         case .unexpectedPixelFormat(let f): "unexpected pixel format \(fourCCString(f))"
         case .noSample: "no sample"
         case .unknownDuration: "unknown duration"
+        case .frameRate: "frame rate above \(Int(MovieSource.maxFrameRate)) fps"
         }
     }
 }
@@ -167,6 +170,14 @@ public final class MovieSource: @unchecked Sendable {
     private var hapTextures0: [MTLTexture] = []
     private var hapTextures1: [MTLTexture] = []
 
+    /// B336: a header can claim an absurd but finite rate (2^31 − 1 ticks per second at one tick per frame: 2.1e9 fps over
+    /// 0.4 s is 8.6e8 frames, inside the Int32 bound), which playback then walks past the last real sample, one cursor per
+    /// decode, and ingest tries to write. No playable export runs faster (a high-speed camera's footage is exported at a
+    /// playback rate).
+    static let maxFrameRate = 1000.0
+    /// `maxFrameRate` with room for a rate taken from a frame count over a duration that comes out a hair above 1000.
+    static func playable(frameRate: Double) -> Bool { frameRate <= maxFrameRate + 1e-3 }
+
     public static func open(url: URL, device: MTLDevice, poolSize: Int) async throws -> MovieSource {
         let asset = AVURLAsset(url: url)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw MovieError.noVideoTrack }
@@ -187,6 +198,7 @@ public final class MovieSource: @unchecked Sendable {
         // list of 2^32 s) traps the modular frame arithmetic of playback (LayerDecoder, Playback, Compositor, LayerClock)
         guard let frameCount = Int(exactly: (duration * frameRate).rounded()), (0...Int(Int32.max)).contains(frameCount)
         else { throw MovieError.unknownDuration }
+        guard Self.playable(frameRate: frameRate) else { throw MovieError.frameRate }  // B336
         info = MovieInfo(
             width: Int(dimensions.width), height: Int(dimensions.height), pixelAspect: Self.pixelAspect(of: description), frameRate: frameRate,
             frameCount: max(1, frameCount), codec: codec)

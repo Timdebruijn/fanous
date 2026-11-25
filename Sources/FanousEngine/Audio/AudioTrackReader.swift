@@ -62,6 +62,18 @@ public final class AudioTrackReader: @unchecked Sendable {
     private var basePTS = 0.0  // media time of the first output frame after the last seek
     private var framesSinceSeek = 0
 
+    /// B336: the source rates read: every rate that played before (below 8 kHz, a copied telephone recording; DXD's 352.8
+    /// and 384 kHz) still does (ingest clamps its output to 8–192 kHz). `mSampleRate > 0` let +infinity through, which
+    /// trapped in `chunkFrames`; a huge finite rate made the staging buffer unbounded and `seek`'s `Int32(sampleRate)`
+    /// trapped above 2^31.
+    static let sampleRates = 1.0...768_000.0
+
+    /// The source formats the reader converts: interleaved LPCM with a frame size, channels and a rate in `sampleRates`.
+    static func reads(_ source: AudioStreamBasicDescription) -> Bool {
+        source.mFormatID == kAudioFormatLinearPCM && source.mFormatFlags & kAudioFormatFlagIsNonInterleaved == 0
+            && source.mBytesPerFrame > 0 && source.mChannelsPerFrame > 0 && sampleRates.contains(source.mSampleRate)
+    }
+
     /// Loads the first audio track's properties (async, like `MovieSource.open`). A movie without audio
     /// yields a reader with `hasAudio == false`; a track that is not interleaved LPCM throws.
     public static func open(url: URL) async throws -> AudioTrackReader {
@@ -89,10 +101,7 @@ public final class AudioTrackReader: @unchecked Sendable {
             mix = nil
             return
         }
-        guard var source = CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee,
-            source.mFormatID == kAudioFormatLinearPCM, source.mFormatFlags & kAudioFormatFlagIsNonInterleaved == 0,
-            source.mBytesPerFrame > 0, source.mChannelsPerFrame > 0, source.mSampleRate > 0
-        else {
+        guard var source = CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee, Self.reads(source) else {
             throw AudioError.unsupportedFormat(CMFormatDescriptionGetMediaSubType(description))
         }
         let channels = Int(source.mChannelsPerFrame)

@@ -1241,6 +1241,22 @@ extension IngestQueueTests {
         }
     }
 
+    /// B336: a rate a timescale can hold but no camera records (8.9e7 fps) fails the job instead of writing hundreds of
+    /// millions of frames.
+    @Test func anAbsurdFrameRateFailsTheJob() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let queue = Self.started(in: directory)
+        defer { queue.stop() }
+        let source = directory.appending(path: "too_fast.mov")
+        try await writePatternMovie(to: source, size: (64, 64), fps: 25, frames: 2)
+        try patchAtom(source, "mdhd", at: 20, to: 89_000_000)
+        try patchAtom(source, "mdhd", at: 24, to: 2)
+        try patchAtom(source, "stts", at: 20, to: 1)
+        let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_too_fast.mov"), kind: .transcode(codec: .proRes422HQ)))
+        #expect(await Self.wait(for: job.id, in: queue) == .failed("cannot read the source: frame rate above 1000 fps"))
+        #expect(FileManager.default.fileExists(atPath: source.path), "the source survives a failed job")
+    }
+
     /// B194: a container AVFoundation has no reader for fails with the library's reason, not AVFoundation's "Cannot Open",
     /// and the source is still there byte for byte, with no output or temporary beside the destination.
     @Test func unopenableContainerFailsWithTheLibrarysReasonAndKeepsTheSource() async throws {

@@ -221,7 +221,7 @@ The Layers screen shows the problem in the row's Media column.
 | The row reads | Do |
 |---|---|
 | "no file N in folder M" | The number does not exist or the file is not playable: Media screen, that folder: invalid name, needs transcode, unreadable ("AVFoundation cannot open .webm files": a `.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`, `.f4v`, `.divx`, convert it on another machine) ([Media library](media-library.md)) |
-| A decoder error ("unsupported codec", "VideoToolbox error", "no video track") | Transcode the file again or replace it, then select another clip on the layer and this one again: the file is opened anew |
+| A decoder error ("unsupported codec", "VideoToolbox error", "no video track", "frame rate above 1000 fps") | Transcode the file again or replace it, then select another clip on the layer and this one again, or send Clear error (Layer channel 50 at 24 to 31): the file is opened anew |
 | A decoder error on a movie that was playing ("HapDecode failed", "VideoToolbox error") | For half a second or more no frame of the file decoded. The layer shows the last frame that did. When not one frame of a newly selected file decodes from its start frame, the layer goes on playing the clip it showed before. The error goes by itself when a frame decodes again, or when another clip is selected. Transcode the file again or replace it |
 | "no capture device / display / Syphon server numbered N" | Nothing has that number in folder 0: Inputs screen, **Number** ([Live inputs](live-inputs.md)) |
 | "not running", "in use by another app", "no signal" | The live input: plugged in, not open in another app, a signal on the card |
@@ -254,7 +254,7 @@ The Media screen's ingest queue shows the reason under the job.
 |---|---|
 | "AVFoundation cannot open .webm files" (or `.mkv`, `.wmv`, …) | macOS has no reader for that container. Convert the file on another machine and import the result. An imported copy stays in `_incoming/` in the library root (as `name-2.ext` when that name was taken): **Remove** the job, then delete that copy in Finder |
 | "Cannot Open" | A damaged file in a container macOS reads (`.mov`, `.mp4`, `.m4v`): export it again |
-| "cannot read the source: unknown duration" (or "unknown frame rate") | The movie's header gives no usable length or frame rate (a damaged or badly written file): export it again and import the result. An imported copy stays in `_incoming/` in the library root: **Remove** the job, then delete that copy in Finder |
+| "cannot read the source: unknown duration" (or "unknown frame rate", "frame rate above 1000 fps") | The movie's header gives no usable length or frame rate, or claims more than 1000 frames per second (a damaged or badly written file): export it again and import the result. An imported copy stays in `_incoming/` in the library root: **Remove** the job, then delete that copy in Finder |
 
 ## The picture is frozen
 
