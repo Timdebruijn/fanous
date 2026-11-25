@@ -88,7 +88,8 @@ public final class DMXStore: @unchecked Sendable {
     /// Render-side parameters, one write per resolved DMX packet (ADR-0002 hand-off): the compositor reads them,
     /// every other thread takes the copy (`withLatest`, B71).
     public let snapshots = TripleBuffer({ ParameterSnapshotSlot(maxLayers: ParameterSnapshotSlot.maxLayers) }, copy: { $0.copy(from: $1) })
-    private var sequence: UInt64 = 0
+    /// Counts the publishes (tests read it).
+    private(set) var sequence: UInt64 = 0
     /// Per fixture with UI values: seconds they have masked the console since the last UI change, and the tick that was counted to.
     private(set) var uiClock: [FixtureRef: (masked: TimeInterval, tick: TimeInterval)] = [:]
     /// DESIGN.md §7.2: UI values that mask a live console are released after masking it this long since the last UI change.
@@ -223,13 +224,11 @@ public final class DMXStore: @unchecked Sendable {
         switch command {
         case .setParameter(let fixture, let parameter, let raw):
             accepted = resolvers[fixture] != nil
-            resolvers[fixture]?.setInternal(parameter, raw: raw, source: .osc, at: now)
-            publish(receivedAt: 0)
+            if setOSC(fixture, parameter, raw: raw, at: now) { publish(receivedAt: 0) }
         case .setMedia(let layer, let folder, let file):
             accepted = resolvers[.layer(layer)] != nil
-            resolvers[.layer(layer)]?.setInternal(.layer(.folder), raw: UInt16(clamping: folder), source: .osc, at: now)
-            resolvers[.layer(layer)]?.setInternal(.layer(.file), raw: UInt16(clamping: file), source: .osc, at: now)
-            publish(receivedAt: 0)
+            let folder = setOSC(.layer(layer), .layer(.folder), raw: UInt16(clamping: folder), at: now)
+            if setOSC(.layer(layer), .layer(.file), raw: UInt16(clamping: file), at: now) || folder { publish(receivedAt: 0) }
         case .retrigger(let layer):
             accepted = resolvers[.layer(layer)] != nil
             // Control 8–15 = Retrigger; the compositor latches the edge, so the value returns to idle right after
@@ -248,6 +247,15 @@ public final class DMXStore: @unchecked Sendable {
         if accepted, let message {
             if case .setParameter = command { log(message, at: now, sweeps: true) } else { log(message, at: now, sweeps: false) }
         }
+    }
+
+    /// Sets an OSC value and says whether the resolved value changed: only then does the caller publish (B285). The
+    /// same value again (a 64 KiB bundle holds about 4000) cost a whole publish each; the live document reads the
+    /// resolvers, not the publish.
+    private func setOSC(_ fixture: FixtureRef, _ parameter: ParameterID, raw: UInt16, at now: TimeInterval) -> Bool {
+        let before = resolvers[fixture]?.resolved(parameter).raw
+        resolvers[fixture]?.setInternal(parameter, raw: raw, source: .osc, at: now)
+        return resolvers[fixture]?.resolved(parameter).raw != before
     }
 
     /// `sweeps`: a message on the same address as the newest row replaces it (its last value and time).
@@ -270,12 +278,6 @@ public final class DMXStore: @unchecked Sendable {
     /// until the desk moves that parameter again.
     private static func masksConsole(_ resolver: FixtureResolver) -> Bool {
         resolver.hasDMX && resolver.resolvedAll().contains { isController($0.source) }
-    }
-
-    /// Seconds left for a fixture whose UI values mask the console right now; nil otherwise (no countdown shown).
-    private func uiExpiresIn(_ fixture: FixtureRef, at now: TimeInterval) -> TimeInterval? {
-        guard let clock = uiClock[fixture], let resolver = resolvers[fixture], Self.masksConsole(resolver) else { return nil }
-        return max(0, Self.uiExpiry - clock.masked - (now - clock.tick))
     }
 
     /// UI values expire only after masking a live console for 10 minutes since the last UI change. Time without console
@@ -367,8 +369,8 @@ public final class DMXStore: @unchecked Sendable {
         if changed { publish(receivedAt: time, at: time) }
     }
 
-    /// ponytail: iterates the resolver dictionary on every publish (a DMX packet that changed a value, every internal
-    /// set or command even if unchanged); an array indexed by fixture if that shows in a profile.
+    /// ponytail: iterates the resolver dictionary on every publish (a DMX packet or OSC value that changed a value, every
+    /// other internal set or command even if unchanged); an array indexed by fixture if that shows in a profile.
     /// `now` starts a preset morph.
     func publish(receivedAt: TimeInterval, at now: TimeInterval = DMXStore.now) {
         sequence += 1
@@ -602,36 +604,47 @@ public final class DMXStore: @unchecked Sendable {
         return parts.joined(separator: " ")
     }
 
+    /// Only copies on the DMX queue (B285: formatting every parameter there held it about 1 ms at the limits); the
+    /// specs, labels and strings are made on the caller's thread.
     func snapshot(at now: TimeInterval) -> LiveSnapshot {
-        queue.sync {
-            let ids = Set(table.knownUniverses + patch.universes).sorted()
-            let universes = ids.map { id -> UniverseInfo in
-                let status = table.status(for: id, at: now)
-                return UniverseInfo(
-                    id: id.description, active: status.active, packets: status.packets, source: status.source,
-                    ageSeconds: status.lastSeen > 0 ? ((now - status.lastSeen) * 1000).rounded() / 1000 : -1)
-            }
-            var fixtures: [String: [ResolvedParameterInfo]] = [:]
-            var policies: [String: String] = [:]
-            var internalValues: [String: [InternalValueInfo]] = [:]
-            for (fixture, resolver) in resolvers {
-                let internals = resolver.internalValues()
-                if !internals.isEmpty {
-                    internalValues[fixture.description] = internals.map { InternalValueInfo(key: $0.parameter.key, raw: $0.raw, source: $0.source.rawValue) }
+        let (statuses, copies) = queue.sync {
+            (
+                Set(table.knownUniverses + patch.universes).sorted().map { table.status(for: $0, at: now) },
+                resolvers.map { fixture, resolver in
+                    (
+                        fixture: fixture, policy: resolver.policy, resolved: resolver.resolvedAll(), internals: resolver.internalValues(),
+                        // UI values mask the console (`masksConsole`) only with DMX coming in
+                        uiLeft: resolver.hasDMX ? uiClock[fixture].map { max(0, Self.uiExpiry - $0.masked - (now - $0.tick)) } : nil
+                    )
                 }
-                let specs = ChannelMap.specs(for: fixture.mode)
-                fixtures[fixture.description] = zip(specs, resolver.resolvedAll()).map { spec, value in
-                    ResolvedParameterInfo(
-                        key: spec.id.key, name: spec.name, raw: value.raw, physical: spec.physical(fromRaw: value.raw),
-                        label: spec.label(forRaw: value.raw), unit: spec.unit, source: value.source.rawValue)
-                }
-                policies[fixture.description] = resolver.policy.rawValue
-            }
-            var uiExpiresIn: [String: Double] = [:]
-            for fixture in uiClock.keys {
-                if let left = self.uiExpiresIn(fixture, at: now) { uiExpiresIn[fixture.description] = left.rounded(.up) }
-            }
-            return LiveSnapshot(universes: universes, fixtures: fixtures, policies: policies, internalValues: internalValues, uiExpiresIn: uiExpiresIn)
+            )
         }
+        whileFormatting?()
+        let universes = statuses.map { status in
+            UniverseInfo(
+                id: status.universe.description, active: status.active, packets: status.packets, source: status.source,
+                ageSeconds: status.lastSeen > 0 ? ((now - status.lastSeen) * 1000).rounded() / 1000 : -1)
+        }
+        var fixtures: [String: [ResolvedParameterInfo]] = [:]
+        var policies: [String: String] = [:]
+        var internalValues: [String: [InternalValueInfo]] = [:]
+        var uiExpiresIn: [String: Double] = [:]
+        for copy in copies {
+            let name = copy.fixture.description
+            if !copy.internals.isEmpty {
+                internalValues[name] = copy.internals.map { InternalValueInfo(key: $0.parameter.key, raw: $0.raw, source: $0.source.rawValue) }
+            }
+            fixtures[name] = zip(ChannelMap.specs(for: copy.fixture.mode), copy.resolved).map { spec, value in
+                ResolvedParameterInfo(
+                    key: spec.id.key, name: spec.name, raw: value.raw, physical: spec.physical(fromRaw: value.raw),
+                    label: spec.label(forRaw: value.raw), unit: spec.unit, source: value.source.rawValue)
+            }
+            policies[name] = copy.policy.rawValue
+            if let left = copy.uiLeft, copy.resolved.contains(where: { Self.isController($0.source) }) { uiExpiresIn[name] = left.rounded(.up) }
+        }
+        return LiveSnapshot(universes: universes, fixtures: fixtures, policies: policies, internalValues: internalValues, uiExpiresIn: uiExpiresIn)
     }
+
+    /// Test hook: called once per snapshot, after the copy and before the formatting.
+    nonisolated(unsafe) var whileFormatting: (@Sendable () -> Void)?
 }
