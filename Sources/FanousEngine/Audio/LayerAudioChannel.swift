@@ -33,6 +33,9 @@ public struct AudioStatistics: Sendable, Equatable {
 /// - `tail` and the producer-only vars belong to the producer thread; `head`, `appliedGeneration`,
 ///   `alignedGeneration`, `alignNext`, `correcting` and the gain state belong to the consumer thread; everything else is an atomic. The producer never writes `head`.
 ///   The compositor's retrigger reaches the producer as `jumpGeneration` and the consumer as `staleSegment` (B394).
+/// - The clock is one atomic (`clockOffsetBits`); the producer also reads `stampNanos`, a second atomic, for where it
+///   seeks (never before the stamp, B320). A pair from two ticks (rare: both are stored back to back each tick)
+///   moves that seek by at most one period; the reseek test uses the clock alone.
 /// - One producer at a time (B397). The compositor's `handOver()` names the next producer in `owner`; a fill from
 ///   any other is ignored, and a fill holds `busy` so a thread that was already inside one (a read can stall for
 ///   tens of milliseconds, B391) finishes alone before the new producer's first fill. Each segment carries the token
@@ -73,7 +76,11 @@ public final class LayerAudioChannel: @unchecked Sendable {
 
     // Compositor -> producer and consumer. The layer clock is stored as `media seconds - host seconds` (one atomic, so a
     // reader can never pair a new position with an old time); while the channel is active the clock runs 1:1 with host time.
+    // The producer pairs it with a second atomic, `stampNanos`, which may be one tick older or newer than the offset it reads.
     private let clockOffsetBits = Atomic<UInt64>(0)
+    /// The host time (nanoseconds) the last `setState` stamped its position with: the compositor's target, ahead of
+    /// now, published before the clock offset. A producer seek never goes to a clock before it (`fill(now:)`).
+    private let stampNanos = Atomic<UInt64>(0)
     private let activeFlag = Atomic<Bool>(false)
     private let volumeBits = Atomic<UInt32>(Float(1).bitPattern)
     private let panBits = Atomic<UInt32>(Float(0).bitPattern)
@@ -131,16 +138,17 @@ public final class LayerAudioChannel: @unchecked Sendable {
 
     // MARK: Compositor
 
-    /// Called by the compositor every tick. `wantedPTS` is the media time (seconds) the layer clock is at now;
+    /// Called by the compositor every tick. `wantedPTS` is the media time (seconds) the layer clock is at host time
+    /// `nanos`: the compositor passes its tick's target, the tick's nominal presentation time (B320);
     /// `active` means speed is 100 % forward and the layer is playing; `pan` is -1 (left) ... 1 (right).
     /// `loop` is the media range [start, end) in seconds a forward loop plays; the producer then reads across the
     /// wrap (the ring holds the unwrapped timeline) and `wantedPTS` is compared modulo the loop length. Ignored
     /// when shorter than 0.5 s.
     /// `jumped` says the layer was retriggered this tick (its clock jumped back): the producer reseeks, whatever the
     /// size of the jump.
-    /// Between ticks the audio side extrapolates the clock with the host clock (`wantedPTS(atHostNanos:)`), so the
-    /// up to 16.7 ms age of the value does not eat into the ±20 ms window. `nanos`: the host time `wantedPTS` belongs
-    /// to (tests pass one).
+    /// The audio side extrapolates the clock from the stamp with the host clock (`wantedPTS(atHostNanos:)`), backwards
+    /// before it (the stamp is up to one period ahead of now) and forwards after it. `nanos` is on the clock of
+    /// `CACurrentMediaTime()` (both are `mach_absolute_time()` converted), so a target in host seconds × 1e9 is one.
     public func setState(
         wantedPTS: Double, active: Bool, volume: Float, pan: Float, loop: (start: Double, end: Double)? = nil, jumped: Bool = false,
         atHostNanos nanos: UInt64 = LayerAudioChannel.hostNanos()
@@ -150,6 +158,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
         let start = loop.flatMap { Int(exactly: ($0.start * Self.rate).rounded()) } ?? -1
         let fits = (Self.sampleRate / 2...Int(UInt32.max)).contains(frames) && (0...Int(UInt32.max)).contains(start)
         loopBits.store(fits ? UInt64(start) << 32 | UInt64(frames) : 0, ordering: .relaxed)
+        stampNanos.store(nanos, ordering: .relaxed)
         clockOffsetBits.store((wantedPTS - Double(nanos) / 1e9).bitPattern, ordering: .relaxed)
         if jumped { jump() }  // after the clock: a fill that sees the jump sees the new clock
         volumeBits.store(volume.bitPattern, ordering: .relaxed)
@@ -227,14 +236,26 @@ public final class LayerAudioChannel: @unchecked Sendable {
     public func fill(from reader: AudioTrackReader, producer: Int) {
         guard activeFlag.load(ordering: .acquiring) else { return }  // the clock read below is then at least the one that activated the channel
         let jump = jumpGeneration.load(ordering: .acquiring)  // before the clock, see `jumpGeneration`
-        fill(wanted: wantedPTS(atHostNanos: Self.hostNanos()), jump: jump, producer: producer, read: { reader.read(into: $0, frameCount: $1) }, seek: { reader.seek(toSeconds: $0) })
+        fill(now: Self.hostNanos(), jump: jump, producer: producer, read: { reader.read(into: $0, frameCount: $1) }, seek: { reader.seek(toSeconds: $0) })
+    }
+
+    /// `fill` with the clock taken at host time `now` (`fill(from:)` passes the time of the call, tests one of their
+    /// own). A seek goes to the clock at the stamp of the last `setState` when that is later than now: before the
+    /// target the clock is up to one tick's lead before the position the compositor set, so a seek there would start
+    /// before an in point (or a loop's restart) and those frames would be heard; at the stamp the segment starts at
+    /// the position and the consumer's landing waits silent until the clock reaches it. Whether to reseek is judged
+    /// on the clock at now, the consumer's, so the thresholds keep their size (`early`).
+    func fill(now: UInt64, jump: Int? = nil, producer: Int = 0, read: (UnsafeMutablePointer<Float>, Int) -> (framesRead: Int, firstFramePTS: Double), seek: (Double) -> Void) {
+        let at = max(now, stampNanos.load(ordering: .relaxed))
+        fill(wanted: wantedPTS(atHostNanos: at), early: Double(at - now) / 1e9, jump: jump, producer: producer, read: read, seek: seek)
     }
 
     /// `fill` against any frame source (tests use a synthetic one) and an explicit layer clock. `read` writes up to
     /// `n` interleaved frames and returns how many it wrote (fewer only at the end of the media) and the PTS of the first.
     /// `jump` is the `jumpGeneration` read before `wanted` was taken (read here when nil). `producer` is the token of
-    /// the caller (0 fits a channel never handed over).
-    func fill(wanted: Double, jump: Int? = nil, producer: Int = 0, read: (UnsafeMutablePointer<Float>, Int) -> (framesRead: Int, firstFramePTS: Double), seek: (Double) -> Void) {
+    /// the caller (0 fits a channel never handed over). `early`: how far (seconds) `wanted` is ahead of the clock now
+    /// (`fill(now:)`); a restart seeks to `wanted`, the reseek test runs on `wanted - early`.
+    func fill(wanted: Double, early: Double = 0, jump: Int? = nil, producer: Int = 0, read: (UnsafeMutablePointer<Float>, Int) -> (framesRead: Int, firstFramePTS: Double), seek: (Double) -> Void) {
         // B397: another producer is inside a fill: nothing, try again later. The owner check is under `busy`, so a
         // producer that lost the channel while the new one filled cannot slip in behind it.
         guard !busy.exchange(true, ordering: .acquiring) else { return }
@@ -250,7 +271,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
             restart(at: wanted, seek)
         } else if !segmentValid {
             restart(at: wanted, seek)
-        } else if jumped || needsReseek(wanted) {
+        } else if jumped || needsReseek(wanted - early) {
             let t = tail.load(ordering: .relaxed)
             if head.load(ordering: .acquiring) == t {
                 restart(at: wanted, seek)  // already empty: nothing to drain
@@ -365,7 +386,9 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// since nothing of it has been heard yet, and the 28 to 35 ms between the producer's seek at the clock and the
     /// first render callback (the output device still starting) would otherwise stay as a lag inside the window for
     /// the whole clip (B393); when the audio is ahead of it (a resume, where the last pull before the pause ran up to
-    /// one callback past it) they wait, silent until the clock reaches the first frame (B394). The frames dropped
+    /// one callback past it, and since B320 every start, seek and retrigger: the producer seeks at the tick's target,
+    /// up to one lead ahead of the clock now) they wait, silent until the clock reaches the first frame (B394), so the
+    /// first frame is played when the clock reaches the target the picture shows it at. The frames dropped
     /// there are never heard. Silent and consuming nothing while inactive, and while the ring still holds the segment
     /// from before a jump or a hand-over to another file (B396), until the producer has started a new one.
     /// Real-time safe: no allocation, no locks, no logging.
