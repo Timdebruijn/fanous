@@ -4,11 +4,12 @@
 
 # Pixel mapping in three dimensions, and pixels that move
 
-**Status:** design note of 2026-11-25, not built. It fixes what the pixel
-mapper (DESIGN §21 "Pixel mapping to DMX fixtures", `feature-gaps.md` G14,
-`BACKLOG.md` B407) has to hold from its first version so that a volume of
-LEDs (a 20 × 20 × 20 grid of balls) and LEDs on winches (B53 "movement out")
-are the same feature, not a second one. The owner's questions are in §6.
+**Status:** design note of 2026-11-25, decided the same day, not built. It
+fixes what the pixel mapper (DESIGN §21 "Pixel mapping to DMX fixtures",
+`feature-gaps.md` G14, `BACKLOG.md` B407) has to hold from its first version
+so that a volume of LEDs (a 20 × 20 × 20 grid of balls) and LEDs on winches
+(B53 "movement out") are the same feature, not a second one. The owner's
+decisions are in §6.
 
 **Research:** three web surveys on 2026-11-25 (volumetric mappers, kinetic
 rigs, and which inputs those products take from a media server). Sources in
@@ -72,9 +73,9 @@ Observations:
 
 A **pixel map** is a project object (`pixelMaps[]`, one per rig) holding:
 
-- `points[]`: `x y z` in metres (proposed stage frame: x right, y depth
+- `points[]`: `x y z` in metres (stage frame, decided in §6.1: x right, y depth
   towards the audience, z up, origin at the stage centre line on the floor;
-  the LED tools and MADRIX use z up, some 3D tools y up, see §6 Q1), `universe`,
+  the up axis is a project setting, default z, see §6.1), `universe`,
   `address`, `footprint` (`rgb`, `rgbw`, `rgb16`, `w`), optional `group` (a
   ball, a tube, a strip) and `order` within a group. A tube of 32 LEDs is 32
   points in one group.
@@ -93,7 +94,7 @@ Three ways in, all producing the same point list:
    field names and units are documented in the user guide; a file from ELM
    or a spreadsheet maps onto it with a header rename.
 3. **OPC layout JSON**: `point` per LED, addresses assigned in file order
-   from one start address. Read only; Fanous writes CSV.
+   from one start address. Import only; Fanous exports CSV.
 
 Fixture types (DESIGN §6.1) are untouched: the LEDs are not fixtures the
 console patches into Fanous, they are what Fanous patches out. ADR-0008
@@ -185,17 +186,20 @@ the integrator's.
   **Home** button (height map ignored, all groups move to `top` at the rate
   limit).
 
-## 6. Questions for the owner
+## 6. The owner's decisions (2026-11-25)
 
-1. Stage frame: z up (this note, MADRIX, most LED tools) or y up (several
-   3D tools)? One choice, documented, with the CSV importer able to swap axes.
-2. Is the OPC JSON import worth the day it costs, or is CSV enough for v1?
-3. Does the height map come from its own canvas, or from a named layer's luma
-   on the same canvas? Own canvas is simpler to reason about and costs one
-   more canvas in the project.
-4. Order: 2D strips first (G14 as planned), with the point list and the
-   *extrude* mode, then *atlas* and *project*, then kinetic? Or kinetic before
-   *project*, since it is the rig in hand?
+1. **Stage frame: z up by default, the up axis a project setting.** The
+   setting (`z` or `y`) is applied on CSV and OPC import and on CSV export,
+   so a rig drawn in a y-up tool comes in and goes out unchanged; inside the
+   engine and this note z is always up.
+2. **CSV and OPC JSON both in v1.** The day for OPC is worth it: the
+   creative-coding rigs come in without a conversion step.
+3. **The height map is its own canvas.** Height and colour are two pictures,
+   as in MADRIX; the colour layers stay clean and the UI shows a greyscale
+   canvas that is the height, nothing to explain.
+4. **Order:** the point list and the *extrude* mode first (the 2D mapper,
+   G14 as planned), then *atlas*, then kinetic, then *project*; the camera
+   is the most new work and builds on the 3D projection mapping of §21.
 
 ## 7. Sources
 
