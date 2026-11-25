@@ -221,7 +221,7 @@ The Layers screen shows the problem in the row's Media column.
 | The row reads | Do |
 |---|---|
 | "no file N in folder M" | The number does not exist or the file is not playable: Media screen, that folder: invalid name, needs transcode, unreadable ("AVFoundation cannot open .webm files": a `.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`, `.f4v`, `.divx`, convert it on another machine) ([Media library](media-library.md)) |
-| A decoder error ("unsupported codec", "VideoToolbox error", "no video track") | Transcode the file again or replace it, then select another clip on the layer and this one again: the file is opened anew |
+| A decoder error ("unsupported codec", "VideoToolbox error", "no video track") | Transcode the file again or replace it, then select another clip on the layer and this one again, or send Clear error (Layer channel 50 at 24 to 31): the file is opened anew |
 | A decoder error on a movie that was playing ("HapDecode failed", "VideoToolbox error") | For half a second or more no frame of the file decoded. The layer shows the last frame that did. When not one frame of a newly selected file decodes from its start frame, the layer goes on playing the clip it showed before. The error goes by itself when a frame decodes again, or when another clip is selected. Transcode the file again or replace it |
 | "no capture device / display / Syphon server numbered N" | Nothing has that number in folder 0: Inputs screen, **Number** ([Live inputs](live-inputs.md)) |
 | "not running", "in use by another app", "no signal" | The live input: plugged in, not open in another app, a signal on the card |

@@ -141,4 +141,43 @@ import Testing
         #expect(layers[0].mediaStatus.withLock { $0.error == nil && $0.kind == "still" })
         #expect(opens.started.withLock { $0 } == ["2.png", "2.png"])
     }
+
+    /// Review of B363: Clear error on a layer that plays (a movie whose frames fail, B342, here a still with the error
+    /// written as the decoder's `failing` does) only clears the text: nothing is opened again, nothing is handed over. The
+    /// first version opened it again and cut it to its start.
+    @Test func clearErrorOnAPlayingLayerOnlyClearsTheText() async throws {
+        let opens = MediaLoaderTests.Opens()
+        let (loader, layers) = try MediaLoaderTests.loader(layers: 1, opens: opens)
+        loader.start()
+        defer { loader.stop() }
+        MediaLoaderTests.select(layers[0], 2, loader)
+        #expect(await waitUntil { MediaLoaderTests.take(layers[0]) == MediaKey(folder: 1, file: 2) })
+        layers[0].mediaStatus.withLock { $0.error = "HapDecode failed" }
+        layers[0].clearErrorRequested.store(true, ordering: .relaxed)
+        loader.wake.signal()
+        #expect(await waitUntil { layers[0].mediaStatus.withLock { $0.error } == nil })
+        try await Task.sleep(for: .milliseconds(300))  // three loader passes
+        #expect(opens.started.withLock { $0 } == ["2.png"], "opened again")
+        #expect(MediaLoaderTests.take(layers[0]) == nil, "handed over again")
+    }
+
+    /// Review of B363: Clear error on a selection that has not come (B277: its open is given up, the old picture stays)
+    /// starts no second open on the same volume; each press used to start one more stuck open thread.
+    @Test func clearErrorOnASelectionThatHasNotComeStartsNoSecondOpen() async throws {
+        let opens = MediaLoaderTests.Opens()
+        opens.held.withLock { $0 = ["1.png"] }
+        let (loader, layers) = try MediaLoaderTests.loader(layers: 1, opens: opens, deadline: .milliseconds(50))
+        loader.start()
+        defer { loader.stop() }
+        defer { opens.held.withLock { $0 = [] } }
+        MediaLoaderTests.select(layers[0], 1, loader)
+        #expect(await waitUntil { layers[0].mediaStatus.withLock { $0.error } != nil })
+        for _ in 0..<3 {
+            layers[0].clearErrorRequested.store(true, ordering: .relaxed)
+            loader.wake.signal()
+            try await Task.sleep(for: .milliseconds(150))
+        }
+        #expect(opens.started.withLock { $0 } == ["1.png"], "a second open on the same file")
+        #expect(layers[0].mediaStatus.withLock { $0.error } == nil)
+    }
 }

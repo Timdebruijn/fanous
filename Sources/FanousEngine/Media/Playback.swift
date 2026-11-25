@@ -469,6 +469,8 @@ public final class MediaLoader: @unchecked Sendable {
     /// Loader thread: why the layer's selection did not come (given up, or failed after the give-up); shown with the
     /// picture's own status until the next hand-over, so the capture poll does not clear it.
     private var notCome: [String?]
+    /// Loader thread: the last hand-over of the layer was no playback (B363: Clear error opens such a selection again).
+    private var blank: [Bool]
     typealias Answer = (layer: Int, id: Int, key: MediaKey, url: URL, result: Result<OpenedFile, Error>)
     /// What the open threads hand back. They hold this box, not the loader, so a thread stuck on a gone volume keeps no
     /// stopped loader alive; after the stop it hands nothing back.
@@ -498,6 +500,7 @@ public final class MediaLoader: @unchecked Sendable {
         newest = Array(repeating: 0, count: layers.count)
         shown = Array(repeating: 0, count: layers.count)
         notCome = Array(repeating: nil, count: layers.count)
+        blank = Array(repeating: true, count: layers.count)
         openFile = { url, audio in
             if StillSource.extensions.contains(url.pathExtension.lowercased()) { return .still(try StillSource.load(url: url, device: device)) }
             let source = try blockingAwait(priority: .userInitiated) { try await MovieSource.open(url: url, device: device, poolSize: ringCapacity + 1) }  // one spare for the held frame (B386)
@@ -669,14 +672,17 @@ public final class MediaLoader: @unchecked Sendable {
                     layer.pendingScratch.withLock { $0 = (asking, answer) }
                 }
                 if layer.clearErrorRequested.exchange(false, ordering: .relaxed) {
-                    // B363: Clear error empties the status's error; a selection that failed is opened again (B299: a
-                    // failed open is otherwise retried only when the selection changes). Not while an open is in flight.
-                    notCome[i] = nil
+                    // B363: Clear error empties the status's error. A selection is opened again only where the layer shows
+                    // nothing for it (B299: a failed open is otherwise retried only when the selection changes; a missing
+                    // number; a live source absent at its open): a live input that went away keeps its last frame, a
+                    // playing movie with decode errors (B342) is not cut to its start, and a selection that has not come
+                    // (B277) starts no second open on the same volume.
                     let failed = layer.mediaStatus.withLock { status in
                         defer { status.error = nil }
                         return status.error != nil
                     }
-                    if failed, opening[i] == nil { loaded[i] = .max }  // never a packed key: opened again below
+                    if failed, opening[i] == nil, loaded[i] == shown[i], blank[i] { loaded[i] = .max }  // never a packed key: opened again below
+                    notCome[i] = nil
                 }
                 let want = layer.wanted.load(ordering: .relaxed)
                 guard want != loaded[i] else { continue }
@@ -716,6 +722,7 @@ public final class MediaLoader: @unchecked Sendable {
     /// live-input checks follow `key` from now on.
     private func hand(_ playback: LayerPlayback?, of key: UInt32, to layer: Int) {
         shown[layer] = key
+        blank[layer] = playback == nil
         notCome[layer] = nil
         layers[layer].pending.withLock { box in
             box.playback?.stop()  // replaced before the compositor took it

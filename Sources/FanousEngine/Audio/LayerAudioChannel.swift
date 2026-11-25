@@ -136,8 +136,8 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// `loop` is the media range [start, end) in seconds a forward loop plays; the producer then reads across the
     /// wrap (the ring holds the unwrapped timeline) and `wantedPTS` is compared modulo the loop length. Ignored
     /// when shorter than 0.5 s.
-    /// `jumped` says the layer was retriggered this tick (its clock jumped back): the producer reseeks, whatever the
-    /// size of the jump.
+    /// `jumped` says the layer's clock jumped this tick (a retrigger, a sync slave's jump to its master, B395, or the
+    /// Control channel's Resync audio, B363): the producer reseeks, whatever the size of the jump.
     /// Between ticks the audio side extrapolates the clock with the host clock (`wantedPTS(atHostNanos:)`), so the
     /// up to 16.7 ms age of the value does not eat into the ±20 ms window. `nanos`: the host time `wantedPTS` belongs
     /// to (tests pass one).

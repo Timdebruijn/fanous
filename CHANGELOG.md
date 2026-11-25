@@ -11,7 +11,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Control channel: "Resync audio" (16–23) re-seeks the layer's audio to its clock and "Clear error" (24–31) clears the
-  layer's error and opens a selection that failed again, each once on the tick the band is entered (B363). Both were
+  layer's error and opens a selection the layer shows nothing for again (a failed open, a missing number), each once on
+  the tick the band is entered (B363). Both were
   parsed and handled nowhere (PR #468).
 - Docs: the owner's four decisions on the 3D pixel-mapping note (`docs/pixelmap-3d.md` §6, row B407): z up with
   the up axis a project setting, CSV and OPC import both, the height map on its own canvas, order atlas, kinetic,
