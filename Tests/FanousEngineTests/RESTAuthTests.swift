@@ -172,6 +172,23 @@ import Testing
         #expect(try login("prog", from: "10.0.0.10")?.status == 204)
     }
 
+    /// `GET /api/live` needs no role, so it is served from the feed's last snapshot while that is fresh (B285); on main
+    /// every request built one on the DMX queue.
+    @Test func liveIsServedFromTheFeedsSnapshot() throws {
+        let f = try Fixture()
+        func internals() throws -> JSONValue? {
+            let response = try #require(f.routes.handle(try f.request("GET", "/api/live", .nobody)))
+            return try JSONDecoder().decode(JSONValue.self, from: Data(response.body))["internalValues"]?["Layer 1"]
+        }
+        _ = f.routes.dmx.snapshot()  // the feed's
+        f.routes.dmx.setUI(.layer(1), .layer(.intensity), raw: 77)
+        f.routes.dmx.queue.sync {}
+        #expect(try internals() == nil, "the feed's snapshot, from before the value")
+        _ = f.routes.dmx.snapshot()
+        #expect(try internals()?.array?.first?["raw"]?.int == 77)
+        #expect(f.routes.dmx.recentSnapshot(maxAge: -1).internalValues["Layer 1"]?.first?.raw == 77, "a stale one is made anew")
+    }
+
     /// The shell token as a bearer names the programmer (B177), else the cookie names the session's role; a wrong token falls through to null.
     @Test(arguments: [(Who.nobody, nil), (.monitor, "monitor"), (.operator, "operator"), (.programmer, "programmer"), (.token, "programmer"), (.wrongToken, nil)] as [(Who, String?)])
     func session(_ who: Who, role: String?) throws {

@@ -53,7 +53,7 @@ public enum ProtocolTypes {
               | { t: 'sub'; id: number; stream: 'preview'; codec: 'avc' | 'jpeg'; w: number; h: number; fps: number; target: string; fallback: boolean }
               | { t: 'sub'; id: number; stream: 'thumbs'; w: number; fps: number }
               | { t: 'stream'; id: number; codec: string; description: string; w: number; h: number; fps: number; fallback: boolean }
-              | { t: 'error'; code: string; message: string; id?: number; stream?: 'preview' | 'thumbs' };
+              | { t: 'error'; code: string; message: string; id?: number; stream?: 'preview' | 'thumbs' | 'dmx' };
 
             /** Binary frame kind 1 (H.264): `[u8 key][u64 be timestamp µs][AVCC access unit]` after the 5-byte stream header; kind 2 (JPEG): the file, on a `thumbs` stream `[u8 layer number (1-based)][u16 be width][u16 be height][JPEG]` (width and height 0, no JPEG: the layer shows nothing); kind 3 (DMX): 512 slot bytes. */
 

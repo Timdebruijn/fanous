@@ -83,6 +83,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Library: in show mode a new file is probed without a thumbnail, so it plays but runs no thumbnail compositor and
   decode on the shared GPU queue (B325); the rescan when show mode ends makes the thumbnails. A bulk copy into the
   library during a show made one per file (PR #474).
+- DMX: readers no longer hold the DMX queue for work that grows with the patch (B285). The live snapshot formatted every
+  parameter inside its sync (1.0 ms at the limits); it now copies there (35 µs) and formats after. An unchanged OSC value
+  no longer publishes (0.12 ms each: a 64 KiB bundle of one message cost about 0.5 s), `GET /api/live` is served from the
+  live feed's last snapshot, the DMX monitor looks a universe up once per tick, and a connection holds at most 16 DMX
+  streams (PR #470).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)

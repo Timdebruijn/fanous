@@ -132,3 +132,19 @@ kernel cannot take at once is dropped and counted, never waited for. A blocking
 `sendto` on the CITP queue kept `Engine.stop()` in `citp.stop()` for good, so
 SIGTERM did not exit. Network.framework sends are asynchronous already; their
 completion handlers must not block the queue they run on.
+
+## Amendment 2026-11-25 (B285, B286): readers off the DMX queue, a GO off Control
+
+**B285, the DMX queue.** "Nothing else runs on it" covers the readers that
+`queue.sync` onto the DMX queue from their own threads: the live feed (10 Hz),
+OSC feedback (20 Hz), the DMX monitor (20 Hz per universe watched), MIDI pickup
+and readiness. Inside the sync they copy and nothing more; formatting, lookups
+of the system (`getifaddrs`) and anything that grows with what a client asks
+for happen outside it. The live snapshot formatted every parameter of every
+fixture inside the sync: 1.0 ms at the limits (32 layers, 8 outputs, every
+parameter held), in an optimised build. It now copies the resolved values there
+(35 µs) and formats after, `GET /api/live` (no role) is served from the feed's
+last snapshot, and the DMX monitor looks each universe up once per tick, also
+one never received. The DMX queue does not push a copy to the readers itself:
+the copy costs the queue the same time either way, and pushing it would add a
+lock and allocations on the queue.
