@@ -24,7 +24,25 @@ import Testing
         } else {
             #expect(highest == mode.footprint)
         }
-        #expect([FixtureMode.layer: 64, .master: 8, .output: 8, .keystone: 16][mode] == mode.footprint)
+        #expect([FixtureMode.layer: 64, .master: 8, .output: 8, .keystone: 16, .timecode: 8][mode] == mode.footprint)
+    }
+
+    /// docs/timecode-out.md §2: the rate bands run to 255 so no raw value falls back, the Source bands end at Layer 32
+    /// (231–255 fall back to Internal), and the defaults read stopped at 01:00:00:00, 25 fps, Internal.
+    @Test func timecodeFixtureBandsAndDefaults() {
+        let specs = ChannelMap.specs(for: .timecode)
+        #expect(specs.map(\.name) == ["Control", "Hours", "Minutes", "Seconds", "Frames", "Rate", "Source"])
+        #expect(ChannelMap.reserved(for: .timecode) == 8...8)
+        let rate = specs[5]
+        guard case .bands(let bands, let fallback) = rate.kind else { return #expect(Bool(false)) }
+        #expect(bands.map(\.from) == [0, 51, 102, 153, 204] && bands.last?.to == 255 && fallback == 1)
+        #expect(rate.physical(fromRaw: 51) == 1 && rate.physical(fromRaw: 255) == 4 && rate.physical(fromRaw: 0) == 0)
+        let source = specs[6]
+        #expect(source.physical(fromRaw: 6) == 0 && source.physical(fromRaw: 7) == 1 && source.physical(fromRaw: 230) == 32 && source.physical(fromRaw: 231) == 0 && source.physical(fromRaw: 255) == 0)
+        let control = specs[0]
+        #expect(control.physical(fromRaw: 63) == 0 && control.physical(fromRaw: 64) == 1 && control.physical(fromRaw: 191) == 2 && control.physical(fromRaw: 255) == 3)
+        #expect(ChannelMap.defaults(for: .timecode) == [0, 1, 0, 0, 0, 51, 0])
+        #expect(specs.allSatisfy { $0.bits == 8 })
     }
 
     @Test(arguments: FixtureMode.allCases) func everyParameterHasASpec(mode: FixtureMode) {
@@ -34,6 +52,7 @@ import Testing
             case .master: MasterParameter.allCases.count
             case .output: OutputParameter.allCases.count
             case .keystone: KeystoneParameter.allCases.count
+            case .timecode: TimecodeParameter.allCases.count
             }
         #expect(ChannelMap.specs(for: mode).count == parameters)
     }

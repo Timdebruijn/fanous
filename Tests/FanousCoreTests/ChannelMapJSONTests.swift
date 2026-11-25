@@ -35,7 +35,7 @@ struct ChannelMapJSONTests {
         let fixtures = try #require(ChannelMapDocument.json()["fixtures"]?.array)
         let expected: [(mode: String, name: String, per: String, optional: Bool)] = [
             ("layer", "Layer", "layer", false), ("master", "Master", "machine", false),
-            ("output", "Output", "output", false), ("keystone", "Keystone", "output", true),
+            ("output", "Output", "output", false), ("keystone", "Keystone", "output", true), ("timecode", "Timecode", "machine", true),
         ]
         #expect(fixtures.compactMap { $0["mode"]?.string } == FixtureMode.allCases.map(\.rawValue))
         #expect(fixtures.count == expected.count)

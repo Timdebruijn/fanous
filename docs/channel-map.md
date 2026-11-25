@@ -82,6 +82,19 @@ Generated from `Sources/FanousCore/Parameters/ChannelMap.swift` by `fanousd chan
 | 13–14 | Bottom-left X | 16 | 32768 | 0 → -50 % · 32768 → 0 % · 65535 → 50 % | `bottomLeftX` |
 | 15–16 | Bottom-left Y | 16 | 32768 | 0 → -50 % · 32768 → 0 % · 65535 → 50 % | `bottomLeftY` |
 
+## Timecode mode (8 channels)
+
+| Ch | Parameter | Bits | Default | Mapping | OSC key |
+|---|---|---|---|---|---|
+| 1 | Control | 8 | 0 | 0–63 Stop · 64–127 Run · 128–191 Locate · 192–255 Locate and run · rest = Stop | `control` |
+| 2 | Hours | 8 | 1 | 0 = none · 1–23 | `hours` |
+| 3 | Minutes | 8 | 0 | 0 = none · 1–59 | `minutes` |
+| 4 | Seconds | 8 | 0 | 0 = none · 1–59 | `seconds` |
+| 5 | Frames | 8 | 0 | 0 = none · 1–29 | `frames` |
+| 6 | Rate | 8 | 51 | 0–50 24 · 51–101 25 · 102–152 29.97 DF · 153–203 29.97 NDF · 204–255 30 · rest = 25 | `rate` |
+| 7 | Source | 8 | 0 | 0–6 Internal · 7–13 Layer 1 · 14–20 Layer 2 · 21–27 Layer 3 · 28–34 Layer 4 · 35–41 Layer 5 · 42–48 Layer 6 · 49–55 Layer 7 · 56–62 Layer 8 · 63–69 Layer 9 · 70–76 Layer 10 · 77–83 Layer 11 · 84–90 Layer 12 · 91–97 Layer 13 · 98–104 Layer 14 · 105–111 Layer 15 · 112–118 Layer 16 · 119–125 Layer 17 · 126–132 Layer 18 · 133–139 Layer 19 · 140–146 Layer 20 · 147–153 Layer 21 · 154–160 Layer 22 · 161–167 Layer 23 · 168–174 Layer 24 · 175–181 Layer 25 · 182–188 Layer 26 · 189–195 Layer 27 · 196–202 Layer 28 · 203–209 Layer 29 · 210–216 Layer 30 · 217–223 Layer 31 · 224–230 Layer 32 · rest = Internal | `source` |
+| 8 | Reserved | — | 0 | ignored | — |
+
 ## Effect parameters
 
 Effect 1 and Effect 2 (layer channels 38–43) share these meanings; both slots run in series, slot 1 first.

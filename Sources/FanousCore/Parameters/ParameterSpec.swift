@@ -5,12 +5,12 @@
 import Foundation
 
 public enum FixtureMode: String, CaseIterable, Codable, Sendable {
-    case layer, master, output, keystone
+    case layer, master, output, keystone, timecode
 
     public var footprint: Int {
         switch self {
         case .layer: 64
-        case .master, .output: 8
+        case .master, .output, .timecode: 8
         case .keystone: 16
         }
     }
@@ -21,13 +21,13 @@ public enum FixtureMode: String, CaseIterable, Codable, Sendable {
     public var per: Per {
         switch self {
         case .layer: .layer
-        case .master: .machine
+        case .master, .timecode: .machine
         case .output, .keystone: .output
         }
     }
 
     /// A show runs fine without patching it; the other modes are required.
-    public var optional: Bool { self == .keystone }
+    public var optional: Bool { self == .keystone || self == .timecode }
 
     public var displayName: String { rawValue.capitalized }
 }
@@ -42,6 +42,9 @@ public enum LayerParameter: String, CaseIterable, Codable, Sendable {
 
 public enum MasterParameter: String, CaseIterable, Codable, Sendable { case intensity, control, testPattern, speed }
 
+/// The Timecode fixture (docs/timecode-out.md §2): the generator's transport, the time it is set to, its rate and source.
+public enum TimecodeParameter: String, CaseIterable, Codable, Sendable { case control, hours, minutes, seconds, frames, rate, source }
+
 public enum OutputParameter: String, CaseIterable, Codable, Sendable { case intensity, control, testPattern, blend, preset, fade }
 
 /// Corner offsets in channel order: TL, TR, BR, BL as `WarpSettings.cornerPin`, X then Y (DESIGN.md §6.4a).
@@ -54,6 +57,7 @@ public enum ParameterID: Hashable, Codable, Sendable, CustomStringConvertible {
     case master(MasterParameter)
     case output(OutputParameter)
     case keystone(KeystoneParameter)
+    case timecode(TimecodeParameter)
 
     public var mode: FixtureMode {
         switch self {
@@ -61,6 +65,7 @@ public enum ParameterID: Hashable, Codable, Sendable, CustomStringConvertible {
         case .master: .master
         case .output: .output
         case .keystone: .keystone
+        case .timecode: .timecode
         }
     }
 
@@ -71,6 +76,7 @@ public enum ParameterID: Hashable, Codable, Sendable, CustomStringConvertible {
         case .master(let p): p.rawValue
         case .output(let p): p.rawValue
         case .keystone(let p): p.rawValue
+        case .timecode(let p): p.rawValue
         }
     }
 

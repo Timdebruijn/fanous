@@ -221,10 +221,11 @@ describe('fixtures and parameters', () => {
   const patch: PatchEntry[] = ['Layer 1', 'Output 10', 'Keystone 2', 'Master', 'Output 2', 'Output 1'].map((fixture) => ({ fixture, universe: 'artnet:0.0.0', address: 1 }));
 
   it('lists layers, the master and the patched outputs and keystones in numeric order', () => {
-    expect(fixtureNames(2, patch)).toEqual(['Layer 1', 'Layer 2', 'Master', 'Output 1', 'Output 2', 'Output 10', 'Keystone 2']);
+    expect(fixtureNames(2, patch)).toEqual(['Layer 1', 'Layer 2', 'Master', 'Timecode', 'Output 1', 'Output 2', 'Output 10', 'Keystone 2']);
     expect(fixtureType('Keystone 2')).toBe('keystone');
-    expect(fixtureNames(0, [])).toEqual(['Master']);
-    expect(fixtureNames(NaN, [])).toEqual(['Master']);
+    expect(fixtureNames(0, [])).toEqual(['Master', 'Timecode']);
+    expect(fixtureNames(NaN, [])).toEqual(['Master', 'Timecode']);
+    expect(fixtureType('Timecode')).toBe('timecode');
   });
 
   it('maps fixture names to types and types to specs', () => {

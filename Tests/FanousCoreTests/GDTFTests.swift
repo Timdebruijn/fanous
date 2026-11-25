@@ -26,12 +26,12 @@ final class XMLCollector: NSObject, XMLParserDelegate {
         return collector
     }
 
-    @Test func xmlIsWellFormedWithFourModes() {
+    @Test func xmlIsWellFormedWithFiveModes() {
         let xml = Self.parsed()
         #expect(xml.elements.first?.name == "GDTF" && xml.elements.first?.attributes["DataVersion"] == "1.2")
         let fixtureType = xml.elements.first { $0.name == "FixtureType" }!
         #expect(fixtureType.attributes["FixtureTypeID"] == GDTFExporter.fixtureTypeID)
-        #expect(xml.elements.filter { $0.name == "DMXMode" }.count == 4)
+        #expect(xml.elements.filter { $0.name == "DMXMode" }.count == 5)
         #expect(xml.elements.contains { $0.name == "Revision" && $0.attributes["Date"] == "2026-09-21T14:13:20" })
     }
 
@@ -49,6 +49,7 @@ final class XMLCollector: NSObject, XMLParserDelegate {
         #expect(offsets["Master (8ch)"]!.sorted() == Array(1...8))
         #expect(offsets["Output (8ch)"]!.sorted() == Array(1...8))
         #expect(offsets["Keystone (16ch)"]!.sorted() == Array(1...16))
+        #expect(offsets["Timecode (8ch)"]!.sorted() == Array(1...8))
     }
 
     @Test func attributesAndInitialFunctionsResolve() {
@@ -105,7 +106,7 @@ final class XMLCollector: NSObject, XMLParserDelegate {
 
     @Test func channelMapDocumentListsEveryParameter() {
         let markdown = ChannelMapDocument.markdown()
-        #expect(markdown.components(separatedBy: "| Reserved |").count == 4)
+        #expect(markdown.components(separatedBy: "| Reserved |").count == 5)  // Layer, Master, Output, Timecode
         #expect(markdown.contains("| 6–7 | Speed | 16 | 32768 |"))
         #expect(markdown.contains("| 6 | Mapping preset | 8 | 0 | 0 = as edited · 1–255 |"), "Output ch 6 at 0 shows the mapping as edited")
         #expect(markdown.contains("| 8 | Reserved | — | 0 | ignored | — |"), "Output ch 7 is the Mapping fade, ch 8 stays reserved")
@@ -143,7 +144,7 @@ final class XMLCollector: NSObject, XMLParserDelegate {
                 checked += 1
             }
         }
-        #expect(checked == 12)
+        #expect(checked == 15)  // the Timecode fixture adds Control, Rate and Source
         #expect(sets["Layer (64ch)/50"]!.last! == (32, "Idle"))
         #expect(sets["Layer (64ch)/5"]!.last! == (160, "Loop fwd"))
         #expect(sets["Layer (64ch)/51"]!.last! == (170, "Off"))

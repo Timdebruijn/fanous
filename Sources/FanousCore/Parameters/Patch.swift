@@ -8,6 +8,8 @@ public enum FixtureRef: Hashable, Codable, Sendable, CustomStringConvertible {
     case output(Int)  // 1-based
     /// The Keystone fixture of output n (DESIGN.md §6.4a), patched next to its Output fixture.
     case keystone(Int)  // 1-based
+    /// The Timecode fixture (docs/timecode-out.md §2): one per Mac like the Master, optional.
+    case timecode
 
     public var mode: FixtureMode {
         switch self {
@@ -15,6 +17,7 @@ public enum FixtureRef: Hashable, Codable, Sendable, CustomStringConvertible {
         case .master: .master
         case .output: .output
         case .keystone: .keystone
+        case .timecode: .timecode
         }
     }
 
@@ -24,6 +27,7 @@ public enum FixtureRef: Hashable, Codable, Sendable, CustomStringConvertible {
         case .master: "Master"
         case .output(let n): "Output \(n)"
         case .keystone(let n): "Keystone \(n)"
+        case .timecode: "Timecode"
         }
     }
 }

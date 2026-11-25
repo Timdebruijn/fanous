@@ -157,13 +157,14 @@ export function cueStatus(cue: CueDoc, live: LiveDoc['cue']): 'current' | 'next'
 
 export function fixtureType(name: string): FixtureType | null {
   if (name === 'Master') return 'master';
+  if (name === 'Timecode') return 'timecode';
   if (/^Layer \d+$/.test(name)) return 'layer';
   if (/^Output \d+$/.test(name)) return 'output';
   if (/^Keystone \d+$/.test(name)) return 'keystone';
   return null;
 }
 
-/** "Layer 1".."Layer n", "Master", then every "Output n" and "Keystone n" of the patch in numeric order. */
+/** "Layer 1".."Layer n", "Master", "Timecode", then every "Output n" and "Keystone n" of the patch in numeric order. */
 export function fixtureNames(layerCount: number, patch: readonly PatchEntry[]): string[] {
   const patched = (type: FixtureType) =>
     patch
@@ -171,7 +172,7 @@ export function fixtureNames(layerCount: number, patch: readonly PatchEntry[]): 
       .filter((name) => fixtureType(name) === type)
       .sort((a, b) => Number(a.split(' ')[1]) - Number(b.split(' ')[1]));
   const layers = Array.from({ length: Math.max(0, Math.floor(layerCount) || 0) }, (_, i) => `Layer ${i + 1}`);
-  return [...new Set([...layers, 'Master', ...patched('output'), ...patched('keystone')])];
+  return [...new Set([...layers, 'Master', 'Timecode', ...patched('output'), ...patched('keystone')])];
 }
 
 /** Parameters of a fixture; empty until the channel map has arrived (or for a name that is no fixture). */

@@ -391,8 +391,8 @@ final class Box { var value = 0 }
     /// above 32, even when patched) and output 9 have no resolver.
     @Test func onlyTheFixturesThatExistHaveAResolver() {
         let fixtures = ProjectDocument.fixtures(layerCount: 40, outputs: [1, 9])
-        #expect(fixtures == Set((1...32).map(FixtureRef.layer) + [.master, .output(1), .keystone(1)]))
-        #expect(ProjectDocument.fixtures(layerCount: 3, outputs: []) == [.layer(1), .layer(2), .layer(3), .master])
+        #expect(fixtures == Set((1...32).map(FixtureRef.layer) + [.master, .timecode, .output(1), .keystone(1)]))
+        #expect(ProjectDocument.fixtures(layerCount: 3, outputs: []) == [.layer(1), .layer(2), .layer(3), .master, .timecode])
         let patch = Patch(entries: [PatchEntry(fixture: .layer(33), universe: Self.a0, address: 1)])
         let store = DMXStore(patch: patch, fixtures: ProjectDocument.fixtures(layerCount: 3, outputs: []), logger: testLogger)
         #expect(store.resolvedRaw(.layer(3), .layer(.intensity)) != nil)
@@ -474,7 +474,7 @@ final class Box { var value = 0 }
     @Test func fixturesFromAProject() throws {
         var project = testProject(layers: 3, outputs: 0)
         try ProjectDocument.setOutputs([OutputConfig(id: 1), OutputConfig(id: 9)], in: &project)
-        #expect(ProjectDocument.fixtures(from: project) == [.layer(1), .layer(2), .layer(3), .master, .output(1), .keystone(1)])
+        #expect(ProjectDocument.fixtures(from: project) == [.layer(1), .layer(2), .layer(3), .master, .timecode, .output(1), .keystone(1)])
         try project.set(.null, at: "/layerCount")
         let layers = ProjectDocument.fixtures(from: project).filter { if case .layer = $0 { true } else { false } }
         #expect(layers == Set((1...ProjectDocument.defaultLayerCount).map(FixtureRef.layer)))
