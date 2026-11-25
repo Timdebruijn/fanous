@@ -15,6 +15,12 @@ import Testing
 /// Preview targets are per subscriber: a client asking for an output does not move the canvas preview of another, and a
 /// consumer that only wants JPEG (5 fps) throttles the GPU copy as well.
 @Suite(.serialized) struct PreviewHubTests {
+    /// After a tick, until the preview frames it tapped are encoded (2 s at most): the engine's ticks are 16.7 ms apart, a
+    /// burst of ticks would find 2 frames in flight and skip the next (B302).
+    static func drain(_ hub: PreviewHub) {
+        let end = Date().addingTimeInterval(2)
+        while hub.framesInFlight > 0, Date() < end { usleep(200) }
+    }
 
     /// The hub's `make`: a streamer of the asked size at 30 of 60 fps.
     static func make(_ context: MetalContext, _ parameters: TripleBuffer<ParameterSnapshotSlot>) -> @Sendable (Int, Int) throws -> PreviewStreamer {
@@ -68,7 +74,10 @@ import Testing
         }
 
         func tick(_ n: Int) {
-            for i in 0..<n { compositor.tick(target: 100 + Double(i) / 60, drawable: nil) }
+            for i in 0..<n {
+                compositor.tick(target: 100 + Double(i) / 60, drawable: nil)
+                PreviewHubTests.drain(hub)
+            }
         }
     }
 
@@ -296,6 +305,7 @@ import Testing
         func tick(_ n: Int) {
             for _ in 0..<n {
                 compositor.tick(target: 100 + Double(ticks) / 60, drawable: nil)
+                PreviewHubTests.drain(hub)
                 ticks += 1
             }
         }

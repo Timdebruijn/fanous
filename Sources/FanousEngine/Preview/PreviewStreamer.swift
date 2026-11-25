@@ -52,7 +52,7 @@ public final class PreviewStreamer: @unchecked Sendable {
     private let mappedUniforms: MTLBuffer
     private let context: MetalContext
     private let logger: Logger
-    private let queue = DispatchQueue(label: "org.fanous.preview", qos: .utility)
+    let queue = DispatchQueue(label: "org.fanous.preview", qos: .utility)  // tests block it (B302)
     private let subscribers = Mutex<[Subscriber]>([])
     private var pool: CVPixelBufferPool?
     private var textureCache: CVMetalTextureCache?
@@ -76,6 +76,20 @@ public final class PreviewStreamer: @unchecked Sendable {
     public let framesIn = Atomic<Int>(0)
     public let framesOut = Atomic<Int>(0)
     public let skipped = Atomic<Int>(0)
+    /// B302: preview frames tapped whose encode on the preview queue has not finished, counted from the tap, so a frame
+    /// still on the GPU counts. At `maxInFlight` the tap skips (`skipped`), so a stalled queue (a JPEG encode that hangs,
+    /// B99; starved utility QoS) holds that many pixel buffers, not one per preview frame allocated on the compositor
+    /// thread; a GPU several ticks behind delays the completions and reaches the cap too. The pool refuses more than
+    /// `poolLimit` in use besides (VideoToolbox holds the frames it encodes).
+    private let inFlight = Atomic<Int>(0)
+    /// The display paths keep at most 3 frames in flight (DESIGN.md §4.6), each may carry a tapped frame, plus one being
+    /// encoded; headless ticking can run 8 deep (the compositor's ring), so a GPU several ticks behind also reaches the cap
+    /// and skips. Measured by the coordinator: a cap of 2 skipped about 1.4 frames a second in normal use (an H.264 640 and
+    /// a JPEG 320 preview open, 61 fps headless canvas), a cap of 4 none.
+    static let maxInFlight = 4
+    private let poolLimit = BGRAPixelPool.threshold(8)
+    /// Tests: `inFlight`.
+    var framesInFlight: Int { inFlight.load(ordering: .relaxed) }
     /// JPEG frames made (`/metrics` `preview.jpegOut`), frames whose JPEG encode returned nil (`preview.jpegFailed`,
     /// logged once per streamer) and JPEG sends a subscriber's connection refused (`preview.jpegDropped`): a JPEG viewer
     /// that gets nothing tells the encoder from the send queue and from what comes after it (B99).
@@ -182,7 +196,8 @@ public final class PreviewStreamer: @unchecked Sendable {
     public func tap(canvas: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double, canvases: ((Int) -> MTLTexture?)? = nil, live: OutputSet? = nil) {
         tickCounter &+= 1
         guard wantsFrames, tickCounter % (wantsH264 ? everyNth : jpegEveryNth) == 0, let pool, let textureCache else { return }
-        guard let (pixelBuffer, cvTexture) = BGRAPixelPool.buffer(from: pool, cache: textureCache, width: width, height: height),
+        guard inFlight.load(ordering: .relaxed) < Self.maxInFlight,
+            let (pixelBuffer, cvTexture) = BGRAPixelPool.buffer(from: pool, cache: textureCache, width: width, height: height, limit: poolLimit),
             let texture = CVMetalTextureGetTexture(cvTexture)
         else {
             skipped.wrappingAdd(1, ordering: .relaxed)
@@ -242,10 +257,17 @@ public final class PreviewStreamer: @unchecked Sendable {
         framesIn.wrappingAdd(1, ordering: .relaxed)
         // the CVMetalTexture must outlive the GPU work; neither is touched on this thread again
         nonisolated(unsafe) let keep = cvTexture, frame = pixelBuffer
+        inFlight.wrappingAdd(1, ordering: .relaxed)
         commandBuffer.addCompletedHandler { [self] buffer in
             _ = keep
-            guard buffer.status == .completed else { return }
-            queue.async { [self] in encode(frame, target: target) }
+            guard buffer.status == .completed else {
+                inFlight.wrappingSubtract(1, ordering: .relaxed)
+                return
+            }
+            queue.async { [self] in
+                encode(frame, target: target)
+                inFlight.wrappingSubtract(1, ordering: .relaxed)
+            }
         }
     }
 
