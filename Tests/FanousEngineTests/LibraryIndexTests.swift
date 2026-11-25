@@ -531,6 +531,29 @@ struct LibraryIndexTests {
         #expect(decodeMarkers(index).isEmpty)
     }
 
+    /// Review of B348: the first-stop count is read once, like the probe's: after a retry that came through, a third open
+    /// of the file starts from no stops again, so a later engine stop in that open does not make it unreadable at once.
+    @Test func theDecodeStopCountIsUsedOnce() throws {
+        let (root, cache, first, key) = try twoStills()
+        var index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        try leaveDecodeMarker(index, path: first, key: key, stops: 0)
+        index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.rescan()
+        #expect(index.decoding(first) { decodeMarkers(index) }.first?.stops == 1, "the retry")
+        #expect(index.decoding(first) { decodeMarkers(index) }.first?.stops == 0, "the open after the retry")
+    }
+
+    /// Review of B348: a decode that starts after `stop()` (the loader runs on until the process exits) writes no marker,
+    /// which would outlive the exit as a false stop.
+    @Test func aDecodeAfterStopWritesNoMarker() throws {
+        let (root, cache, first, _) = try twoStills()
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.rescan()
+        index.stop()
+        #expect(index.decoding(first) { decodeMarkers(index) }.isEmpty)
+        #expect(decodeMarkers(index).isEmpty)
+    }
+
     /// A replacement index (B51, made while the engine runs) does not read the live marker of the index it replaces as a
     /// stop: nothing stopped.
     @Test func aReplacementDoesNotReadTheMarkerAsAStop() async throws {

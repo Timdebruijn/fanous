@@ -147,6 +147,8 @@ public final class LibraryIndex: @unchecked Sendable {
         var decodeStops: [String: Int] = [:]
         /// B348: the decode markers this index wrote that are still in work (`stop()` removes them: no blame for our own stop).
         var decodeMarkers: Set<URL> = []
+        /// B348: `stop()` has begun; a decode after it writes no marker (the loader runs on until the process exits).
+        var stopped = false
     }
 
     /// B220: the wording of the probe's reason texts. A cached entry that carries a reason is probed again once when the
@@ -210,6 +212,7 @@ public final class LibraryIndex: @unchecked Sendable {
 
     /// Stops the watcher and joins the probe thread (a probe in flight finishes first), so nothing runs afterwards.
     public func stop() {
+        state.withLock { $0.stopped = true }  // first: a decode that starts from here writes no marker (B348)
         guard running.exchange(false, ordering: .relaxed) else { return }
         probeWake.signal()
         // B267: a probe still running after the wait is cut off by a stop of our own (exit follows), not a crash: no blame
@@ -232,12 +235,17 @@ public final class LibraryIndex: @unchecked Sendable {
         guard let item = state.withLock({ s in s.snapshot.folders.lazy.flatMap(\.items).first { $0.path == url.path } }) else { return try body() }
         let key = Self.cacheKey(item)
         let marker = decodingDirectory.appending(path: "\(UUID().uuidString).json")
-        let stops = state.withLock { s in
+        // the first-stop count is read once, as the probe's (B267): a later open of the file after a retry that came
+        // through starts from 0 again
+        let stops = state.withLock { s -> Int? in
+            guard !s.stopped else { return nil }
             s.decodeMarkers.insert(marker)
-            return s.decodeStops[key] ?? 0
+            return s.decodeStops.removeValue(forKey: key) ?? 0
         }
+        guard let stops else { return try body() }  // after stop(): a stop of our own follows, no blame
         try? FileManager.default.createDirectory(at: decodingDirectory, withIntermediateDirectories: true)
         try? JSONEncoder().encode(ProbeMarker(path: item.path, key: key, stops: stops)).write(to: marker)
+        if state.withLock({ $0.stopped }) { try? FileManager.default.removeItem(at: marker) }  // stop()'s sweep ran before the write
         defer {
             try? FileManager.default.removeItem(at: marker)
             _ = state.withLock { $0.decodeMarkers.remove(marker) }
