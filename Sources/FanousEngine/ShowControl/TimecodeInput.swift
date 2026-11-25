@@ -23,8 +23,11 @@ public final class TimecodeClock: @unchecked Sendable {
         public var hostTime: Double = 0
         public var state: State = .off
         public var source: String = ""
-        /// Frames between the source's updates: LTC decodes every frame, MTC assembles a time every 2 (B65).
+        /// Frames between the source's updates: LTC decodes every frame, MTC assembles a time every 2 (B65); 0 promises
+        /// none (a locate), and the clock stays locked at that position.
         public var updateFrames: Int = 1
+        /// False while the source stands still: the clock holds that position, locked, until a running update.
+        public var running = true
 
         public var timecode: Timecode { Timecode(frameCount: max(0, frameCount), rate: rate) }
     }
@@ -44,8 +47,9 @@ public final class TimecodeClock: @unchecked Sendable {
     public init() {}
 
     /// Source thread: one decoded frame at the host time its last bit ended; `everyFrames` is the update interval
-    /// the source promises, which sets the lock window.
-    public func update(_ timecode: Timecode, at hostTime: Double, source: String, everyFrames: Int = 1) {
+    /// the source promises, which sets the lock window (0: none). `running: false`: the source stands still and the clock
+    /// holds `timecode`.
+    public func update(_ timecode: Timecode, at hostTime: Double, source: String, everyFrames: Int = 1, running: Bool = true) {
         sample.withLock { s in
             s.frameCount = timecode.frameCount
             s.rate = timecode.rate
@@ -53,6 +57,7 @@ public final class TimecodeClock: @unchecked Sendable {
             s.state = .locked
             s.source = source
             s.updateFrames = everyFrames
+            s.running = running
         }
         framesSeen.wrappingAdd(1, ordering: .relaxed)
         onFrame?(timecode, hostTime)
@@ -70,19 +75,16 @@ public final class TimecodeClock: @unchecked Sendable {
         Self.extrapolate(sample.withLock { $0 }, at: now, freewheel: freewheelSeconds)
     }
 
-    /// Locked within 1.5 update intervals of the last decode, freewheeling up to `freewheel` seconds, then lost.
+    /// Locked within 1.5 update intervals of the last decode, freewheeling up to `freewheel` seconds, then lost; a
+    /// stopped clock holds its position through all three, and one that promised no update stays locked there.
     static func extrapolate(_ s: Sample, at now: Double, freewheel: Double) -> Sample {
-        guard s.state != .off else { return s }
+        guard s.state != .off, s.updateFrames > 0 else { return s }
         var out = s
         let age = now - s.hostTime
         let interval = Double(s.updateFrames) / s.rate.exactFrameRate
-        if age > freewheel {
-            out.state = .lost
-            out.frameCount = s.frameCount + Int((freewheel * s.rate.exactFrameRate).rounded(.down))
-        } else {
-            out.state = age > interval * 1.5 ? .freewheel : .locked
-            out.frameCount = s.frameCount + Int((max(0, age) * s.rate.exactFrameRate).rounded(.down))
-        }
+        out.state = age > freewheel ? .lost : age > interval * 1.5 ? .freewheel : .locked
+        let counted = s.running ? min(max(0, age), freewheel) : 0
+        out.frameCount = s.frameCount + Int((counted * s.rate.exactFrameRate).rounded(.down))
         return out
     }
 
@@ -90,7 +92,7 @@ public final class TimecodeClock: @unchecked Sendable {
     public func frames(at now: Double) -> Double? {
         let s = read(at: now)
         guard s.state == .locked || s.state == .freewheel else { return nil }
-        return Double(cached.frameCount) + max(0, now - cached.hostTime) * cached.rate.exactFrameRate
+        return Double(cached.frameCount) + (cached.running ? max(0, now - cached.hostTime) * cached.rate.exactFrameRate : 0)
     }
 }
 
@@ -215,7 +217,7 @@ public final class LTCInput: @unchecked Sendable {
             for frame in frames {
                 // sub-frame phase: the host time at which the frame's last bit ended
                 let offset = Double(frame.endSampleIndex - bufferStart) / sampleRate
-                clock.update(frame.timecode, at: bufferHostTime + offset, source: "LTC")
+                clock.update(frame.timecode, at: bufferHostTime + offset, source: "LTC", running: frame.running)
             }
             return noErr
         }

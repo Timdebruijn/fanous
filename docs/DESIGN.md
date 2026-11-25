@@ -4652,10 +4652,14 @@ later deliverable (`[OPEN-20]`).
   engine prompts once with an explanation. **As built (B291, 2026-11-25):** a
   decoded frame reaches the clock and the cue triggers only when its fields are
   in range for the rate and it carries the expected address (the last believed
-  one plus one for every frame since); any other frame (a start, a jump of the sender) needs an even word parity
-  (the polarity correction bit) and is believed only when the next frame
-  continues it, so one corrupted frame costs one update instead of a jump.
-  A dropout or a restarted sender keeps the last detected rate.
+  one plus one for every sync word since); any other frame (a start, a jump of
+  the sender) needs an even word parity (the polarity correction bit) and is
+  believed only when the next frame continues it, so one corrupted frame costs
+  one update instead of a jump. A repeat of the last believed (or the held)
+  address is a sender parked on a still frame: it holds the clock there,
+  stopped (`TimecodeClock.Sample.running` false), Locked while the repeats
+  come, then Freewheel and Lost at that position when they stop. A dropout or
+  a restarted sender keeps the last detected rate.
 - **MTC**: CoreMIDI input (quarter-frame + full-frame), any port; same
   `TimecodeSource` interface. **As built (B64, 2026-10-27):** `MTCInput`
   follows hot-plug like `MIDIInput` (§15.4): its client is made on the main

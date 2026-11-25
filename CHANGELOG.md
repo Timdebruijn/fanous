@@ -12,7 +12,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Timecode: LTC frames are checked before they move the chase or fire a cue (B291). A frame must be in range for its
   rate and continue the previous one; a start or a jump needs even word parity and a second frame to confirm it, so
-  one corrupted frame no longer jumps the chase or fires a cue early. A dropout or a restarted sender keeps the last
+  one corrupted frame no longer jumps the chase or fires a cue early; a sender parked on a still frame holds the chase
+  there, Locked. A dropout or a restarted sender keeps the last
   detected rate instead of 25 fps for eight frames, and a gap no longer throws the bit timing off for seven frames
   (PR #463).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring

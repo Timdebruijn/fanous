@@ -131,6 +131,16 @@ import Testing
         #expect(chased.count == 58 && chased.first == second[1], "\(chased.count) frames of the second run, from \(String(describing: chased.first))")
     }
 
+    /// B291: the continuity check passes midnight, where the day's last frame is followed by 00:00:00:00.
+    @Test(arguments: [TimecodeRate.fps25, .fps2997df]) func continuityPassesMidnight(rate: TimecodeRate) {
+        let frames = Self.frames(from: Timecode(hours: 23, minutes: 59, seconds: 59, frames: 20, rate: rate), count: 10 + rate.nominalFrames - 20)
+        var decoder = LTCDecoder(sampleRate: 48_000, nominalFrameRate: rate.exactFrameRate)
+        let decoded = decoder.process(LTCEncoder.samples(frames: frames, sampleRate: 48_000)).map(\.timecode)
+        #expect(decoded.contains(Timecode(hours: 0, minutes: 0, seconds: 0, frames: 0, rate: rate)))
+        // every frame but the first, held until the next continues it, and the last, whose sync word no transition ends
+        #expect(decoded == Array(frames.dropFirst().dropLast()), "\(decoded.first.map(String.init(describing:)) ?? "none"), \(decoded.count) frames")
+    }
+
     @Test func chunkedInputDecodesLikeWholeInput() {
         let frames = Self.frames(from: Timecode(hours: 1, minutes: 2, seconds: 3, frames: 4, rate: .fps30), count: 12)
         let samples = frames.flatMap { LTCEncoder.samples(frames: [$0], sampleRate: 44_100, amplitude: 0.3) }

@@ -9,6 +9,8 @@ public struct LTCFrame: Equatable, Sendable {
     /// Sample index (since the decoder was created) of the last sync-word transition.
     public let endSampleIndex: Int64
     public let measuredFrameRate: Double
+    /// False for a repeat of the last frame (a sender parked on a still frame): the time stands at `timecode`.
+    public let running: Bool
 }
 
 /// SMPTE 12M linear timecode decoder for forward-running audio.
@@ -31,6 +33,8 @@ public struct LTCDecoder: Sendable {
     /// B291: the address the next frame should carry, and a frame that did not, held until the next one continues it.
     private var expected: Timecode?
     private var held: Timecode?
+    /// The last believed address: a frame that repeats it is a still frame.
+    private var last: Timecode?
     private let threshold: Float = 0.1
 
     public init(sampleRate: Double, nominalFrameRate: Double = 25) {
@@ -94,21 +98,30 @@ public struct LTCDecoder: Sendable {
         let timecode = Timecode(
             hours: field(48, 4) + 10 * field(56, 2), minutes: field(32, 4) + 10 * field(40, 3),
             seconds: field(16, 4) + 10 * field(24, 3), frames: field(0, 4) + 10 * field(8, 2), rate: rate)
-        guard believe(timecode, parityEven: register.nonzeroBitCount % 2 == 0) else { return nil }
-        return LTCFrame(timecode: timecode, endSampleIndex: index, measuredFrameRate: measured)
+        guard let running = believe(timecode, parityEven: register.nonzeroBitCount % 2 == 0) else { return nil }
+        return LTCFrame(timecode: timecode, endSampleIndex: index, measuredFrameRate: measured, running: running)
     }
 
     /// B291: a valid frame with the expected address is believed. Any other valid frame with even parity is held and
     /// believed when the next frame continues it (a start, or a jump of the sender), so one corrupted frame never moves the
     /// chase or fires a cue. Parity (SMPTE 12M: the polarity correction bit makes the count of ones in the 80-bit word even,
     /// wherever the rate puts that bit) is asked only of those two frames: a corrupted frame that still carries the
-    /// expected address is harmless, and a generator that leaves the bit unset still chases once it is locked.
-    private mutating func believe(_ timecode: Timecode, parityEven: Bool) -> Bool {
+    /// expected address is harmless, and a generator that leaves the bit unset still chases once it is locked. A repeat of
+    /// the last believed address, or of the held one, is a sender parked on a still frame: believed, standing still.
+    /// Returns nil for a frame not believed, else whether the time runs.
+    private mutating func believe(_ timecode: Timecode, parityEven: Bool) -> Bool? {
         func next(_ t: Timecode) -> Timecode { Timecode(frameCount: t.frameCount + 1, rate: t.rate) }
-        let believed = timecode.isValid && (timecode == expected || (parityEven && held.map(next) == timecode))
-        held = !believed && timecode.isValid && parityEven ? timecode : nil
-        expected = believed ? next(timecode) : expected.map(next)
-        return believed
+        let confirms = timecode.isValid && parityEven
+        let running = timecode.isValid && (timecode == expected || (confirms && held.map(next) == timecode))
+        let still = !running && timecode.isValid && (timecode == last || (confirms && timecode == held))
+        held = !running && !still && confirms ? timecode : nil
+        guard running || still else {
+            expected = expected.map(next)
+            return nil
+        }
+        last = timecode
+        expected = next(timecode)
+        return running
     }
 }
 
