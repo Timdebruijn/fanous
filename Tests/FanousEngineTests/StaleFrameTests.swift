@@ -53,6 +53,21 @@ struct StaleFrameTests {
             }
         }
 
+        func setInOut(_ i: Float, _ o: Float, mode: PlayMode, speed: Float = 1) {
+            sequence += 1
+            let sequence = sequence
+            parameters.write { slot in
+                slot.sequence = sequence
+                slot.layers[0].intensity = 1
+                slot.layers[0].speed = speed
+                slot.layers[0].folder = 1
+                slot.layers[0].file = 1
+                slot.layers[0].playMode = mode
+                slot.layers[0].inPoint = i
+                slot.layers[0].outPoint = o
+            }
+        }
+
         var decoder: LayerDecoder { playback.decoder! }
         var ring: FrameRing { playback.ring! }
 
@@ -72,10 +87,6 @@ struct StaleFrameTests {
         var clockFrame: Int { playback.clock.frame(lo: 0, hi: playback.frameCount - 1) }
     }
 
-    // a tick with no frame at all is a texture miss and not also stale; a healthy layer then counts nothing, across
-    // 15 loop wraps
-    // B293: a loop with in and out points: the decoder reads across the wrap itself, so the ring never holds the frame
-    // past the out point and a wrap is neither a seek nor a held tick (before: one stale tick at every wrap, the drain)
     @Test func aLoopWithInAndOutPointsCountsNoStaleFrameAtItsWraps() async throws {
         let rig = try await Rig(mode: .loopForward, inOut: (0.25, 0.75))  // frames 5...14 of 20
         defer { rig.decoder.stop() }
@@ -87,6 +98,64 @@ struct StaleFrameTests {
         #expect(seen.min() == 5 && seen.max() == 14, "frames shown: \(seen.sorted())")
     }
 
+    // B293 review: a seek the decoder did not make. The out point drops below the clock on the up leg, the clock reflects and
+    // runs down; a decoder that kept its old leg would decode up against it for the whole leg (18 of 18 ticks stale)
+    @Test func anOutPointBelowTheClockMidBounceHoldsAtMostTwoTicks() async throws {
+        let rig = try await Rig(mode: .bounce, frames: 100)
+        rig.decoder.start(name: "test.decode")
+        rig.decoder.request(frame: 0, direction: 1)
+        defer { rig.decoder.stop() }
+        for _ in 0..<60 { await rig.tick() }
+        let before = rig.stale
+        rig.setInOut(0, 0.4, mode: .bounce)  // out frame 40: the clock at about 60 reflects to about 20, going down
+        for _ in 0..<18 { await rig.tick() }
+        #expect(rig.stale - before <= 2)
+    }
+
+    // B293 review: a range shorter than the ring fills it with repeated indices; with every head a shown index the pop loop
+    // keeps, a still outside the range froze the layer (30 of 30 ticks on the old frame) until the full ring drains
+    @Test(arguments: 50..<56) func aShortBounceThenAStillPastItHoldsAtMostTwoTicks(lead: Int) async throws {
+        let rig = try await Rig(mode: .bounce, frames: 100, inOut: (0.10, 0.13))  // frames 10...13
+        rig.decoder.start(name: "test.decode")
+        rig.decoder.request(frame: 10, direction: 1)
+        defer { rig.decoder.stop() }
+        for _ in 0..<lead { await rig.tick() }
+        let before = rig.stale
+        rig.setInOut(0.15, 0.15, mode: .bounce)  // in == out == frame 15: a still two past the old range
+        for _ in 0..<30 { await rig.tick() }
+        #expect(rig.stale - before <= 2, "lead \(lead)")
+    }
+
+    // B293 review: above about 1.2x the old leg's frames sat behind a shown head at a turn (about 5 held ticks per turn at 2x,
+    // as before the fix); the starved-ring drain holds about one tick per turn (measured 9 to 15 over ten turns)
+    @Test func aBounceAtDoubleSpeedHoldsAboutOneTickPerTurn() async throws {
+        let rig = try await Rig(mode: .bounce)
+        rig.decoder.start(name: "test.decode")
+        rig.decoder.request(frame: 0, direction: 1)
+        defer { rig.decoder.stop() }
+        rig.setInOut(0, 1, mode: .bounce, speed: 2)
+        for _ in 0..<20 { await rig.tick() }
+        let before = rig.stale
+        for _ in 0..<100 { await rig.tick() }  // 20 frames at 2 frames a tick: ten turns
+        #expect(rig.stale - before <= 15, "\(rig.stale - before) held ticks over ten turns")
+    }
+
+    @Test func aTwoFrameLoopThenInPastOutHoldsAtMostTwoTicks() async throws {
+        let rig = try await Rig(mode: .loopForward, frames: 100, inOut: (0.10, 0.11))  // frames 10...11
+        rig.decoder.start(name: "test.decode")
+        rig.decoder.request(frame: 10, direction: 1)
+        defer { rig.decoder.stop() }
+        for _ in 0..<40 { await rig.tick() }
+        let before = rig.stale
+        rig.setInOut(0.12, 0.11, mode: .loopForward)  // in past out: a still at frame 12
+        for _ in 0..<30 { await rig.tick() }
+        #expect(rig.stale - before <= 2)
+    }
+
+    // a tick with no frame at all is a texture miss and not also stale; a healthy layer then counts nothing, across
+    // 15 loop wraps
+    // B293: a loop with in and out points: the decoder reads across the wrap itself, so the ring never holds the frame
+    // past the out point and a wrap is neither a seek nor a held tick (before: one stale tick at every wrap, the drain)
     @Test func aHealthyLayerCountsNoStaleFrameAcrossLoopWraps() async throws {
         let rig = try await Rig(mode: .loopForward)
         defer { rig.decoder.stop() }

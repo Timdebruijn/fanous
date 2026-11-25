@@ -13,8 +13,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Playback: a bounce turn or a switch to a reverse mode no longer freezes the layer for about ten frames, and a loop
   with in and out points no longer repeats a frame at every wrap (B293). The ring held frames on the old side until the
   clock was `capacity + 2` frames past them; the decoder now turns at a bounce's ends and reads a loop across its wrap
-  itself, the playback pops the old leg's frames behind the clock, and a direction change the decoder did not make
-  drains the ring at once (the held picture is the playback's own since B386) (PR #472).
+  itself, the playback pops the old leg's frames behind the clock, and a full ring without the clock's frame (a mode
+  switch, a turn above about 1.2x, a short range) drains at once, holding the playback's own picture (B386) for one
+  tick (PR #472).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in

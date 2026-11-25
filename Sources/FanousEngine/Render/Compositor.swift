@@ -689,7 +689,8 @@ public final class Compositor: @unchecked Sendable {
                 } else if p.playMode == .timecode, let chased = chasePosition(incoming, layer: layer.index, inFrame: inFrame, outFrame: outFrame, at: target) {
                     incoming.clock.position = chased
                 }
-                incoming.decoder?.request(frame: incoming.clock.frame(lo: 0, hi: last), direction: direction)
+                let ranged = !incoming.following && p.playMode != .timecode && (p.playMode == .loopForward || p.playMode == .loopReverse || p.playMode == .bounce) && outFrame > inFrame
+                incoming.decoder?.request(frame: incoming.clock.frame(lo: 0, hi: last), direction: direction, loop: ranged ? inFrame...outFrame : nil, bounce: p.playMode == .bounce)
                 layer.staged = incoming
             } else {
                 layer.staged = nil

@@ -107,6 +107,7 @@ public final class LayerDecoder: @unchecked Sendable {
             let want = ((wanted.load(ordering: .relaxed) % count) + count) % count
             let dir = direction.load(ordering: .relaxed)
             var next = want
+            if lastProduced < 0 || ring.isEmpty { produceDirection = 0 }  // a restart at the request takes the request's leg
             if lastProduced >= 0, !ring.isEmpty {
                 // how far the last decoded frame runs ahead of the request in play direction; behind it (a seek, a slow
                 // decode) this wraps to count − k and the thread restarts at the request. Inside a loop the distance is
@@ -119,6 +120,8 @@ public final class LayerDecoder: @unchecked Sendable {
                 if ranged, bounce {
                     // a bounce: the thread runs the leg in its own direction and turns at the ends, so the ring already holds the
                     // frames after a turn; `produceDirection` is where it is heading, which the request only resets on a seek
+                    // (`wanted`, `direction` and `loopBits` are three relaxed atomics: one iteration may pair a new request
+                    // with old bits, which the next one corrects)
                     if produceDirection == 0 { produceDirection = dir }
                     let d = (lastProduced - want) * produceDirection  // ahead of the request along the leg
                     if d < -ring.capacity || d > 2 * ring.capacity {
