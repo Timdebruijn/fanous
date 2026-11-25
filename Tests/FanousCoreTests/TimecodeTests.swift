@@ -89,6 +89,48 @@ import Testing
         #expect(abs(decoded.last!.measuredFrameRate - 29.97) < 0.05)
     }
 
+    /// B291: one corrupted frame, 01:00:01:10 read as 01:00:05:10 (bit 18, seconds +4), neither moves the chase nor fires
+    /// the 01:00:05:00 cue early. One flipped bit leaves the word with odd parity; two (bit 4 is a user bit) keep it even,
+    /// so only the continuity check stands between that frame and the chase.
+    @Test(arguments: [[18], [18, 4]]) func aCorruptedFrameNeverMovesTheChaseOrFiresACue(flipped: [Int]) {
+        let start = Timecode(hours: 1, minutes: 0, seconds: 0, frames: 0, rate: .fps25)
+        let frames = Self.frames(from: start, count: 150)  // 6 s
+        var decoder = LTCDecoder(sampleRate: 48_000)
+        let decoded = decoder.process(LTCEncoder.samples(frames: frames, sampleRate: 48_000, flipping: [35: flipped])).map(\.timecode)
+        for (a, b) in zip(decoded, decoded.dropFirst()) {
+            #expect(b.frameCount == a.frameCount + 1 || (a == frames[34] && b == frames[36]), "\(a) → \(b)")
+        }
+        #expect(decoded.contains(frames[34]) && decoded.contains(frames[36]) && !decoded.contains(frames[35]), "only the corrupted frame is missing")
+        let trigger = Timecode(hours: 1, minutes: 0, seconds: 5, frames: 0, rate: .fps25)
+        var cues = CueEngine(list: CueList(cues: [Cue(number: 1, timecodeTrigger: trigger)]))
+        let firedAt = decoded.first { cues.timecode($0, at: 0); return cues.current != nil }
+        #expect(firedAt == trigger, "fired at \(String(describing: firedAt))")
+    }
+
+    /// B291: a word with odd parity (the polarity correction bit wrong) never starts the chase.
+    @Test func wordsWithOddParityNeverLock() {
+        let frames = Self.frames(from: Timecode(hours: 1, minutes: 0, seconds: 0, frames: 0, rate: .fps25), count: 50)
+        var decoder = LTCDecoder(sampleRate: 48_000)
+        let flipped = Dictionary(uniqueKeysWithValues: frames.indices.map { ($0, [4]) })
+        #expect(decoder.process(LTCEncoder.samples(frames: frames, sampleRate: 48_000, flipping: flipped)).isEmpty)
+    }
+
+    /// B291: a decoder started at 25 fps (as `LTCInput` starts it) on a sender that runs, stops for half a second and
+    /// starts again elsewhere reads every frame at the sender's rate, never at the 25 fps fallback.
+    @Test(arguments: [TimecodeRate.fps30, .fps2997ndf, .fps2997df]) func aRestartedSenderKeepsItsRate(rate: TimecodeRate) {
+        let first = Self.frames(from: Timecode(hours: 10, minutes: 0, seconds: 0, frames: 0, rate: rate), count: 60)
+        let second = Self.frames(from: Timecode(hours: 10, minutes: 0, seconds: 30, frames: 0, rate: rate), count: 60)
+        let samples = LTCEncoder.samples(frames: first, sampleRate: 48_000) + [Float](repeating: 0, count: 24_000)
+            + LTCEncoder.samples(frames: second, sampleRate: 48_000)
+        var decoder = LTCDecoder(sampleRate: 48_000, nominalFrameRate: 25)
+        let decoded = decoder.process(samples).map(\.timecode)
+        let wrong = decoded.filter { $0.rate != rate }
+        #expect(wrong.isEmpty, "\(wrong.count) frames at another rate, first \(String(describing: wrong.first))")
+        let chased = decoded.filter { second.contains($0) }
+        // every frame but its first, held until the next continues it, and its last, whose sync word no transition ends
+        #expect(chased.count == 58 && chased.first == second[1], "\(chased.count) frames of the second run, from \(String(describing: chased.first))")
+    }
+
     @Test func chunkedInputDecodesLikeWholeInput() {
         let frames = Self.frames(from: Timecode(hours: 1, minutes: 2, seconds: 3, frames: 4, rate: .fps30), count: 12)
         let samples = frames.flatMap { LTCEncoder.samples(frames: [$0], sampleRate: 44_100, amplitude: 0.3) }
