@@ -1371,7 +1371,9 @@ Fanous Library/
   The cache file is written whole and atomically after 200 probes or 2 s,
   when the probe queue drains and at stop, never in show mode (written when
   it ends); a drain prunes the entries under the root whose file went or
-  changed, with their thumbnails (B328).
+  changed, with their thumbnails (B328): not after a scan whose listing
+  failed, not the entries of a root inside this one, and a replaced index
+  (B51) writes once before its replacement reads the cache and never after.
 - **Playable** = ProRes/HAP in `.mov`, stills. Anything else (H.264/HEVC,
   `.mp4`, `.avi`, image sequences) is indexed as "needs transcode" with a
   one-click ingest action. Long-GOP codecs are deliberately not playable:
