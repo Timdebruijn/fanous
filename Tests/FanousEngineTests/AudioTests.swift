@@ -279,13 +279,15 @@ extension LayerAudioChannel {
     /// B320 review: the compositor stamps its position with the tick's target, ahead of now, so before the target the
     /// clock reads up to one tick's lead before that position. The producer takes its clock at the stamp: a segment
     /// cued at an in point (1 s) starts there, not before it, and the first pull waits silent until the clock reaches
-    /// it. The target is 1 s ahead so a stalled test machine cannot pass it; a real one is a tick ahead.
+    /// it. The target is 1 s ahead so a stalled test machine cannot pass it; a real one is a tick ahead. `fill(now:)`
+    /// is what `fill(from:producer:)` calls with the time of the call; only the reader is a stand-in.
     @Test func theProducerNeverTakesItsClockBeforeTheStamp() {
         let channel = LayerAudioChannel()
-        channel.setState(wantedPTS: 1, active: true, volume: 1, pan: 0, atHostNanos: LayerAudioChannel.hostNanos() + 1_000_000_000)
+        let now = LayerAudioChannel.hostNanos()
+        channel.setState(wantedPTS: 1, active: true, volume: 1, pan: 0, atHostNanos: now + 1_000_000_000)
         let source = RampSource()
         var seeks: [Double] = []
-        channel.fill(wanted: channel.producerWantedPTS, read: { source.read($0, $1) }, seek: { seeks.append($0); source.seek($0) })
+        channel.fill(now: now, read: { source.read($0, $1) }, seek: { seeks.append($0); source.seek($0) })
         #expect(seeks.count == 1 && abs(seeks[0] - 1) < 1e-6, "seeked to \(seeks), not before the in point")
         var out = AudioTests.pull(channel, frames: 480, wanted: 0.99)  // before the target: waits
         #expect(out.left.allSatisfy { $0 == 0 } && abs(channel.nextFramePTS - 1) < 1e-6, "nothing heard, nothing consumed")
@@ -293,6 +295,38 @@ extension LayerAudioChannel {
         #expect(abs(channel.nextFramePTS - 1.01) < 1e-6)
         #expect(abs(out.left[479] - 48_479) < 1, "the in point's frames: \(out.left[479])")
         #expect(channel.statistics.corrections == 0)
+    }
+
+    /// B320 review: the clock at the stamp runs up to one lead (40 ms here, 25 Hz) ahead of the consumer's. Whether
+    /// the producer reseeks is judged on the consumer's clock, so neither threshold shrinks by the lead. Ring 0–250 ms,
+    /// 200 ms played, a lead of 40 ms, `at` is the clock now (consumer).
+    private func reseeks(at consumer: Double, lead: Double = 0.04) -> (seeks: Int, buffered: Int, channel: LayerAudioChannel) {
+        let channel = LayerAudioChannel()
+        let source = RampSource()
+        var seeks = 0
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: 0, atHostNanos: 1_000_000_000)
+        channel.fill(now: 1_000_000_000, read: { source.read($0, $1) }, seek: { seeks += 1; source.seek($0) })
+        for k in 0..<20 { AudioTests.pull(channel, frames: 480, wanted: Double(k) * 0.01) }  // head at 0.2 s, tail 0.25 s
+        let now: UInt64 = 2_000_000_000
+        channel.setState(wantedPTS: consumer + lead, active: true, volume: 1, pan: 0, atHostNanos: now + UInt64(lead * 1e9))
+        channel.fill(now: now, read: { source.read($0, $1) }, seek: { seeks += 1; source.seek($0) })
+        return (seeks, channel.bufferedFrames, channel)
+    }
+
+    @Test func aRingWithAudioLeftBeforeTheTargetIsToppedUpNotReseeked() {
+        // 10 ms left on the consumer's clock (0.24 s against the tail's 0.25 s); 30 ms past the tail at the stamp
+        let r = reseeks(at: 0.24)
+        #expect(r.seeks == 1, "only the first seek")
+        #expect(r.buffered == LayerAudioChannel.capacity, "topped up: \(r.buffered)")
+    }
+
+    @Test func aHeadLagUnderTheResyncThresholdIsNudgedNotReseeked() {
+        // the head (0.2 s) 65 ms behind the consumer's clock, 105 ms behind the clock at the stamp
+        let r = reseeks(at: 0.265)
+        #expect(r.seeks == 1, "only the first seek")
+        let out = AudioTests.pull(r.channel, frames: 480, wanted: 0.265)
+        #expect(r.channel.statistics.corrections >= 1 && r.channel.statistics.underruns == 0)
+        #expect(out.left.contains { $0 != 0 }, "heard while it is nudged")
     }
 
     @Test func inactiveChannelIsSilentAndConsumesNothing() {
