@@ -174,8 +174,9 @@ public final class StateServer: @unchecked Sendable {
                         return true
                     }
                     guard added else {
-                        sendError("tooManyStreams", "at most \(StateServer.dmxStreamLimit) dmx streams per connection", on: session)
-                        return
+                        // with the stream id it would have had and `stream`, as a refused preview
+                        let text = "at most \(StateServer.dmxStreamLimit) dmx streams per connection"
+                        return reply(["t": "error", "id": .number(Double(id)), "stream": "dmx", "code": "tooManyStreams", "message": .string(text)], on: session)
                     }
                     server.dmxSubscriptionsChanged()
                     reply(["t": "sub", "id": .number(Double(id)), "stream": "dmx", "universe": .string(universe)], on: session)

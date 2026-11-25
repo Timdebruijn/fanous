@@ -262,7 +262,7 @@ while the show is locked. A fixture is written `Layer n`, `Master`,
 | Session | 24 hours, in memory |
 | WebSocket clients | No cap; `/metrics` counts them and the lagging ones |
 | Live patches | Every 50 ms, latest value per path; the live document is rebuilt every 100 ms |
-| DMX stream | One 512-byte frame per subscription every 50 ms; at most 16 per connection, the next `sub` gets the error `tooManyStreams` |
+| DMX stream | One 512-byte frame per subscription every 50 ms; at most 16 per connection, the next `sub` gets the error `tooManyStreams` (with `id` and `stream`, as a refused preview) |
 | H.264 preview encoders | 4 in total, shared per target and size; the preview width is 160–1280 in four classes |
 | Undo history | 500 steps |
 | Layers | 32 exist (`caps.maxLayers`); `layers.setCount` accepts up to 64, but 33 to 64 are not rendered |

@@ -3727,9 +3727,10 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   cannot keep up is disconnected and reconnects.
 - Subscriptions bound bandwidth: a client only receives DMX monitor data for
   the universe it is looking at (at most 16 DMX streams per connection: the
-  next `sub` gets `{"t":"error","code":"tooManyStreams",…}`, B285), and preview
-  streams it asked for. Max 4 clients with a video preview (tier setting); the
-  fifth gets a JPEG preview at 5 fps and a note.
+  next `sub` gets
+  `{"t":"error","id":…,"stream":"dmx","code":"tooManyStreams",…}`, B285), and
+  preview streams it asked for. Max 4 clients with a video preview (tier
+  setting); the fifth gets a JPEG preview at 5 fps and a note.
 - Multiple clients see the same `rev`; last command wins; a client that
   issued a command sees its own ack and the same patch everyone else gets.
 - Show lock is a `project` flag: while set, every command tagged

@@ -189,6 +189,7 @@ import Testing
         try await a.send(.string(#"{"t":"sub","stream":"dmx","universe":"artnet:9.9.9"}"#))
         let refused = try await Self.receive(a)
         #expect(refused["t"]?.string == "error" && refused["code"]?.string == "tooManyStreams")
+        #expect(refused["stream"]?.string == "dmx" && refused["id"]?.int != nil)
         #expect(f.stateServer.dmxSubscriptions().count == StateServer.dmxStreamLimit)
         try await a.send(.string(#"{"t":"unsub","id":\#(try #require(first))}"#))
         try await a.send(.string(#"{"t":"sub","stream":"dmx","universe":"artnet:9.9.9"}"#))
