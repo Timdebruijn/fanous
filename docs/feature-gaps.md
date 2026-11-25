@@ -174,8 +174,8 @@ priority for each row comes from §4.
 | G23 | CITP compliance details. Titan Active Fixtures auto-patch from what the server reports. MagicQ needs layers on ascending DMX addresses with ascending head numbers. Whether to send the v1.0 `SInf` at accept, as the spec says, instead of after 2 s. | MA2, MagicQ, Hog, Onyx, Titan | `◐` MSEX 1.2, verified on loopback only (B40). Built: the v1.0 `SInf` fallback and 0-based contiguous library and element indexes, which also keep the 256 cap (B78, PRs #194, #198) | S |
 | G24 | Thumbnails for desks with no documented CITP (MA3, Eos): export the library thumbnails as an image set named by folder and file, for the desk's image pool | none found (users build it by hand) | `—` | S; first check what MA3 and Eos can import |
 | G25 | SRT/RTSP H.264 preview stream for Eos (3.3.5 and later; 3.3.0 to 3.3.4 have no video streams, ETC support articles, re-read 2026-11-25) | Eos side only | `◐` the H.264 encoder exists for the web preview | M |
-| G26 | Art-Net timecode in (`ArtTimeCode`, 0x9700) | Pixera, Kinetic; MagicQ sends it | `—` | S |
-| G27 | Timecode out, LTC generator | QLab, Millumin, VDMX, Pixera | `◐` `LTCEncoder` in Core, used by tests only; a generator with Art-Net, MTC and LTC out in the backlog (B138) | S–M |
+| G26 | Art-Net timecode in (`ArtTimeCode`, 0x9700) | Pixera, Kinetic; MagicQ sends it | `D` (`docs/timecode-out.md` §4, step 4) | S |
+| G27 | Timecode out, LTC generator | QLab, Millumin, VDMX, Pixera | `◐` `LTCEncoder` in Core, used by tests only; the generator with Art-Net out designed (`docs/timecode-out.md`, B138 step 1), MTC and LTC out after it | S–M |
 | G28 | PosiStageNet and tracking | HE 5/6 · Hippotizer; MA3 and MagicQ send PSN | `D` (B53) | M |
 | G29 | GDTF `MediaServerLayer` / `MediaServerMaster` geometry types | no consuming desk verified | `◐` generic `Geometry` | S |
 | G30 | Honour sACN sync and `ArtSync`; sACN 0xDD | niche | `—` ArtSync and sACN sync packets are ignored | S |
