@@ -52,7 +52,6 @@ public struct LayerParameters: Sendable, Equatable {
 
     public init() {}
 
-    public var retrigger: Bool { control == .retrigger }
     public var mediaKey: MediaKey { MediaKey(folder: Int(folder), file: Int(file)) }
 
     public static func from(_ resolver: FixtureResolver) -> LayerParameters {
