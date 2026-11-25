@@ -3743,7 +3743,9 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   out of the bound for what follows it (B286: the patches held behind a 1.6 MB
   snapshot went out before a byte of it could leave, so every live one was
   dropped and the client asked for a snapshot again, for good); it is refused
-  only above the hard limit (1 MB of other messages queued).
+  above the hard limit (1 MB) of everything queued, earlier documents
+  included, so at most one large one is in flight and a client that asks for
+  snapshots without reading them is dropped.
 - Subscriptions bound bandwidth: a client only receives DMX monitor data for
   the universe it is looking at, and preview streams it asked for. Max 4
   clients with a video preview (tier setting); the fifth gets a JPEG preview

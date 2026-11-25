@@ -139,6 +139,17 @@ struct WebSocketSessionTests {
         #expect(results == [true, true, true, false, true, false])
     }
 
+    /// A second document while a large one is still queued is refused (the store then drops the client): a client that
+    /// sends `snapshot` in a loop and never reads must not queue 1.6 MB after 1.6 MB. On the previous head all ten were
+    /// taken.
+    @Test func aSecondLargeDocumentInFlightIsRefused() async throws {
+        let pair = try await Pair.make()
+        defer { pair.stop() }
+        let document = String(repeating: "x", count: 1_600_000)
+        let results = pair.queue.sync { (0..<10).map { _ in pair.session.send(document: document) } }
+        #expect(results == [true] + Array(repeating: false, count: 9))
+    }
+
     /// One hello in two frames gets one welcome: delivering each fragment alone would be two bad messages.
     @Test func fragmentedTextIsOneMessage() async throws {
         let pair = try await Pair.make()

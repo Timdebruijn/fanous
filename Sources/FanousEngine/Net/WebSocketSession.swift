@@ -49,8 +49,8 @@ public final class WebSocketSession: @unchecked Sendable {
 
     /// A welcome or snapshot (B286): queued like any message, but the limits for what follows it leave it out, so a
     /// 1.6 MB document does not make the patches right behind it look like a client that cannot keep up (they went out
-    /// in the same control-queue turn, before any byte of the document could leave). Refused, like any message, only
-    /// above the hard limit; patches and streams after it still meet both limits.
+    /// in the same control-queue turn, before any byte of the document could leave). Refused above the hard limit of
+    /// everything queued, earlier documents included; patches and streams after it still meet both limits.
     public func send(document text: String) -> Bool { send(WebSocketFrame.text(text), droppable: false, document: true) }
 
     public func close(code: UInt16 = 1000, reason: String = "") {
@@ -74,6 +74,9 @@ public final class WebSocketSession: @unchecked Sendable {
         let pending = queued.load(ordering: .relaxed) - documentBytes.load(ordering: .relaxed)
         if droppable && pending > Self.maxQueuedBytes { return false }
         if pending > Self.hardLimitBytes { return false }
+        // a document is judged against everything queued, earlier documents included: at most one large one in flight
+        // (the web client never has two), so a client that asks for snapshots and never reads is refused, then dropped
+        if document && queued.load(ordering: .relaxed) > Self.hardLimitBytes { return false }
         queued.add(bytes.count, ordering: .relaxed)
         if document { documentBytes.add(bytes.count, ordering: .relaxed) }
         connection.send(
