@@ -26,6 +26,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   turned off and on (B280) (PR #495).
 - Show screen: a **Now** button next to a cue's Trigger puts the timecode showing on the Timecode panel in the
   field, with its rate, so a trigger is set at the moment instead of typed (PR #487).
+- Show screen: the Timecode panel names the next cue a trigger fires and the seconds until it, counted from the
+  time showing (PR #488).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)

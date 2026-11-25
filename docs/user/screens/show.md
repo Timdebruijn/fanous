@@ -52,7 +52,7 @@ right column with OSC and MIDI moves under the left one.
 | Control | Does |
 |---|---|
 | **Timecode on/off** | The operator's switch; disabled while the Source is Off ("Choose a source first") |
-| Readout | `hh:mm:ss:ff` in big digits; the state pill **Locked** (green), **Freewheel** (yellow), **Lost** (red) or **Off**; the source line ("No source", `LTC · device · 25 fps`); "N frames seen" |
+| Readout | `hh:mm:ss:ff` in big digits; the state pill **Locked** (green), **Freewheel** (yellow), **Lost** (red) or **Off**; the source line ("No source", `LTC · device · 25 fps`); "N frames seen"; while timecode runs (Locked or Freewheel) and a trigger lies ahead, "next trigger: cue 3 · Intro in 8 s" (`1:35` above a minute, rounded up) |
 | Level meter (LTC) | The LTC channel's peak over the last tenth of a second, −60 to 0 dBFS, yellow above −3; "no audio" or "timecode switched off" |
 | Error line | Red, from the engine: "MTC source … is not connected", "no MIDI source connected", or why an LTC input could not open |
 | **Source** | Off, LTC (audio input), MTC (MIDI) |

@@ -93,6 +93,42 @@ const TRIGGER_RATES: { id: string; engine: string; frames: number }[] = [
   { id: '30', engine: '30', frames: 30 },
 ];
 
+/** Seconds from 00:00:00:00 of a stored trigger (`hh:mm:ss:ff@rate`, `;` or `:` before the frames), counted as the
+ * engine counts them (`Timecode.secondsValue`: drop frame skips two numbers a minute except each tenth); null when
+ * the text is not a trigger. */
+export function triggerSeconds(trigger: string): number | null {
+  const m = /^(\d{1,2}):(\d{1,2}):(\d{1,2})[:;](\d{1,2})(?:@(.+))?$/.exec(trigger.trim());
+  if (!m) return null;
+  const rate = TRIGGER_RATES.find((r) => r.engine === (m[5] ?? '25'));
+  if (!rate) return null;
+  const [h, min, s, f] = [m[1], m[2], m[3], m[4]].map(Number);
+  let frames = ((h * 3600 + min * 60 + s) * rate.frames) + f;
+  if (rate.id === '29.97df') frames -= 2 * (h * 60 + min - Math.floor((h * 60 + min) / 10));
+  return frames / (rateFps(rate.engine) ?? rate.frames);
+}
+
+/** The cue the running timecode reaches next (the lowest trigger past the time showing, compared in seconds with the
+ * engine's tolerance, as `CueEngine.timecode` fires them) and the seconds until it; null while timecode is off or
+ * lost (the engine fires nothing without frames, and a lost readout stands), or no trigger lies ahead. Freewheel
+ * counts on: the signal usually comes back. */
+export function nextTrigger(cues: readonly CueDoc[], live: Pick<LiveDoc['timecode'], 'state' | 'frames' | 'rate'>): { cue: CueDoc; seconds: number } | null {
+  const fps = rateFps(live.rate);
+  if ((live.state !== 'locked' && live.state !== 'freewheel') || fps === null) return null;
+  const now = live.frames / fps;
+  let best: { cue: CueDoc; seconds: number } | null = null;
+  for (const cue of cues) {
+    const at = cue.trigger ? triggerSeconds(cue.trigger) : null;
+    if (at !== null && at > now + 1e-6 && (best === null || at - now < best.seconds)) best = { cue, seconds: at - now };
+  }
+  return best;
+}
+
+/** "8 s" up to a minute, then "1:35": a countdown, rounded up. */
+export function countdownText(seconds: number): string {
+  const whole = Math.max(0, Math.ceil(seconds));
+  return whole < 60 ? `${whole} s` : `${Math.floor(whole / 60)}:${pad2(whole % 60)}`;
+}
+
 export const TRIGGER_HINT = 'hh:mm:ss:ff@rate, for example 00:01:30:00@25 (rates: 24, 25, 29.97df, 29.97ndf, 30)';
 
 export type TriggerResult = { ok: true; value: string | null } | { ok: false; error: string };
