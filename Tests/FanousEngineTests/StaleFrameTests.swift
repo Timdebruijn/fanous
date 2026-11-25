@@ -126,29 +126,26 @@ struct StaleFrameTests {
         #expect(rig.metrics.summary(seconds: 1e6, now: 3600 + 1e5).idle == 0, "every tick took the drawn path")
     }
 
-    // B293: at a bounce turn the ring is full of frames on the old side and the decode thread sleeps on it. Before, the
-    // layer held one frame until the clock was `capacity + 2` frames past it and the ring drained; now the turn drains the
-    // ring at once and the thread restarts, so every turn, at either end, holds exactly one tick (the stale runs are read
-    // from the shown frame after each tick)
-    @Test func aBounceTurnCountsTheTicksItHolds() async throws {
+    // B293: at a bounce turn the ring used to be full of frames on the old side with the decode thread asleep on it, and
+    // the layer held one frame until the clock was `capacity + 2` frames past it and the ring drained. Now the decoder
+    // turns at the ends itself and the playback pops the old leg's frames behind the clock, so a turn holds nothing (the
+    // shown frame is read after each tick)
+    @Test func aBounceTurnHoldsNoFrame() async throws {
         let rig = try await Rig(mode: .bounce)
         rig.decoder.start(name: "test.decode")
         rig.decoder.request(frame: 0, direction: 1)  // the compositor's first request: a started decoder waits for one (B294)
         defer { rig.decoder.stop() }
-        var runs: [Int] = []
-        var run = 0
+        var seen = Set<Int>()
+        var held: [Int] = []
         for _ in 0..<100 {  // 20 frames: four turns
             await rig.tick()
-            if rig.shown != rig.clockFrame {
-                run += 1
-            } else if run > 0 {
-                runs.append(run)
-                run = 0
-            }
+            seen.insert(rig.clockFrame)
+            if rig.shown != rig.clockFrame { held.append(rig.clockFrame) }
         }
-        #expect(runs.count >= 3 && runs.allSatisfy { $0 == 1 }, "\(runs)")
-        #expect(rig.stale == runs.reduce(run, +))
-        #expect(rig.layer.staleFrames.load(ordering: .relaxed) == rig.stale)
+        #expect(seen.contains(0) && seen.contains(19), "both ends were played: \(seen.sorted())")
+        #expect(held.isEmpty, "\(held)")
+        #expect(rig.stale == 0)
+        #expect(rig.layer.staleFrames.load(ordering: .relaxed) == 0)
         #expect(rig.misses == 0)
     }
 

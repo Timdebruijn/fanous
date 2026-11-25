@@ -18,8 +18,9 @@ public final class LayerDecoder: @unchecked Sendable {
     public let source: MovieSource
     private let wanted = Atomic<Int>(-1)  // -1: no request yet
     private let direction = Atomic<Int>(1)
-    /// The loop the compositor plays, as `lo << 32 | hi + 1` (0: none): the thread reads across the wrap itself, so the
-    /// ring never holds the frame past the out point and a wrap is not a seek (B293).
+    /// The range the compositor plays, as `lo << 32 | hi + 1` (0: none), with bit 63 set for a bounce: the thread reads
+    /// across a loop's wrap, or turns at a bounce's ends, itself, so the ring never holds a frame past the range and a
+    /// wrap or a turn is not a seek (B293).
     private let loopBits = Atomic<UInt64>(0)
     private let running = Atomic<Bool>(true)
     private let wake = DispatchSemaphore(value: 0)
@@ -31,6 +32,7 @@ public final class LayerDecoder: @unchecked Sendable {
     private let logger: Logger
     private var thread: Thread?
     private var lastProduced = -1
+    private var produceDirection = 0  // a bounce's leg the thread is on (decode thread only); 0 outside a bounce
     public let decoded = Atomic<Int>(0)
     /// Audio track of the same movie, filled from this thread between video frames (ADR-0019); set by the loader before
     /// the thread starts.
@@ -69,12 +71,14 @@ public final class LayerDecoder: @unchecked Sendable {
 
     /// Called by the compositor every tick (never blocks). The thread is only woken when the frame or the direction
     /// differs from the last wake-up: while it has a full ring and nothing changes it sleeps.
-    /// `loop`: the frames a loop mode plays, read across the wrap in play direction; nil for the other modes.
-    public func request(frame: Int, direction: Int, loop: ClosedRange<Int>? = nil) {
+    /// `loop`: the frames a loop or bounce mode plays, read across the wrap (`bounce` false) or turned at the ends
+    /// (`bounce` true) in play direction; nil for the other modes.
+    public func request(frame: Int, direction: Int, loop: ClosedRange<Int>? = nil, bounce: Bool = false) {
         let dir = direction >= 0 ? 1 : -1
         wanted.store(max(0, frame), ordering: .relaxed)  // -1 is "nothing asked yet"
         self.direction.store(dir, ordering: .relaxed)
-        loopBits.store(loop.map { UInt64(max(0, $0.lowerBound)) << 32 | UInt64(max(0, $0.upperBound) + 1) } ?? 0, ordering: .relaxed)
+        let bits = loop.map { UInt64(max(0, $0.lowerBound) & 0x7FFF_FFFF) << 32 | UInt64(max(0, $0.upperBound) + 1) } ?? 0
+        loopBits.store(bits == 0 ? 0 : bits | (bounce ? 1 << 63 : 0), ordering: .relaxed)
         let frameChanged = signalledFrame.exchange(frame, ordering: .relaxed) != frame
         let directionChanged = signalledDirection.exchange(dir, ordering: .relaxed) != dir
         if frameChanged || directionChanged { nudge() }
@@ -109,13 +113,31 @@ public final class LayerDecoder: @unchecked Sendable {
                 // measured around the loop, and the frame after its out point is its in point (B293): the ring then holds
                 // the wrap and the compositor never drains it there
                 let loop = loopBits.load(ordering: .relaxed)
-                let lo = Int(loop >> 32), hi = Int(loop & 0xFFFF_FFFF) - 1
-                let looped = loop != 0 && lo <= hi && hi < count && (lo...hi).contains(lastProduced) && (lo...hi).contains(want)
-                let span = looped ? hi - lo + 1 : count
-                let ahead = dir > 0 ? (lastProduced - want + span) % span : (want - lastProduced + span) % span
-                next = ahead <= ring.capacity ? (lastProduced + dir + count) % count : want
-                if looped, ahead <= ring.capacity {
-                    if dir > 0, next > hi || next < lo { next = lo } else if dir < 0, next < lo || next > hi { next = hi }
+                let bounce = loop >> 63 == 1
+                let lo = Int((loop >> 32) & 0x7FFF_FFFF), hi = Int(loop & 0xFFFF_FFFF) - 1
+                let ranged = loop != 0 && lo <= hi && hi < count && (lo...hi).contains(lastProduced) && (lo...hi).contains(want)
+                if ranged, bounce {
+                    // a bounce: the thread runs the leg in its own direction and turns at the ends, so the ring already holds the
+                    // frames after a turn; `produceDirection` is where it is heading, which the request only resets on a seek
+                    if produceDirection == 0 { produceDirection = dir }
+                    let d = (lastProduced - want) * produceDirection  // ahead of the request along the leg
+                    if d < -ring.capacity || d > 2 * ring.capacity {
+                        // a seek or a lost request: restart at the request in its direction
+                        produceDirection = dir
+                        next = want
+                    } else {
+                        next = lastProduced + produceDirection
+                        if next > hi { produceDirection = -1; next = hi - 1 } else if next < lo { produceDirection = 1; next = lo + 1 }
+                        next = min(hi, max(lo, next))
+                    }
+                } else {
+                    produceDirection = 0
+                    let span = ranged ? hi - lo + 1 : count
+                    let ahead = dir > 0 ? (lastProduced - want + span) % span : (want - lastProduced + span) % span
+                    next = ahead <= ring.capacity ? (lastProduced + dir + count) % count : want
+                    if ranged, ahead <= ring.capacity {
+                        if dir > 0, next > hi || next < lo { next = lo } else if dir < 0, next < lo || next > hi { next = hi }
+                    }
                 }
             }
             do {

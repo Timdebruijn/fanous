@@ -827,9 +827,10 @@ public final class Compositor: @unchecked Sendable {
         let visible = intensity * ctx.masterIntensity > 0
         // invisible for a while: the ring and the last frame stay, the clock keeps running, decoding resumes when visible
         guard playback.hold.allowsRequests(visible: visible, at: ctx.target) else { return }
-        // a loop's frames, so the decoder reads across the wrap itself and the ring never holds the frame past the out point (B293)
-        let loopFrames: ClosedRange<Int>? = master == nil && (p.playMode == .loopForward || p.playMode == .loopReverse) && outFrame > inFrame ? inFrame...outFrame : nil
-        playback.decoder?.request(frame: frameIndex, direction: direction, loop: loopFrames)
+        // a loop's or bounce's frames, so the decoder reads across the wrap or turns at the ends itself and the ring never
+        // holds a frame past the range (B293)
+        let ranged = master == nil && (p.playMode == .loopForward || p.playMode == .loopReverse || p.playMode == .bounce) && outFrame > inFrame
+        playback.decoder?.request(frame: frameIndex, direction: direction, loop: ranged ? inFrame...outFrame : nil, bounce: p.playMode == .bounce)
         guard visible else { return }
         guard let frame = playback.frame(at: frameIndex, direction: direction), frame.texture0 != nil else {
             ctx.misses += 1
