@@ -476,6 +476,7 @@ public final class LibraryIndex: @unchecked Sendable {
                 // can make the count huge, which traps playback's frame arithmetic. The same bound as `MovieSource`.
                 guard let frameCount = Int(exactly: (duration * Double(frameRate)).rounded()), (0...Int(Int32.max)).contains(frameCount)
                 else { throw MovieError.unknownDuration }
+                guard Double(frameRate) <= MovieSource.maxFrameRate else { throw MovieError.frameRate }  // B336, as `MovieSource`
                 metadata.frameCount = frameCount
                 if let description = descriptions.first {
                     let codec = CMFormatDescriptionGetMediaSubType(description)

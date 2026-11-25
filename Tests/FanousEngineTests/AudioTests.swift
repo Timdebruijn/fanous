@@ -117,6 +117,18 @@ extension LayerAudioChannel {
 
     // MARK: AudioTrackReader
 
+    /// B336: the reader's format check on synthetic descriptions: a rate outside 8–192 kHz (ingest's range), +infinity
+    /// and NaN are refused; `mSampleRate > 0` took +infinity (a trap in `chunkFrames`) and any huge finite rate.
+    @Test func theReaderRefusesASampleRateOutsideEightTo192kHz() {
+        func pcm(_ rate: Double) -> AudioStreamBasicDescription {
+            AudioStreamBasicDescription(
+                mSampleRate: rate, mFormatID: kAudioFormatLinearPCM, mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
+                mBytesPerPacket: 4, mFramesPerPacket: 1, mBytesPerFrame: 4, mChannelsPerFrame: 2, mBitsPerChannel: 16, mReserved: 0)
+        }
+        for rate in [8_000.0, 44_100, 48_000, 192_000] { #expect(AudioTrackReader.reads(pcm(rate)), "\(rate)") }
+        for rate in [Double.infinity, .nan, 0, 7_999, 192_001, 4_294_967_296] { #expect(!AudioTrackReader.reads(pcm(rate)), "\(rate)") }
+    }
+
     @Test func readerSeeksToOneSecondAndFindsTheTestTone() async throws {
         let directory = try tempDir("fanous-audio-tests")
         let url = directory.appending(path: "tone.mov")

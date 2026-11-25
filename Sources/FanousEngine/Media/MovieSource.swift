@@ -31,6 +31,8 @@ public enum MovieError: Error, CustomStringConvertible {
     case unexpectedPixelFormat(OSType)
     case noSample
     case unknownDuration
+    /// B336: a header rate above `MovieSource.maxFrameRate`.
+    case frameRate
 
     public var description: String {
         switch self {
@@ -40,6 +42,7 @@ public enum MovieError: Error, CustomStringConvertible {
         case .unexpectedPixelFormat(let f): "unexpected pixel format \(fourCCString(f))"
         case .noSample: "no sample"
         case .unknownDuration: "unknown duration"
+        case .frameRate: "frame rate above \(Int(MovieSource.maxFrameRate)) fps"
         }
     }
 }
@@ -167,6 +170,11 @@ public final class MovieSource: @unchecked Sendable {
     private var hapTextures0: [MTLTexture] = []
     private var hapTextures1: [MTLTexture] = []
 
+    /// B336: a header can claim an absurd but finite rate (2^31 − 1 ticks per second at one tick per frame: 2.1e9 fps over
+    /// 0.4 s is 8.6e8 frames, inside the Int32 bound), which playback then walks past the last real sample, one cursor per
+    /// decode, and ingest tries to write. No camera records faster (high-speed modes are 240 to 960 fps).
+    static let maxFrameRate = 1000.0
+
     public static func open(url: URL, device: MTLDevice, poolSize: Int) async throws -> MovieSource {
         let asset = AVURLAsset(url: url)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw MovieError.noVideoTrack }
@@ -187,6 +195,7 @@ public final class MovieSource: @unchecked Sendable {
         // list of 2^32 s) traps the modular frame arithmetic of playback (LayerDecoder, Playback, Compositor, LayerClock)
         guard let frameCount = Int(exactly: (duration * frameRate).rounded()), (0...Int(Int32.max)).contains(frameCount)
         else { throw MovieError.unknownDuration }
+        guard frameRate <= Self.maxFrameRate else { throw MovieError.frameRate }  // B336
         info = MovieInfo(
             width: Int(dimensions.width), height: Int(dimensions.height), pixelAspect: Self.pixelAspect(of: description), frameRate: frameRate,
             frameCount: max(1, frameCount), codec: codec)

@@ -544,6 +544,26 @@ struct LibraryIndexGPUTests {
         await #expect { _ = try await MovieSource.open(url: movie, device: device, poolSize: 2) } throws: { "\($0)" == "unknown duration" }
     }
 
+    /// B336: a track that claims 8.9e7 fps (timescale 89 000 000, one tick per frame) has a frame count inside the Int32
+    /// bound, so it was listed playable; it is unreadable with its own reason, and `MovieSource` refuses it the same way.
+    @Test func aMovieWithAnAbsurdFrameRateIsUnreadable() async throws {
+        let folder = try tempDir("fanous-library").appending(path: "001_Show")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let movie = folder.appending(path: "001_too_fast.mov")
+        try await writePatternMovie(to: movie, size: (64, 64), fps: 25, frames: 2)
+        try patchAtom(movie, "mdhd", at: 20, to: 89_000_000)
+        try patchAtom(movie, "mdhd", at: 24, to: 2)
+        try patchAtom(movie, "stts", at: 20, to: 1)  // one entry: both frames one tick long
+        let index = LibraryIndex(root: folder.deletingLastPathComponent(), cacheDirectory: folder.appending(path: "_cache"), logger: testLogger)
+        index.start()
+        defer { index.stop() }
+        #expect(await waitUntil(every: .milliseconds(50)) { index.snapshot.folders.first?.items.first.map { $0.status != .probing } == true })
+        let item = try #require(index.snapshot.folders.first?.items.first)
+        #expect(item.status == .unreadable && item.reason == "frame rate above 1000 fps", "listed \(item.status), \(item.reason ?? "no reason")")
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        await #expect { _ = try await MovieSource.open(url: movie, device: device, poolSize: 2) } throws: { "\($0)" == "frame rate above 1000 fps" }
+    }
+
     /// B264: an edit list of 2^32 − 1 s at movie timescale 1 is taken as the track's length (measured: `asset.duration`
     /// 4294967295/1, 25 fps, ~1.1e11 frames). Such a count traps playback's frame arithmetic, so the probe refuses any
     /// count beyond Int32 like a missing duration; before, it was listed playable.

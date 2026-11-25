@@ -405,6 +405,8 @@ public enum Transcoder {
             } else {
                 frameDuration = minimum
             }
+            // B336: an absurd but finite rate (8.9e7 fps fits a timescale) would write hundreds of millions of frames
+            guard frameDuration.seconds >= 1 / MovieSource.maxFrameRate else { throw TranscodeError.reader(MovieError.frameRate.description) }
             // B264: a header timescale of 0 reads as a NaN duration, a huge one overflows the frame counts of `run`; both
             // trapped. The library's bound: a longer result would not play.
             let frames = 0...Double(Int32.max)
