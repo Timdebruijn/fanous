@@ -125,7 +125,7 @@ The wizard, the wall panel and the seam check, step by step:
 | **Name** | Free text |
 | **Display** | Unassigned, the connected displays, or `name · missing` for a display that went away |
 | **Mode** | "Current · W × H @ hz" or one of the display's modes; applied in show mode; disabled without a display |
-| **Region x · y · w · h (px)** | The part of the display this output draws on; **Full display** resets it |
+| **Region x · y · w · h (px)** | The part of the display this output draws on, at most 16384 px wide and high (a larger value becomes 16384); **Full display** resets it |
 | **Intensity %** | 0–100, multiplied with the Output fixture's and the Master's intensity |
 | Yellow notes | The mode note; "This output uses the Mac's own display: the local UI shell will be hidden behind it." |
 | **Blend edges** | One card per edge (left, right, top, bottom) with a curve drawing, **Overlap (px)**, **Power** 0.1–10 (the steepness of the fade; the wall panel calls it Curve), **Gamma** 0.5–5 (the projector's gamma, so the two ramps add up evenly), or the read-only "Gamma R · G · B" with **One gamma for R, G, B**, and a **manual** badge with **Back to wall** on a wall member; then **Black lift (%)** 0–50 and **Lift feather px** |

@@ -103,6 +103,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   layer's error and opens a selection the layer shows nothing for again (a failed open, a missing number), each once on
   the tick the band is entered (B363). Both were
   parsed and handled nowhere (PR #468).
+- Outputs: an output's region is clamped to 16384 px wide and high (at project load, and a larger value sent by
+  `output.set` is stored as 16384, not refused), and the preview size is computed without integer overflow; a region height of 2^59 was accepted
+  and trapped the engine when its preview opened (B339) (PR #476).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)

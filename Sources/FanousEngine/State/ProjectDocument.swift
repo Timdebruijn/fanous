@@ -18,6 +18,9 @@ public enum ProjectDocument {
     public static let frameRates: [Double] = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60]
     /// Canvas width and height `canvas.set` accepts (even values only).
     public static let canvasSides = 320...8192
+    /// The largest width or height of an output's region (B339): Metal's largest texture side, so no drawable is larger;
+    /// `validate` clamps a larger one to it, `OutputRenderer.compile` further to its drawable.
+    public static let maxRegionSide = 16384
 
     /// Checks a canvas format and returns it with the rate snapped to the list entry (23.976 for 24000/1001).
     /// Even sizes only (the H.264 preview halves them); no multiple of 4 is needed: HAP's 4×4 blocks apply to media,
@@ -306,6 +309,12 @@ public enum ProjectDocument {
             if let problem = output.slices[i].masks.lazy.compactMap(\.problem).first { throw CommandError.invalidArgs("slice \(output.slices[i].id): \(problem)") }
         }
         if let region = output.region, region.w <= 0 || region.h <= 0 { throw CommandError.invalidArgs("region needs a positive size") }
+        // B339: clamped like the other values, so an output stored with a larger side (typed before the bound, or edited by
+        // hand) still takes every other edit, a wall configure and a preset recall
+        if var region = output.region {
+            (region.w, region.h) = (min(region.w, maxRegionSide), min(region.h, maxRegionSide))
+            output.region = region
+        }
     }
 
     static func setOutputs(_ outputs: [OutputConfig], in project: inout JSONValue) throws {
@@ -449,6 +458,12 @@ public enum ProjectDocument {
         if var list = document["outputs"]?.array {
             var changed = false
             for o in list.indices {
+                // B339: a region side above the bound (typed before it, or edited by hand) is clamped as `validate` clamps it,
+                // so wall configure, which sizes overlaps from the region before it validates, sees the clamped size too
+                for key in ["w", "h"] where (list[o]["region"]?[key]?.double ?? 0) > Double(maxRegionSide) {
+                    if let pointer = try? JSONPointer("/region/\(key)") { try? list[o].set(.number(Double(maxRegionSide)), at: pointer) }
+                    changed = true
+                }
                 if let slices = list[o]["slices"]?.array, let converted = convertMasks(slices) {
                     try? list[o].set(.array(converted), at: "/slices")
                     changed = true

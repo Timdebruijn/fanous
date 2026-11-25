@@ -30,6 +30,16 @@ struct PreviewSizeTests {
         #expect(PreviewSize.size(class: 320, shape: (0, 0)) == (240, 240), "a degenerate shape is square")
     }
 
+    /// B339: a stored region is not bounded (a hand edit, a project from before the bound); `16 * sh` overflowed from a
+    /// height of 2^59 on, and `even * sh` from about 7 × 10^15. Trapped (SIGTRAP) on the old code: run there it kills the
+    /// test process, so the old behaviour was shown on a verbatim copy in a child process (PR body).
+    @Test func hugeShapesDoNotOverflow() {
+        #expect(PreviewSize.size(class: 1280, shape: (1920, 1 << 59)) == (2, 2160))
+        #expect(PreviewSize.size(class: 1280, shape: (1 << 59, 1080)) == (1280, 2))
+        #expect(PreviewSize.size(class: 1280, shape: (1 << 53, 1 << 53)) == (960, 960))
+        #expect(PreviewSize.size(class: 640, shape: (Int.max, Int.max)) == (480, 480))
+    }
+
     @Test func extremeStripsStayWithinBounds() {
         #expect(PreviewSize.size(class: 1280, shape: (1, 4000)) == (14, 2160), "at most 2160 lines")
         #expect(PreviewSize.size(class: 1280, shape: (4000, 1)) == (1280, 2), "at least 2 lines")

@@ -28,10 +28,11 @@ public enum PreviewSize {
     /// pixels of the class's 16:9 frame: a shape narrower than 16:9 gets fewer columns, so cost and H.264 level stay
     /// bounded (1280 class: level 3.1). Extreme strips are clamped to 2160 lines and lose their aspect.
     public static func size(class width: Int, shape: (width: Int, height: Int)) -> (width: Int, height: Int) {
-        let sw = max(1, shape.width), sh = max(1, shape.height)
+        // in Double: a stored region is not bounded, and `16 * sh` overflowed (a trap) from a height of 2^59 on (B339)
+        let sw = Double(max(1, shape.width)), sh = Double(max(1, shape.height))
         // w·h ≤ width²·9/16 with h = w·sh/sw  ⇔  w ≤ width·¾·√(sw/sh)
-        let w = 16 * sh <= 9 * sw ? width : Int(Double(width) * 0.75 * (Double(sw) / Double(sh)).squareRoot())
+        let w = 16 * sh <= 9 * sw ? width : Int(Double(width) * 0.75 * (sw / sh).squareRoot())
         let even = max(2, w & ~1)
-        return (even, min(2160, max(2, (even * sh / sw) & ~1)))
+        return (even, min(2160, max(2, Int(min(2160, Double(even) * sh / sw)) & ~1)))
     }
 }
