@@ -156,6 +156,8 @@ import Testing
         #expect(patch.entry(for: .layer(9)) == PatchEntry(fixture: .layer(9), universe: UniverseID(.artnet, 1), address: 1))
         #expect(patch.entry(for: .master) == PatchEntry(fixture: .master, universe: UniverseID(.artnet, 2), address: 1))
         #expect(patch.entry(for: .output(4))?.address == 33)
+        let pairs = patch.entries.indices.flatMap { i in patch.entries[(i + 1)...].map { (patch.entries[i], $0) } }
+        #expect(!pairs.contains { $0.universe == $1.universe && $0.channels.overlaps($1.channels) })
         #expect(patch.universes == [UniverseID(.artnet, 0), UniverseID(.artnet, 1), UniverseID(.artnet, 2)])
         let allFit = patch.entries.allSatisfy(\.fitsInUniverse)
         #expect(allFit)

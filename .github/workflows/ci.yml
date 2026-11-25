@@ -17,6 +17,7 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
+      - run: swift --version
       - run: swift build
       # Core and the engine suites that need no GPU, media hardware or display (the list is in scripts/test.sh); the
       # GPU, decoder and display tests run locally or on a self-hosted runner only (DESIGN.md §18)

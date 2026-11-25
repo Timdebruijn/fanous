@@ -25,9 +25,12 @@ public enum GDTFExporter {
             Attribute(name: name, pretty: pretty, featureGroup: group, feature: feature, unit: unit)
         }
         switch id {
-        case .layer(.intensity), .master(.intensity), .output(.intensity): return a("Dimmer", "Dim", "Dimmer", "Dimmer", "Percent")
-        case .layer(.control), .master(.control), .output(.control): return a("Control1", "Control", "Control", "Control", "None")
-        case .master(.testPattern), .output(.testPattern): return a("TestPattern", "Pattern", "Control", "Control", "None")
+        case .layer(.intensity), .master(.intensity), .output(.intensity):
+            return a("Dimmer", "Dim", "Dimmer", "Dimmer", "Percent")
+        case .layer(.control), .master(.control), .output(.control):
+            return a("Control1", "Control", "Control", "Control", "None")
+        case .master(.testPattern), .output(.testPattern):
+            return a("TestPattern", "Pattern", "Control", "Control", "None")
         case .layer(.speed), .master(.speed): return a("PlaySpeed", "Speed", "Media", "Media", "Percent")
         case .layer(.folder): return a("MediaFolder", "Folder", "Media", "Media", "None")
         case .layer(.file): return a("MediaFile", "File", "Media", "Media", "None")

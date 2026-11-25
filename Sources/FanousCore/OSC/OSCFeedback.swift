@@ -121,8 +121,9 @@ public enum OSCFeedback {
         }
     }
 
-    /// Greedy packing into bundles of at most `maxBundleBytes` (a single bigger message goes alone). Timetag "immediately":
-    /// the values are current when sent, and a real timestamp would be delayed by a receiver whose clock runs behind.
+    /// Greedy packing into bundles of at most `maxBundleBytes` (a single bigger message goes alone). Timetag
+    /// "immediately": the values are current when sent, and a real timestamp would be delayed by a receiver whose clock
+    /// runs behind.
     public static func bundles(_ messages: [OSCMessage]) -> [OSCBundle] {
         var bundles: [OSCBundle] = []
         var current: [OSCPacket] = []
