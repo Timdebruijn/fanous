@@ -217,12 +217,14 @@ struct WebSocketSessionTests {
         #expect(await pair.closeCode() == 1002)
     }
 
-    /// The receive budget: three sessions each trickle a large message, 100 KiB of it so far, against a 250 KiB budget.
-    /// The third goes past it and is closed (1009); a small command on a fourth still passes; once the first has gone, a
-    /// new partial message fits again. On the old code nothing was counted.
+    /// The receive budget: three sessions each trickle a large message, 300 KiB of it so far (about 172 KiB beyond what a
+    /// session holds without counting), against a 400 KiB budget. The third goes past it and is closed (1009); a small
+    /// command on a fourth still passes; once the first has gone, a new partial message fits again. On the old code nothing
+    /// was counted.
     @Test(.offPool) func theReceiveBudgetRefusesTheSessionThatGoesPastIt() async throws {
-        let budget = WebSocketSession.ReceiveBudget(limit: 250 * 1024)
-        let partial = Array(Self.frame(.text, [UInt8](repeating: 0x61, count: 1 << 20)).prefix(100 * 1024))
+        let budget = WebSocketSession.ReceiveBudget(limit: 400 * 1024)
+        let partial = Array(Self.frame(.text, [UInt8](repeating: 0x61, count: 1 << 20)).prefix(300 * 1024))
+        let counted = partial.count - WebSocketSession.ReceiveBudget.free
         var pairs: [Pair] = []
         defer { for p in pairs { p.stop() } }
         for _ in 0..<5 {
@@ -237,7 +239,7 @@ struct WebSocketSessionTests {
         #expect(pairs[3].feed(Self.frame(.text, Array(#"{"t":"ping"}"#.utf8))), "a small message passes")
         #expect(!pairs[3].session.isClosed)
         pairs[0].stop()
-        #expect(await waitUntil { budget.held.load(ordering: .relaxed) <= 100 * 1024 + 16 })
+        #expect(await waitUntil { budget.held.load(ordering: .relaxed) == counted })
         #expect(pairs[4].feed(partial), "room again after the first session went")
     }
 
@@ -256,5 +258,20 @@ struct WebSocketSessionTests {
         try await op.greet("operator")
         #expect(op.feed(big))
         #expect(!op.session.isClosed)
+    }
+
+    /// Second review of B368: monitors never count against the budget, however many hold as much as they can (a 64 KiB
+    /// open fragment and a partial frame of another), so they cannot close a programmer's large edit. On the previous
+    /// head each holding above 64 KiB counted in full.
+    @Test(.offPool) func monitorsHoldingAllTheyMayCountNothing() async throws {
+        let budget = WebSocketSession.ReceiveBudget(limit: 1)
+        let pair = try await Pair.make(budget: budget)
+        defer { pair.stop() }
+        try await pair.greet("monitor")
+        let piece = [UInt8](repeating: 0x61, count: 32 * 1024)
+        let partial = Array(Self.frame(.continuation, fin: false, [UInt8](repeating: 0x61, count: 32 * 1024)).dropLast(1))
+        #expect(pair.feed(Self.frame(.text, fin: false, piece), Self.frame(.continuation, fin: false, piece), partial))
+        #expect(!pair.session.isClosed)
+        #expect(budget.held.load(ordering: .relaxed) == 0)
     }
 }

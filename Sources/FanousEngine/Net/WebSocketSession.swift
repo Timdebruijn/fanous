@@ -22,22 +22,25 @@ public final class WebSocketSession: @unchecked Sendable {
     /// a hand edit or by many small edits) cannot be changed from the Outputs screen any more (every `/slices` send closes the
     /// connection); bound the points in `ProjectDocument.validate` if such outputs turn up.
     public static let maxMessageBytes = 4 * 1024 * 1024
-    /// B368: a message of the monitor role, which needs no password: it sends `sub`, `snapshot` and `project.versions`
-    /// only. So only a role behind a password can make a message large enough to count against `ReceiveBudget`'s limit.
+    /// B368: a message of the monitor role, which needs no password: it sends `sub`, `unsub`, `snapshot`,
+    /// `project.versions` and a second `hello` only. So only a role behind a password holds more than
+    /// `ReceiveBudget.free`, the part that counts against the budget.
     public static let monitorBytes = 64 * 1024
     /// B368: a frame, and a message, before `hello` is accepted: the open monitor role costs nothing, so an unknown
     /// client holds 4 KiB, not a 16 MiB frame and a 16 MiB fragment. `hello` with a token is about 150 bytes.
     public static let preHelloBytes = 4096
 
-    /// B368: the bytes all sessions hold in partial frames and open fragments together. A session whose holding grows past
-    /// 64 KiB (one receive) while the sum is above `limit` is closed with 1009, so trickled large messages on many
-    /// connections cannot take the engine's memory, and small commands still pass.
+    /// B368: the bytes all sessions hold in partial frames and open fragments together, each beyond `free`. A session whose
+    /// holding grows while the sum is above `limit` is closed with 1009, so trickled large messages on many connections
+    /// cannot take the engine's memory, and small commands still pass.
     final class ReceiveBudget: Sendable {
         let limit: Int
         let held = Atomic<Int>(0)
         init(limit: Int) { self.limit = limit }
         static let shared = ReceiveBudget(limit: 64 * 1024 * 1024)
-        static let free = 64 * 1024
+        /// What a session holds without counting: the most a monitor can (an open fragment of a whole message and a
+        /// partial frame of another, with its header), so monitors never count, however many.
+        static let free = 2 * monitorBytes + 16
     }
 
     public let remoteAddress: String
@@ -48,7 +51,7 @@ public final class WebSocketSession: @unchecked Sendable {
     private let closed = Atomic<Bool>(false)
     private let ended = Atomic<Bool>(false)
     private var fragment: (opcode: WebSocketFrame.Opcode, payload: [UInt8])?
-    /// `maxMessageBytes`; a test passes a small one so it need not build 16 MB frames (B353).
+    /// `maxMessageBytes`; a test passes a small one so it need not build 4 MiB frames (B353).
     private let messageLimit: Int
     private let budget: ReceiveBudget
     /// Connection queue: what this session counts in `budget` (its partial frame and open fragment, after the last feed).
@@ -109,11 +112,12 @@ public final class WebSocketSession: @unchecked Sendable {
     /// Consumes every complete frame in `buffer`. Returns false once the connection is closing.
     func feed(_ buffer: inout [UInt8]) -> Bool {
         guard consume(&buffer) else { return false }
-        // B368: what stays (a partial frame, an open fragment) counts in the budget; growing past it closes the connection
-        let now = buffer.count + (fragment?.payload.count ?? 0)
+        // B368: what stays (a partial frame, an open fragment) beyond `free` counts in the budget; growing past it closes
+        // the connection
+        let now = max(0, buffer.count + (fragment?.payload.count ?? 0) - ReceiveBudget.free)
         let total = budget.held.wrappingAdd(now - held, ordering: .relaxed).newValue
         defer { held = now }
-        if now > held, now > ReceiveBudget.free, total > budget.limit {
+        if now > held, total > budget.limit {
             close(code: 1009, reason: "message too large")
             return false
         }
