@@ -28,11 +28,13 @@ enum SlaveClock {
     /// (clamped to the file), freewheel and lost advance it by the entry's rate, wrapping within the file like a loop.
     /// `offsetMs`: how far the entry's position is from where the slave's clock would have been without it (its
     /// previous position advanced by the entry's rate), i.e. the correction a locked tick applies; a whole-file jump
-    /// (the master looping) does not count.
+    /// (the master looping) does not count. `jumped`: a locked tick moved the clock by more than `jumpMillis` either
+    /// way (the master was retriggered, or the slave just locked on): the audio reseeks to the new clock instead of
+    /// nudging towards it (B395).
     static func follow(
         _ clock: inout LayerClock, entry: SyncPacket.Layer, age: Double, dt: Double, interval: Double, fps: Double,
         frameCount: Int
-    ) -> (state: State, offsetMs: Double) {
+    ) -> (state: State, offsetMs: Double, jumped: Bool) {
         let span = Double(max(1, frameCount))
         let predicted = clock.position + Double(entry.rate) * dt * fps / Double(entry.fps)
         let implied = implied(entry, age: age, fps: fps)
@@ -42,8 +44,13 @@ enum SlaveClock {
         clock.finished = entry.finished
         var offset = (implied - predicted).truncatingRemainder(dividingBy: span)
         if offset > span / 2 { offset -= span } else if offset < -span / 2 { offset += span }
-        return (state, offset * 1000 / fps)
+        let offsetMs = offset * 1000 / fps
+        return (state, offsetMs, state == .locked && abs(offsetMs) > jumpMillis)
     }
+
+    /// The audio's drift tolerance (`LayerAudioChannel.driftToleranceFrames`, 20 ms): a smaller correction is nudged
+    /// out by the render callback, a larger one is a jump the producer answers with a reseek.
+    static let jumpMillis = Double(LayerAudioChannel.driftToleranceFrames) * 1000 / Double(LayerAudioChannel.sampleRate)
 
     static func wrap(_ position: Double, _ span: Double) -> Double {
         let r = position.truncatingRemainder(dividingBy: span)

@@ -97,6 +97,34 @@ struct SlaveClockTests {
         #expect(clock.finished)
     }
 
+    /// B395: a locked tick that moves the clock by more than the audio's 20 ms tolerance is a jump (the master was
+    /// retriggered, or the slave just locked on); the slave's audio then reseeks like the master's. A smaller correction
+    /// is not, and a freewheeling tick and the master's loop wrap never are.
+    @Test func aLockedTickThatMovesTheClockPastTheToleranceIsAJump() {
+        var clock = LayerClock()
+        clock.position = 10
+        // 20 ms of dt at 50 fps: the slave would be at 11; the entry says 8.5, a jump back of 50 ms
+        let back = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 8.5), age: 0, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
+        #expect(back.jumped && abs(back.offsetMs + 50) < 1e-6)
+        // 10 ms off either way: nudged by the render callback, not a jump
+        let near = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 9), age: 0, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
+        #expect(!near.jumped && abs(near.offsetMs + 10) < 1e-6)
+        let forward = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 12.5), age: 0, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
+        #expect(forward.jumped && abs(forward.offsetMs - 50) < 1e-6)
+        // freewheeling: the clock is not set from the entry, so nothing jumps however far off it is
+        let stale = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 60), age: 0.5, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
+        #expect(stale.state == .freewheel && !stale.jumped)
+        // the master looped: from frame 99.5 to 0.5 is one frame on, not a jump
+        clock.position = 99.5
+        let wrap = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 0.5), age: 0, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
+        #expect(!wrap.jumped && abs(wrap.offsetMs) < 1e-6)
+    }
+
     @Test func offsetIsTheCorrectionALockedTickApplies() {
         var clock = LayerClock()
         clock.position = 10

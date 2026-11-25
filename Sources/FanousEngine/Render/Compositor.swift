@@ -739,6 +739,7 @@ public final class Compositor: @unchecked Sendable {
         // a slave file follows its group's master and ignores its own play mode, speed, in/out, chase and retrigger;
         // only the current file: a dissolve's outgoing picture keeps its own clock
         var master: SyncTable.Entry?
+        var slaveJumped = false  // the master was retriggered (or the slave just locked on): its audio reseeks (B395)
         if case .slave(let group) = p.sync, slot % 2 == 0, playback.frameCount > 1, playback.live == nil {
             master = syncTable.entries[group - 1]
             syncStatus.state = .noMaster  // no entry ever: its own clock, as if Sync were off
@@ -751,6 +752,7 @@ public final class Compositor: @unchecked Sendable {
                         frameCount: playback.frameCount)
                     state = follow.state
                     syncStatus.offsetMs = follow.offsetMs
+                    slaveJumped = follow.jumped
                 }
                 syncStatus.state = syncTable.conflict(group: group, now: ctx.now) == nil ? state : .conflict
                 syncStatus.master = master
@@ -797,7 +799,7 @@ public final class Compositor: @unchecked Sendable {
             {
                 loop = (Double(inFrame) / playback.frameRate, Double(outFrame + 1) / playback.frameRate)
             }
-            channel.setState(wantedPTS: playback.clock.position / max(1, playback.frameRate), active: active, volume: p.audioVolume * weight, pan: p.audioPan, loop: loop, jumped: retrigger && master == nil)
+            channel.setState(wantedPTS: playback.clock.position / max(1, playback.frameRate), active: active, volume: p.audioVolume * weight, pan: p.audioPan, loop: loop, jumped: (retrigger && master == nil) || slaveJumped)
         }
         guard let frameIndex else { return }  // once-then-black has finished
         let intensity = p.intensity * weight
