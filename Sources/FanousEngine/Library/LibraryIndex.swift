@@ -235,12 +235,12 @@ public final class LibraryIndex: @unchecked Sendable {
         guard let item = state.withLock({ s in s.snapshot.folders.lazy.flatMap(\.items).first { $0.path == url.path } }) else { return try body() }
         let key = Self.cacheKey(item)
         let marker = decodingDirectory.appending(path: "\(UUID().uuidString).json")
-        // the first-stop count is read once, as the probe's (B267): a later open of the file after a retry that came
-        // through starts from 0 again
+        // the first-stop count holds until a decode of the file comes through (removed below), as the probe's is used once
+        // (B267): decodes at the same time (two layers, a mask and a layer) all carry it, a later one starts from 0 again
         let stops = state.withLock { s -> Int? in
             guard !s.stopped else { return nil }
             s.decodeMarkers.insert(marker)
-            return s.decodeStops.removeValue(forKey: key) ?? 0
+            return s.decodeStops[key] ?? 0
         }
         guard let stops else { return try body() }  // after stop(): a stop of our own follows, no blame
         try? FileManager.default.createDirectory(at: decodingDirectory, withIntermediateDirectories: true)
@@ -248,7 +248,10 @@ public final class LibraryIndex: @unchecked Sendable {
         if state.withLock({ $0.stopped }) { try? FileManager.default.removeItem(at: marker) }  // stop()'s sweep ran before the write
         defer {
             try? FileManager.default.removeItem(at: marker)
-            _ = state.withLock { $0.decodeMarkers.remove(marker) }
+            state.withLock { s in
+                s.decodeMarkers.remove(marker)
+                s.decodeStops[key] = nil  // came through (or threw): the engine did not stop in it
+            }
         }
         return try body()
     }

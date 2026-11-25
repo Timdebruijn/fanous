@@ -543,6 +543,20 @@ struct LibraryIndexTests {
         #expect(index.decoding(first) { decodeMarkers(index) }.first?.stops == 0, "the open after the retry")
     }
 
+    /// Second review of B348: decodes of the file at the same time (two layers holding it, or a still that is a mask and
+    /// a layer) all carry the first stop, so the one that stops the engine marks it whichever began first; the next open
+    /// after they came through starts from 0.
+    @Test func decodesAtTheSameTimeAllCarryTheStopCount() throws {
+        let (root, cache, first, key) = try twoStills()
+        var index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        try leaveDecodeMarker(index, path: first, key: key, stops: 0)
+        index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.rescan()
+        let both = index.decoding(first) { index.decoding(first) { decodeMarkers(index) } }  // the second begins inside the first
+        #expect(both.map(\.stops) == [1, 1])
+        #expect(index.decoding(first) { decodeMarkers(index) }.first?.stops == 0)
+    }
+
     /// Review of B348: a decode that starts after `stop()` (the loader runs on until the process exits) writes no marker,
     /// which would outlive the exit as a false stop.
     @Test func aDecodeAfterStopWritesNoMarker() throws {
