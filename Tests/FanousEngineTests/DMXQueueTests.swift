@@ -77,7 +77,7 @@ struct DMXQueueTests {
         let snapshot = store.snapshot(at: 2)
         #expect(free.withLock { $0 } == [true])
         // the copy formats as before: every fixture, its policy, its UI values and the countdown (the desk is on)
-        #expect(snapshot.fixtures.count == 32 + 1 + 8 + 8)
+        #expect(snapshot.fixtures.count == 32 + 1 + 1 + 8 + 8)  // layers, master, timecode (B289), outputs, keystones
         #expect(snapshot.fixtures["Layer 1"]?.first { $0.key == "intensity" }?.source == "ui")
         #expect(snapshot.internalValues["Output 8"]?.isEmpty == false)
         #expect(snapshot.policies["Master"] == "ltp")
