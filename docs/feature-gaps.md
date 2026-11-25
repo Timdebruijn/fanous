@@ -21,22 +21,20 @@ repository.
 1. **The weak spot is the path into grandMA3 and Eos, not the effect count.**
    - The grandMA3 manual documents no CITP (protocol page 2.4/2.5; Pixera,
      Jan 2025: MA "has not yet committed"). MA publishes no complete protocol
-     list for grandMA3, so the manual cannot show that CITP is absent. What
-     the 2.5 help documents is Art-Net and sACN for DMX output, NDI as the
-     video stream source, and DC, MIDI, DMX, OSC, PSN, MVR-xchange and MSC
-     for remote input; CITP and MSEX are on none of those pages (§7).
-   - Eos has no CITP. ETC's Eos Family online help, "Control Protocols"
-     (footer: v3.3.10 User Manual RevA), lists ACN/E1.17, sACN/E1.31, Art-Net,
-     ETCNet2, ETC Net3 and Streaming Video (SRT and RTSP only); CITP is not
-     in it.
-   - Their live-preview path is NDI: MA3, and also MagicQ and Onyx. Titan
+     list for grandMA3, so the manual cannot show that CITP is absent; the
+     pages that were read are listed in §7.
+   - ETC's Eos Family online help page "Control Protocols" (footer: v3.3.10
+     User Manual RevA) lists ACN/E1.17, sACN/E1.31, Art-Net, ETCNet2, ETC Net3
+     and Streaming Video (SRT and RTSP only). CITP is not in it, so Eos has
+     none.
+   - For MA3 the live-preview path is NDI, and also for MagicQ and Onyx. Titan
      had NDI, and Avolites removed it in v19 (Dec 2025) *temporarily*, for a
      licence change; whether it is back is unverified (§2).
    - Eos takes an SRT or RTSP H.264 stream, but only from 3.3.5 (released
      20 Jan 2026). ETC removed Video Streams entirely in 3.3.0 because the
      licence terms of the underlying technology changed; 3.3.0 to 3.3.4 have
      no stream at all (ETC support articles, §8).
-   - Our CITP/MSEX therefore reaches only MA2, MagicQ, Hog 4, Onyx and Titan.
+   - Our CITP/MSEX therefore reaches, as far as documented, only MA2, MagicQ, Hog 4, Onyx and Titan.
    - NDI is designed as a closed plugin and deferred for its licence
      obligations (§4, B74). Until it lands, an MA3 programmer sees no
      Fanous picture on the desk.
@@ -142,7 +140,7 @@ priority for each row comes from §4.
 | # | Capability | Who has it | Fanous | Effort |
 |---|---|---|---|---|
 | G1 | Camera/capture input: UVC, and capture cards with a macOS driver | CN 5/5 · HE 5/6 · Mac 6/6 | `◐` UVC cameras and capture cards with a macOS driver are built as folder 0 files 1–20 (B73 step 2, PRs #116, #120); cards whose only path is a vendor SDK (DeckLink, AJA) are not | SDK-only cards: in-tree source or plugin, after a licence check (DESIGN §8.2.1) |
-| G2 | NDI in and out | CN 3/5 (Ai pulled it, temporarily per Avolites) · HE 6/6 in · Mac 6/6 in; **the live-preview path of MA3, MagicQ and Onyx** (Titan until v19) | `D`: closed plugin (ADR-0016), deferred for its licence (B74) | M, plus the plugin loader |
+| G2 | NDI in and out | CN 3/5 (Ai pulled it, temporarily per Avolites) · HE 6/6 in · Mac 6/6 in; **the live-preview path of MA3, MagicQ and Onyx** (Titan until v19; Avolites says temporary, return unverified) | `D`: closed plugin (ADR-0016), deferred for its licence (B74) | M, plus the plugin loader |
 | G3 | Screen/window capture: slides, presentation and lyrics apps | Millumin, VDMX, Isadora, Mitti | `◐` displays are built as folder 0 files 21–28 (B73 step 3, PRs #126, #127); windows (29–32) are not | S–M for windows, when a show asks (B73 step 4) |
 | G4 | Text layer: static and live text over OSC/API, countdown, SRT subtitles | CN 4/5 · HE 5/6 · Mac 5/6 | `◐` clock generator only | M: CoreText into a folder 0 generator; text set over OSC/WebSocket |
 | G5 | Transitions beyond crossfade: through black, fade-up-first, wipes, shader transitions | CN 4/5 (Hippotizer 3, Ai 38, Mbox ~66) · Resolume, Millumin | `◐` crossfade 0.1–25.5 s | S for through black and fade-up-first; M for a catalogue. Needs 1–2 reserved channels |
@@ -174,7 +172,7 @@ priority for each row comes from §4.
 |---|---|---|---|---|
 | G22 | Desk personalities beyond GDTF (MA2 XML, MagicQ head file, Avolites personality, Eos library request, Onyx), plus a test on a real desk. Eos's GDTF import does not create media or models (ETC support page) | CN 5/5 ship desk profiles or appear in MagicQ's patch presets | `◐` GDTF only, untested (B7, B40) | S each, plus owner time |
 | G23 | CITP compliance details. Titan Active Fixtures auto-patch from what the server reports. MagicQ needs layers on ascending DMX addresses with ascending head numbers. Whether to send the v1.0 `SInf` at accept, as the spec says, instead of after 2 s. | MA2, MagicQ, Hog, Onyx, Titan | `◐` MSEX 1.2, verified on loopback only (B40). Built: the v1.0 `SInf` fallback and 0-based contiguous library and element indexes, which also keep the 256 cap (B78, PRs #194, #198) | S |
-| G24 | Thumbnails for desks without CITP (MA3, Eos): export the library thumbnails as an image set named by folder and file, for the desk's image pool | none found (users build it by hand) | `—` | S; first check what MA3 and Eos can import |
+| G24 | Thumbnails for desks with no documented CITP (MA3, Eos): export the library thumbnails as an image set named by folder and file, for the desk's image pool | none found (users build it by hand) | `—` | S; first check what MA3 and Eos can import |
 | G25 | SRT/RTSP H.264 preview stream for Eos (3.3.5 and later; 3.3.0 to 3.3.4 have no video streams, ETC support articles, re-read 2026-11-25) | Eos side only | `◐` the H.264 encoder exists for the web preview | M |
 | G26 | Art-Net timecode in (`ArtTimeCode`, 0x9700) | Pixera, Kinetic; MagicQ sends it | `—` | S |
 | G27 | Timecode out, LTC generator | QLab, Millumin, VDMX, Pixera | `◐` `LTCEncoder` in Core, used by tests only; a generator with Art-Net, MTC and LTC out in the backlog (B138) | S–M |
