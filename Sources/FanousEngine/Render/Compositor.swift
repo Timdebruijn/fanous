@@ -834,9 +834,9 @@ public final class Compositor: @unchecked Sendable {
             return
         }
         // stale (B371): a movie queued with a frame other than the clock's (a ring still refilling after a start, seek or
-        // turn, a decoder behind the clock, a held frame). A movie's frame is always its `holdFrame`; its index as taken,
-        // not the slot's, which the decode thread may already have relabelled (B386). Stills and live inputs have no
-        // clock frame; a miss is counted above. Counted whether or not the canvas is consumed or assigned.
+        // turn, a decoder behind the clock, a held frame). A movie's frame is always its `holdFrame` (B371). Stills and
+        // live inputs have no clock frame; a miss is counted above. Counted whether or not the canvas is consumed or
+        // assigned.
         if playback.ring != nil, playback.holdFrameIndex != frameIndex { ctx.stale += 1 }
         // a live source changes every tick, except a static generator (drawn once) and the clock between its seconds: those
         // let the canvas be reused like a still (B56); `encodeGenerators` makes the same call when it draws

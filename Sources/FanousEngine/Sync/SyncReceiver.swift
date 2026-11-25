@@ -15,8 +15,10 @@ struct SyncTable: Sendable {
     struct Entry: Sendable, Equatable {
         var machine: UUID
         var clock: SyncPacket.Layer
-        /// CACurrentMediaTime of arrival (local clock only).
+        /// CACurrentMediaTime of arrival (local clock only): the kernel's receive time for a packet.
         var receivedAt: Double
+        /// The packet's tick; nil for a master on this machine.
+        var tick: UInt32? = nil
     }
     struct Conflict: Sendable, Equatable {
         var machine: UUID
@@ -28,20 +30,28 @@ struct SyncTable: Sendable {
     private(set) var conflicts = [Conflict?](repeating: nil, count: LayerSync.groups)
 
     /// The lowest machine id wins while its entry is fresh (younger than the freewheel time); the other machine is
-    /// recorded as the group's conflict. A stale entry is replaced by anyone.
-    mutating func offer(_ clock: SyncPacket.Layer, from machine: UUID, at now: Double) {
+    /// recorded as the group's conflict. A stale entry is replaced by anyone. From the same machine, a packet whose
+    /// `tick` is the fresh entry's or up to `reorderWindow` behind it is a duplicate or arrived out of order: dropped,
+    /// so it never replaces a newer clock (B317). A master that restarts (its ticks from 0) is further behind than that.
+    mutating func offer(_ clock: SyncPacket.Layer, from machine: UUID, tick: UInt32? = nil, at now: Double) {
         let g = Int(clock.group) - 1
         guard entries.indices.contains(g) else { return }
-        if let current = entries[g], current.machine != machine, now - current.receivedAt <= SlaveClock.freewheelSeconds
-        {
-            guard Self.precedes(machine, current.machine) else {
-                conflicts[g] = Conflict(machine: machine, at: now)
+        if let current = entries[g], now - current.receivedAt <= SlaveClock.freewheelSeconds {
+            if current.machine != machine {
+                guard Self.precedes(machine, current.machine) else {
+                    conflicts[g] = Conflict(machine: machine, at: now)
+                    return
+                }
+                conflicts[g] = Conflict(machine: current.machine, at: now)
+            } else if let tick, let last = current.tick, (0..<Self.reorderWindow).contains(Int32(bitPattern: last &- tick)) {
                 return
             }
-            conflicts[g] = Conflict(machine: current.machine, at: now)
         }
-        entries[g] = Entry(machine: machine, clock: clock, receivedAt: now)
+        entries[g] = Entry(machine: machine, clock: clock, receivedAt: now, tick: tick)
     }
+
+    /// Ticks: about a second at 240 Hz, far more than a LAN reorders.
+    static let reorderWindow: Int32 = 256
 
     /// A second master seen in `group` within the freewheel time.
     func conflict(group: Int, now: Double) -> UUID? {
@@ -70,7 +80,10 @@ final class SyncReceiver: @unchecked Sendable {
     let packetsIn = Atomic<Int>(0)
     let decodeErrors = Atomic<Int>(0)
     private let logger: Logger
-    private let queue = DispatchQueue(label: "org.fanous.sync")
+    /// The control plane's class, like `org.fanous.control` and `org.fanous.https` (B318): the handler decodes and
+    /// allocates, so it is not one of ADR-0002's `.userInteractive` hot paths, and its delay no longer reaches the clock
+    /// since the arrival time is the kernel's (B317).
+    let queue = DispatchQueue(label: "org.fanous.sync", qos: .userInitiated)
     /// Queue only.
     private var reader: DispatchSourceRead?
     private var lastErrorLog = -Double.infinity
@@ -85,6 +98,8 @@ final class SyncReceiver: @unchecked Sendable {
     @discardableResult
     func start(port: UInt16, loopbackOnly: Bool) throws -> UInt16 {
         let fd = try UDPSend.bound(port: port, address: loopbackOnly ? inet_addr("127.0.0.1") : INADDR_ANY)
+        var on: Int32 = 1  // each datagram carries the mach time the kernel queued it at (SCM_TIMESTAMP_MONOTONIC)
+        setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP_MONOTONIC, &on, socklen_t(MemoryLayout<Int32>.size))
         let port = UDPSend.localPort(fd) ?? port
         let reader = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
         reader.setEventHandler { [weak self] in self?.read(fd) }
@@ -116,10 +131,38 @@ final class SyncReceiver: @unchecked Sendable {
 
     private func read(_ fd: Int32) {
         var buffer = [UInt8](repeating: 0, count: 1500)
+        var control = [UInt8](repeating: 0, count: 64)
         for _ in 0..<256 {  // a flood cannot hold the queue: the source fires again
-            let count = recv(fd, &buffer, buffer.count, 0)
+            var stamp: UInt64 = 0
+            let count = Self.receive(fd, into: &buffer, control: &control, stamp: &stamp)
             guard count > 0 else { return }  // EAGAIN: drained
-            receive(Array(buffer[0..<count]), at: CACurrentMediaTime())
+            // the kernel's time, not this handler's: the queue's delay is not the master's (B317)
+            receive(Array(buffer[0..<count]), at: stamp > 0 ? Double(stamp) / PacedThread.ticksPerSecond : CACurrentMediaTime())
+        }
+    }
+
+    /// `recvmsg` with the datagram's SCM_TIMESTAMP_MONOTONIC (mach absolute time, CACurrentMediaTime's clock) in
+    /// `stamp`, left 0 when the kernel gave none.
+    private static func receive(_ fd: Int32, into buffer: inout [UInt8], control: inout [UInt8], stamp: inout UInt64) -> Int {
+        buffer.withUnsafeMutableBytes { data in
+            control.withUnsafeMutableBytes { control in
+                var iov = iovec(iov_base: data.baseAddress, iov_len: data.count)
+                return withUnsafeMutablePointer(to: &iov) { iov in
+                    var message = msghdr(
+                        msg_name: nil, msg_namelen: 0, msg_iov: iov, msg_iovlen: 1, msg_control: control.baseAddress,
+                        msg_controllen: socklen_t(control.count), msg_flags: 0)
+                    let count = recvmsg(fd, &message, 0)
+                    let header = MemoryLayout<cmsghdr>.size  // 12: CMSG_DATA's offset (4-byte alignment on Darwin)
+                    // the only control message: no other option asks for one
+                    if count > 0, Int(message.msg_controllen) >= header + 8 {
+                        let h = control.loadUnaligned(as: cmsghdr.self)
+                        if h.cmsg_level == SOL_SOCKET, h.cmsg_type == SCM_TIMESTAMP_MONOTONIC {
+                            stamp = control.loadUnaligned(fromByteOffset: header, as: UInt64.self)
+                        }
+                    }
+                    return count
+                }
+            }
         }
     }
 
@@ -139,7 +182,7 @@ final class SyncReceiver: @unchecked Sendable {
         packetsIn.wrappingAdd(1, ordering: .relaxed)
         guard !packet.layers.isEmpty else { return }  // keepalive
         table.withLock { table in
-            for clock in packet.layers { table.offer(clock, from: packet.machineID, at: now) }
+            for clock in packet.layers { table.offer(clock, from: packet.machineID, tick: packet.tick, at: now) }
         }
     }
 }
