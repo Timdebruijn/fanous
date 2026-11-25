@@ -249,7 +249,12 @@ public final class LayerPlayback: @unchecked Sendable {
         func behind(_ f: Int) -> Int { direction > 0 ? (index - f + n) % n : (f - index + n) % n }
         while ring.count > 1, let head = ring.peek(0), let next = ring.peek(1) {
             if head.frameIndex == previousShown || head.frameIndex == currentShown { break }
-            if behind(next.frameIndex) <= behind(head.frameIndex) {
+            // the next frame is as close or closer, or the head is behind the clock: after a bounce's turn the old leg's last
+            // frames sit in front of the new leg's (B293). A frame ahead reads as `count - k` behind, so the second test is
+            // sure only for clips longer than `2 * capacity + 2` frames; a shorter clip may pop a head that was ahead, which
+            // costs a decode, not a stale tick
+            let b = behind(head.frameIndex)
+            if behind(next.frameIndex) <= b || (b > 0 && b <= ring.capacity + 1) {
                 ring.pop()
                 freed = true
             } else {
@@ -262,11 +267,15 @@ public final class LayerPlayback: @unchecked Sendable {
             guard let f = ring.peek(i) else { break }
             if best == nil || behind(f.frameIndex) < behind(best!.frameIndex) { best = f }
         }
-        guard let best, behind(best.frameIndex) < ring.capacity + 2 else {
+        // a drain: everything buffered is on the wrong side of a seek, or the ring is full without the clock's frame (B293: a
+        // turn or a mode switch the decoder did not make, a short range the ring holds twice over, so that every head is a
+        // shown index the pop loop keeps); the thread has no slot and cannot improve it, so hold the picture (B386's own
+        // frame) and let the thread restart at the request now instead of `capacity + 2` frames later
+        guard let best, behind(best.frameIndex) < ring.capacity + 2, behind(best.frameIndex) == 0 || ring.count < ring.capacity else {
             if holdFrame == nil, let best { (holdFrame, holdFrameIndex) = (best, best.frameIndex) }  // never shown (held invisible): better a stale picture than none until the seek lands
             if let holdFrame, holdFrame !== held { held.exchange(with: holdFrame); self.holdFrame = held }  // the slot is freed below (B386)
             freed = true
-            ring.drain()  // everything buffered is on the wrong side of a seek
+            ring.drain()
             return holdFrame
         }
         if best.frameIndex != currentShown {

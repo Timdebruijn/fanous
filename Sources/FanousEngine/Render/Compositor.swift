@@ -696,7 +696,8 @@ public final class Compositor: @unchecked Sendable {
                 } else if p.playMode == .timecode, let chased = chasePosition(incoming, layer: layer.index, inFrame: inFrame, outFrame: outFrame, at: target) {
                     incoming.clock.position = chased
                 }
-                incoming.decoder?.request(frame: incoming.clock.frame(lo: 0, hi: last), direction: direction)
+                let ranged = !incoming.following && p.playMode != .timecode && (p.playMode == .loopForward || p.playMode == .loopReverse || p.playMode == .bounce) && outFrame > inFrame
+                incoming.decoder?.request(frame: incoming.clock.frame(lo: 0, hi: last), direction: direction, loop: ranged ? inFrame...outFrame : nil, bounce: p.playMode == .bounce)
                 layer.staged = incoming
             } else {
                 layer.staged = nil
@@ -839,7 +840,10 @@ public final class Compositor: @unchecked Sendable {
         let visible = intensity * ctx.masterIntensity > 0
         // invisible for a while: the ring and the last frame stay, the clock keeps running, decoding resumes when visible
         guard playback.hold.allowsRequests(visible: visible, at: ctx.target) else { return }
-        playback.decoder?.request(frame: frameIndex, direction: direction)
+        // a loop's or bounce's frames, so the decoder reads across the wrap or turns at the ends itself and the ring never
+        // holds a frame past the range (B293)
+        let ranged = master == nil && (p.playMode == .loopForward || p.playMode == .loopReverse || p.playMode == .bounce) && outFrame > inFrame
+        playback.decoder?.request(frame: frameIndex, direction: direction, loop: ranged ? inFrame...outFrame : nil, bounce: p.playMode == .bounce)
         guard visible else { return }
         guard let frame = playback.frame(at: frameIndex, direction: direction), frame.texture0 != nil else {
             ctx.misses += 1
