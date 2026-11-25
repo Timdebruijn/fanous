@@ -3726,9 +3726,10 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   re-snapshots `live`). `project` patches are never dropped: a client that
   cannot keep up is disconnected and reconnects.
 - Subscriptions bound bandwidth: a client only receives DMX monitor data for
-  the universe it is looking at, and preview streams it asked for. Max 4
-  clients with a video preview (tier setting); the fifth gets a JPEG preview
-  at 5 fps and a note.
+  the universe it is looking at (at most 16 DMX streams per connection: the
+  next `sub` gets `{"t":"error","code":"tooManyStreams",…}`, B285), and preview
+  streams it asked for. Max 4 clients with a video preview (tier setting); the
+  fifth gets a JPEG preview at 5 fps and a note.
 - Multiple clients see the same `rev`; last command wins; a client that
   issued a command sees its own ack and the same patch everyone else gets.
 - Show lock is a `project` flag: while set, every command tagged
@@ -4700,8 +4701,10 @@ interface selectable. Address space generated from `ParameterSpec`:
 ```
 
 Bundles with timetags are honoured (scheduled on the DMX queue). Parameter
-messages are applied on the DMX queue; cue, show and timecode commands are
-handed from there to the engine's command queue (B198, `Engine.handOver`), the
+messages are applied on the DMX queue, and one that leaves the resolved value
+as it was publishes nothing (B285: a 64 KiB bundle of one message cost about
+4000 publishes of 0.12 ms each at the limits); cue, show and timecode commands
+are handed from there to the engine's command queue (B198, `Engine.handOver`), the
 same serial queue as MIDI's cue actions, and run there one at a time in arrival
 order (arrival = the order the DMX queue takes the datagrams in: not kept when
 two UDP flows start at the same moment, where a few datagrams of one flow were
