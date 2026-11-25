@@ -12,7 +12,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
-  no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #NNN)
+  no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)
 - Docs: the owner's four decisions on the 3D pixel-mapping note (`docs/pixelmap-3d.md` §6, row B407): z up with
   the up axis a project setting, CSV and OPC import both, the height map on its own canvas, order atlas, kinetic,
   project (PR #483)
