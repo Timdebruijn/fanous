@@ -133,9 +133,9 @@ kernel cannot take at once is dropped and counted, never waited for. A blocking
 SIGTERM did not exit. Network.framework sends are asynchronous already; their
 completion handlers must not block the queue they run on.
 
-## Amendment 2026-11-25 (B286): a GO does not wait for Control
+## Amendment 2026-11-25 (B285, B286): readers off the DMX queue, a GO off Control
 
-Control stays the one serial queue for the project model and the commands that
+**B286, Control.** Control stays the one serial queue for the project model and the commands that
 change it. Work that grows with the project and changes nothing leaves it: a
 welcome or snapshot copies the documents there and is redacted and encoded off
 it, one at a time on a serial `.utility` queue, so 20 clients joining take one
