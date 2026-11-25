@@ -11,7 +11,7 @@ import Synchronization
 /// and restarts from the requested index on a seek. It decodes nothing before
 /// the first request (B294): the first frame in the ring is the one the
 /// compositor's hand-off asks for (the in point, or the out point in a reverse
-/// mode; a chased or slave layer's first request is the in point too, B404),
+/// mode; a slave's master position and direction, a chase's frame, B404),
 /// not frame 0.
 public final class LayerDecoder: @unchecked Sendable {
     public let ring: FrameRing
