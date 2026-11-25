@@ -685,6 +685,7 @@ public final class Compositor: @unchecked Sendable {
                         &incoming.clock, entry: master.clock, age: now - master.receivedAt, dt: 0, interval: 1 / fps, fps: incoming.frameRate,
                         frameCount: incoming.frameCount)
                     direction = incoming.clock.direction < 0 ? -1 : 1
+                    incoming.following = true  // the master's direction and end: a swap tick without a master resets them
                 } else if p.playMode == .timecode, let chased = chasePosition(incoming, layer: layer.index, inFrame: inFrame, outFrame: outFrame, at: target) {
                     incoming.clock.position = chased
                 }
