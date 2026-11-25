@@ -411,4 +411,34 @@ import Testing
         #expect(playback.scratch != nil && !playback.scratchLevels.isEmpty, "the compositor did not adopt the scratch set")
         #expect(layers[0].pendingScratch.withLock { $0 == nil }, "the answer was not taken")
     }
+
+    /// B402: the playback was retired between its scratch request and the loader's answer (the loader stops its retired
+    /// copy first, then answers). The box then held the playback's last reference and the compositor dropped it, running
+    /// its deinit and the textures' release on the render thread. Now the compositor adopts the answer and hands the
+    /// playback back to the loader, which stops it once more (a no-op) and releases it on its own thread.
+    @Test func aScratchAnswerForARetiredPlaybackGoesBackToTheLoader() async throws {
+        let (loader, layers) = try Self.loader(layers: 1, opens: nil)
+        let context = try MetalContext()
+        let (compositor, _) = try makeCompositor(context, size: (64, 36))
+        compositor.setLayers(layers)
+        let retired = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: DecodedFrame(poolIndex: 0))
+        let current = LayerPlayback(key: MediaKey(folder: 1, file: 2), still: DecodedFrame(poolIndex: 0))
+        layers[0].current = retired
+        loader.start()
+        defer { loader.stop() }
+        layers[0].scratchRequest.withLock { $0 = retired }
+        // a cut lands before the loader's pass: the compositor retires the asking playback
+        layers[0].current = current
+        layers[0].retired.withLock { $0.append(retired) }
+        loader.wake.signal()
+        #expect(await waitUntil { layers[0].pendingScratch.withLock { $0.map { $0.playback === retired && $0.answer != nil } ?? false } })
+        #expect(layers[0].retired.withLock { $0.isEmpty }, "the loader stopped and let go of its retired copy before answering")
+        compositor.tick(target: 3600, drawable: nil)
+        #expect(layers[0].pendingScratch.withLock { $0 == nil })
+        #expect(retired.scratch != nil, "the answer's textures belong to the playback, not to the render thread")
+        #expect(layers[0].retired.withLock { $0.contains { $0 === retired } }, "the retired playback was not handed back to the loader")
+        #expect(current.scratch == nil)
+        loader.wake.signal()
+        #expect(await waitUntil { layers[0].retired.withLock { $0.isEmpty } }, "the loader did not take the playback back")
+    }
 }

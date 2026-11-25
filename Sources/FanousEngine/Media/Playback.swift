@@ -274,7 +274,12 @@ public final class LayerPlayback: @unchecked Sendable {
         channel.setState(wantedPTS: 0, active: false, volume: 0, pan: 0)
     }
 
+    /// Loader thread only. Once: a playback the compositor hands back after its retire (B402) is in the loader's list twice.
+    private var stopped = false
+
     public func stop() {
+        guard !stopped else { return }  // a live input counts its users: a second stop would count one too many
+        stopped = true
         releaseAudio()
         decoder?.stop()
         live?.stop()
