@@ -358,7 +358,7 @@ public final class StateStore: @unchecked Sendable {
         let id = ObjectIdentifier(client)
         let copied = queue.sync {
             setup()
-            if clients[id]?.held == nil { clients[id]?.held = [] }
+            clients[id]?.held = []  // one send at a time per client: all of them run on its connection's queue
             return (revision, projectDocument, liveDocument)
         }
         whileWelcoming?()
