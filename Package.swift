@@ -9,7 +9,7 @@ let package = Package(
     name: "Fanous",
     platforms: [.macOS(.v15)],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-log.git", exact: "1.17.0"),
+        .package(url: "https://github.com/apple/swift-log.git", exact: "1.17.2"),
     ],
     targets: [
         // Pure Swift, Foundation only. Enforced by scripts/core-purity.sh.

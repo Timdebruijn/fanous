@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Dependencies: swift-log 1.17.2 (two patches: `MultiplexLogHandler.metadataProvider`'s setter replaces the
+  initializer's provider, raw-identifier module names in `Logger.currentModule`; neither is used here) (PR #NNN).
 - Playback: a scratch texture answered for a playback that was retired meanwhile goes back to the loader (B402). The
   compositor dropped the answer box's reference on the render thread, which could be the playback's last: its deinit
   and the textures' release then ran there. The playback now adopts the answer and is handed back to the loader, which
