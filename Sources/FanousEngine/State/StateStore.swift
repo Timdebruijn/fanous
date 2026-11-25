@@ -331,28 +331,40 @@ public final class StateStore: @unchecked Sendable {
     public func welcome(role: Role, caps: JSONValue) -> String { Self.welcomeMessage(documents, role: role, caps: caps) }
 
     /// Makes `client` a member at `role` and sends its welcome before any broadcast (built for the new role) reaches it.
-    /// B286: the welcome is redacted and encoded off the queue, from the documents as they were when the client became a
-    /// member; the patches broadcast meanwhile are held and go out after it, in order.
     public func admit(_ client: StateClient, role: Role, caps: JSONValue, setRole: () -> Void) {
+        send(to: client, setup: {
+            setRole()
+            let id = ObjectIdentifier(client)
+            if clients[id] == nil { clients[id] = Client(client: client, held: nil) }
+        }) { Self.welcomeMessage($0, role: role, caps: caps) }
+    }
+
+    /// A client's `snapshot` request (a gap, or lagging): clears its lagging flag and sends the snapshot before any
+    /// patch with a later revision.
+    public func resnapshot(_ client: StateClient, role: Role) {
+        send(to: client, setup: { clients[ObjectIdentifier(client)]?.lagging = false }) { Self.snapshotMessage($0, role: role) }
+    }
+
+    /// B286: a welcome or snapshot is redacted and encoded off the control queue, from the documents copied in the turn
+    /// that `setup` runs in; a member's patches broadcast meanwhile are held and go out after it, in order.
+    private func send(to client: StateClient, setup: () -> Void, make: ((UInt64, JSONValue, JSONValue)) -> String) {
         let id = ObjectIdentifier(client)
         let copied = queue.sync {
-            setRole()
-            var entry = clients[id] ?? Client(client: client, held: nil)
-            entry.held = entry.held ?? []
-            clients[id] = entry
+            setup()
+            if clients[id]?.held == nil { clients[id]?.held = [] }
             return (revision, projectDocument, liveDocument)
         }
         whileWelcoming?()
-        let text = Self.welcomeMessage(copied, role: role, caps: caps)
+        let text = make(copied)
         queue.sync {
-            guard let held = clients[id]?.held else { return }  // gone meanwhile
+            let held = clients[id]?.held
             clients[id]?.held = nil
-            _ = client.send(text: text, droppable: false)
-            for message in held { deliver(message.text, droppable: message.droppable, to: id) }
+            _ = client.send(text: text, droppable: false)  // also to a client detached meanwhile: its session is closed
+            for message in held ?? [] { deliver(message.text, droppable: message.droppable, to: id) }
         }
     }
 
-    /// Test hook: called by `admit` between the copy and the welcome's encoding.
+    /// Test hook: called between the copy and the encoding of a welcome or snapshot.
     nonisolated(unsafe) var whileWelcoming: (@Sendable () -> Void)?
 
     /// The revision and both documents, copied on the queue (shared storage: no copy of the documents).
@@ -366,15 +378,14 @@ public final class StateStore: @unchecked Sendable {
         return JSONValue.encodeCompact(.object(message))
     }
 
-    /// Redacted and encoded off the queue (B286).
-    public func snapshot(role: Role) -> String {
-        var message = Self.snapshotObject(documents, role: role)
+    private static func snapshotMessage(_ documents: (UInt64, JSONValue, JSONValue), role: Role) -> String {
+        var message = snapshotObject(documents, role: role)
         message["t"] = "snapshot"
-        return encode(.object(message))
+        return JSONValue.encodeCompact(.object(message))
     }
 
-    /// Clears the lagging flag once a client re-snapshotted.
-    public func clearLagging(_ client: StateClient) { queue.sync { clients[ObjectIdentifier(client)]?.lagging = false } }
+    /// The snapshot text for `role` (tests); a client's request goes through `resnapshot`.
+    public func snapshot(role: Role) -> String { Self.snapshotMessage(documents, role: role) }
 
     /// One patch message per role present (Redaction): a redacted patch may be empty but still goes out, keeping the revision chain.
     private func broadcast(doc: String, patch: JSONPatch, droppable: Bool) {

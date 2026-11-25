@@ -113,21 +113,71 @@ struct ControlQueueTests {
         #expect(client.patches.count == 2, "patches after the welcome go out at once")
     }
 
-    /// A GO from OSC or MIDI after a `cue.add` was acknowledged sees the cue: the add hands the new list to the cue runner's
-    /// queue while it commits (Engine.projectChanged → CueRunner.replace), before the ack; the unqueued GO goes onto the same
-    /// queue after it. Modelled here with one serial queue for the runner.
-    @Test func aGoAfterACueAddSeesTheCue() throws {
-        let runner = DispatchQueue(label: "test.cues")
-        let order = Mutex<[String]>([])
-        let store = try Self.bigStore { runner.async { order.withLock { $0.append("go") } } }
-        store.onProjectChanged = { document in
-            let count = document["cues"]?.array?.count ?? 0
-            runner.async { order.withLock { $0.append("list \(count)") } }
+    /// Records the type and revision of every message.
+    final class RevisionClient: StateClient, Sendable {
+        let role: Role = .programmer
+        let seen = Mutex<[(type: String, rev: Int)]>([])
+        func send(text: String, droppable: Bool) -> Bool {
+            let message = try? JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
+            seen.withLock { $0.append((message?["t"]?.string ?? "", message?["rev"]?.int ?? -1)) }
+            return true
         }
-        _ = try store.execute("cue.add", args: ["number": 501, "name": "Last"], role: .programmer).get()
-        _ = try store.executeUnqueued("cue.go", role: .operator).get()
-        runner.sync {}
-        #expect(order.withLock { $0 } == ["list 501", "go"])
+        func disconnect(reason: String) {}
+    }
+
+    /// A member's `snapshot` request while live patches flow (a console running): no patch with a later revision goes out
+    /// before the snapshot, and the first patch after it has the next revision. Otherwise the web client, which ignores
+    /// patches until the snapshot, sees a gap and asks again, for good. On the previous head (copy, then encode while still
+    /// a member) 5 of 5 snapshots were overtaken.
+    @Test(.offPool) func aSnapshotIsNotOvertakenByPatches() throws {
+        let store = try Self.bigStore()
+        let client = RevisionClient()
+        store.admit(client, role: .programmer, caps: [:]) {}
+        let stop = Atomic<Bool>(false), stopped = DispatchSemaphore(value: 0)
+        Thread {
+            var n = 0.0
+            while !stop.load(ordering: .relaxed) {
+                store.setLive(.number(n), at: "/tick")
+                n += 1
+                usleep(5000)
+            }
+            stopped.signal()
+        }.start()
+        for _ in 0..<5 { store.resnapshot(client, role: .programmer) }
+        stop.store(true, ordering: .relaxed)
+        stopped.wait()
+        let seen = client.seen.withLock { $0 }
+        let snapshots = seen.indices.filter { seen[$0].type == "snapshot" }
+        #expect(snapshots.count == 5)
+        for i in snapshots {
+            let rev = seen[i].rev
+            #expect(seen[..<i].allSatisfy { $0.rev <= rev }, "a later revision went out before the snapshot at \(rev)")
+            if i + 1 < seen.count, seen[i + 1].type == "patch" { #expect(seen[i + 1].rev == rev + 1) }
+        }
+    }
+
+    /// A second `admit` of a member (a second hello) keeps one membership and sends a second welcome; later patches go
+    /// out once.
+    @Test func aSecondAdmitKeepsOneMembership() throws {
+        let (store, _) = testStore()
+        let client = RecordingClient(role: .programmer)
+        store.admit(client, role: client.role, caps: [:]) {}
+        store.admit(client, role: client.role, caps: [:]) {}
+        #expect(store.clientCount == 1)
+        _ = try store.execute("project.set", args: ["path": "/name", "value": "Tour"], role: .programmer).get()
+        #expect(client.messages.withLock { $0 }.map { $0["t"]?.string } == ["welcome", "welcome", "patch"])
+    }
+
+    /// A client that leaves between the copy and the welcome's send is not made a member again, and hears nothing more.
+    @Test func aClientThatLeavesDuringItsWelcomeStaysGone() throws {
+        let (store, _) = testStore()
+        let client = RecordingClient(role: .programmer)
+        store.whileWelcoming = { store.detach(client) }
+        store.admit(client, role: client.role, caps: [:]) {}
+        store.whileWelcoming = nil
+        #expect(store.clientCount == 0)
+        _ = try store.execute("project.set", args: ["path": "/name", "value": "Tour"], role: .programmer).get()
+        #expect(client.patches.isEmpty)
     }
 
     /// Only commands marked `unqueued` skip the queue; any other goes through `execute`, with its checks.

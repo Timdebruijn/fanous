@@ -155,8 +155,7 @@ public final class StateServer: @unchecked Sendable {
                     }
                 reply(ack, on: session)
             case "snapshot":
-                server.store.clearLagging(self)
-                session.send(text: server.store.snapshot(role: role), droppable: false)
+                server.store.resnapshot(self, role: role)
             case "sub":
                 switch message["stream"]?.string {
                 case "dmx":
