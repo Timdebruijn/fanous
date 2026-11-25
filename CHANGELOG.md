@@ -14,7 +14,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   builders move to the tests, `ArtNet.parse` returns nil for every opcode but ArtPoll and ArtDmx,
   `Patch.collisions()` and parameters nobody passes go, `GDTFExporter` lists shared attributes once;
   `bundle.sh` drops `CONFIG`, `WEB_BUILD` and the unread entitlements copy. Wire formats and the GDTF file are
-  byte-identical (PR #N).
+  byte-identical (PR #448).
 - Sync: a slave's audio reseeks when its master is retriggered (B395). The slave's clock followed the jump at
   once, but its audio was nudged towards the new clock 2 ms per callback (a jump of 20 to 100 ms; under 20 ms
   the lead stayed) instead of reseeked like the master's own. A locked tick that moves the clock by more than
