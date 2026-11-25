@@ -18,7 +18,13 @@ public final class WebSocketSession: @unchecked Sendable {
     /// list (the Outputs screen sends `/slices` when a slice is added or removed): 16 slices with two freehand masks of
     /// 1500 points each encode to about 2.3 MB; a typical freehand stroke is a few hundred points after the 2 px
     /// simplification. Was 16 MiB.
+    /// ponytail: nothing in the output model bounds mask points, so an output whose slice list encodes above 4 MiB (stored by
+    /// a hand edit or by many small edits) cannot be changed from the Outputs screen any more (every `/slices` send closes the
+    /// connection); bound the points in `ProjectDocument.validate` if such outputs turn up.
     public static let maxMessageBytes = 4 * 1024 * 1024
+    /// B368: a message of the monitor role, which needs no password: it sends `sub`, `snapshot` and `project.versions`
+    /// only. So only a role behind a password can make a message large enough to count against `ReceiveBudget`'s limit.
+    public static let monitorBytes = 64 * 1024
     /// B368: a frame, and a message, before `hello` is accepted: the open monitor role costs nothing, so an unknown
     /// client holds 4 KiB, not a 16 MiB frame and a 16 MiB fragment. `hello` with a token is about 150 bytes.
     public static let preHelloBytes = 4096
@@ -114,9 +120,15 @@ public final class WebSocketSession: @unchecked Sendable {
         return true
     }
 
+    /// B368: a frame's and a message's limit: 4 KiB before `hello`, 64 KiB for the monitor role, `messageLimit` above it.
+    private var limit: Int {
+        guard handler.isAuthenticated else { return Self.preHelloBytes }
+        return handler.role >= .operator ? messageLimit : min(messageLimit, Self.monitorBytes)
+    }
+
     private func consume(_ buffer: inout [UInt8]) -> Bool {
         while !buffer.isEmpty {
-            let limit = handler.isAuthenticated ? messageLimit : Self.preHelloBytes  // B368
+            let limit = self.limit  // read per frame: hello may be granted by an earlier frame of this buffer
             let parsed: (frame: WebSocketFrame, length: Int)?
             do {
                 parsed = try WebSocketFrame.parse(buffer, maxPayload: limit)
@@ -151,7 +163,7 @@ public final class WebSocketSession: @unchecked Sendable {
                     return false
                 }
                 current.payload.append(contentsOf: frame.payload)
-                guard current.payload.count <= (handler.isAuthenticated ? messageLimit : Self.preHelloBytes) else {
+                guard current.payload.count <= limit else {
                     close(code: 1009, reason: "message too large")
                     return false
                 }

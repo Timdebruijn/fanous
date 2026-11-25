@@ -176,8 +176,10 @@ also in a script that only sends.
 
 Other close codes: 1002 protocol error or wrong schema (also a frame over
 the size limit), 1007 invalid text, 1009 message too large, 4401 auth
-required. A frame or message may be 4 KiB before `hello` is accepted and
-4 MiB after it; the engine also closes a connection with 1009 when all
+required. A frame or message may be 4 KiB before `hello` is accepted, 64 KiB
+for the monitor role and 4 MiB for the operator and programmer roles (an
+output's whole slice list with its masks, as the Outputs screen sends it,
+must stay below that); the engine also closes a connection with 1009 when all
 connections together hold more than 64 MiB of unfinished messages and this
 one's grows past 64 KiB. Error codes in an
 `ack`: `unknownCommand`, `forbidden` (the role is below the command's),

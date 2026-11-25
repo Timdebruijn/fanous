@@ -105,9 +105,10 @@ struct WebSocketSessionTests {
             return pair
         }
 
-        /// Sends `hello` and waits for the welcome: the session is past the pre-hello limit (B368).
-        func greet() async throws {
-            feed(WebSocketSessionTests.frame(.text, WebSocketSessionTests.hello))
+        /// Sends `hello` for `role` and waits for the welcome: the session is past the pre-hello limit (B368). No password
+        /// is set here, so every role is granted.
+        func greet(_ role: String = "monitor") async throws {
+            feed(WebSocketSessionTests.frame(.text, Array(#"{"t":"hello","clientId":"a","schema":1,"role":"\#(role)"}"#.utf8)))
             try #require(await waitUntil { texts().contains { $0["t"]?.string == "welcome" } })
         }
 
@@ -172,7 +173,7 @@ struct WebSocketSessionTests {
         let limit = 64 * 1024
         let pair = try await Pair.make(messageLimit: limit)
         defer { pair.stop() }
-        try await pair.greet()  // before hello the limit is 4 KiB (B368)
+        try await pair.greet("operator")  // before hello the limit is 4 KiB, for the monitor 64 KiB (B368)
         let half = [UInt8](repeating: 0x61, count: limit / 2)
         #expect(!pair.feed(Self.frame(.text, fin: false, half), Self.frame(.continuation, fin: false, half), Self.frame(.continuation, [0x61])))
         #expect(await pair.closeCode() == 1009)
@@ -210,7 +211,7 @@ struct WebSocketSessionTests {
         let limit = 64 * 1024
         let pair = try await Pair.make(messageLimit: limit)
         defer { pair.stop() }
-        try await pair.greet()
+        try await pair.greet("operator")
         let header = Array(Self.frame(.text, [UInt8](repeating: 0x61, count: limit + 1)).prefix(14))  // 127, 8-byte length, key
         #expect(!pair.feed(header))
         #expect(await pair.closeCode() == 1002)
@@ -226,7 +227,7 @@ struct WebSocketSessionTests {
         defer { for p in pairs { p.stop() } }
         for _ in 0..<5 {
             let pair = try await Pair.make(budget: budget)
-            try await pair.greet()
+            try await pair.greet("programmer")
             pairs.append(pair)
         }
         #expect(pairs[0].feed(partial))
@@ -238,5 +239,22 @@ struct WebSocketSessionTests {
         pairs[0].stop()
         #expect(await waitUntil { budget.held.load(ordering: .relaxed) <= 100 * 1024 + 16 })
         #expect(pairs[4].feed(partial), "room again after the first session went")
+    }
+
+    /// B368 review: the monitor role needs no password, so its messages are held to 64 KiB and it cannot fill the shared
+    /// receive budget with trickled 4 MiB frames; a role behind a password keeps the 4 MiB. On the previous head a monitor
+    /// could send 4 MiB.
+    @Test func aMonitorMessageAbove64KiBIsRefusedAndAnOperatorsIsNot() async throws {
+        let big = Self.frame(.text, [UInt8](repeating: 0x61, count: 65 * 1024))
+        let monitor = try await Pair.make()
+        defer { monitor.stop() }
+        try await monitor.greet("monitor")
+        #expect(!monitor.feed(big))
+        #expect(await monitor.closeCode() == 1002)
+        let op = try await Pair.make()
+        defer { op.stop() }
+        try await op.greet("operator")
+        #expect(op.feed(big))
+        #expect(!op.session.isClosed)
     }
 }

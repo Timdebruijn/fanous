@@ -10,7 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Network: a WebSocket frame or message may be 4 KiB before `hello` and 4 MiB after it (was 16 MiB), all connections
+- Network: a WebSocket frame or message may be 4 KiB before `hello`, 64 KiB for the monitor role and 4 MiB for the
+  roles behind a password (was 16 MiB), all connections
   together hold at most 64 MiB of unfinished messages, and a CITP message may be 1 MiB (was 16 MiB) (B368) (PR #484).
 - Docs: the owner's four decisions on the 3D pixel-mapping note (`docs/pixelmap-3d.md` §6, row B407): z up with
   the up axis a project setting, CSV and OPC import both, the height map on its own canvas, order atlas, kinetic,
