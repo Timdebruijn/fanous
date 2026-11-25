@@ -198,7 +198,7 @@ describe('parseTrigger', () => {
 
 describe('currentTrigger', () => {
   it('spells the timecode showing now as a trigger in the engine rate spelling, and nothing while off', () => {
-    expect(currentTrigger({ state: 'locked', value: '01:00:12:05', rate: '29.97 DF' })).toBe('01:00:12:05@29.97 DF');
+    expect(currentTrigger({ state: 'locked', value: '01:00:12;05', rate: '29.97 DF' })).toBe('01:00:12:05@29.97 DF');
     expect(currentTrigger({ state: 'freewheel', value: '01:00:12:05', rate: '25' })).toBe('01:00:12:05@25');
     expect(currentTrigger({ state: 'off', value: '--:--:--:--', rate: '25' })).toBeNull();
     expect(currentTrigger({ state: 'locked', value: '01:00:12:05', rate: '' })).toBeNull();
