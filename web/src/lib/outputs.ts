@@ -380,6 +380,10 @@ export function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
 }
 
+export function clampPoint(p: MapPoint): MapPoint {
+  return { x: clamp01(p.x), y: clamp01(p.y) };
+}
+
 /** Pixel size of an output: its region, else its display's size, else 1920×1080. */
 export function outputSize(output: OutputConfig, displays: DisplayDoc[]): { w: number; h: number } {
   if (output.region) return { w: output.region.w, h: output.region.h };

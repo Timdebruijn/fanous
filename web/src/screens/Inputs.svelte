@@ -6,7 +6,7 @@
   // Media's folder 0 stays the picker; the timecode settings stay on Show, "Use for timecode" is a second way to them.
   import LevelMeter from '../components/LevelMeter.svelte';
   import type { AudioInputDoc } from '../lib/docs';
-  import { ZERO_RANGES, folderZeroItems, layersShowing, renumberEffect, signalText, zeroCaption, zeroGroups, type FolderZeroItem } from '../lib/layers';
+  import { ZERO_RANGES, folderZeroItems, layersShowing, renumberEffect, signalText, zeroCaption, zeroDot, zeroGroups, type FolderZeroItem } from '../lib/layers';
   import { go, route } from '../lib/router.svelte';
   import { ltcInput, timecodeBadge, timecodeOn } from '../lib/show';
   import { app, cmd, programmerLock } from '../lib/state.svelte';
@@ -151,7 +151,7 @@
             <li>
               <button class="list-row" class:dim={item.gone} aria-pressed={picked?.file === item.file} onclick={() => go('inputs', picked?.file === item.file ? '' : String(item.file), true)}>
                 <span class="num mono">{item.file}</span>
-                <span class="dot {item.inUse ? 'dot-yellow' : item.running ? 'dot-green' : 'dot-off'}" aria-hidden="true"></span>
+                <span class="dot dot-{zeroDot(item)}" aria-hidden="true"></span>
                 <span class="ellipsis grow" title={item.name}>{item.name}</span>
                 {#if caption}<span class="caption">{caption}</span>{/if}
                 {#each showing.get(`0/${item.file}`) ?? [] as on (on)}<span class="badge badge-accent">{on}</span>{/each}
@@ -208,7 +208,7 @@
           <dd>{model(picked)}</dd>
         {/if}
         <dt>Status</dt>
-        <dd class="status"><span class="dot {picked.inUse ? 'dot-yellow' : picked.running ? 'dot-green' : 'dot-off'}" aria-hidden="true"></span>{zeroCaption(picked) ?? 'running'}</dd>
+        <dd class="status"><span class="dot dot-{zeroDot(picked)}" aria-hidden="true"></span>{zeroCaption(picked) ?? 'running'}</dd>
         <dt>Shown on</dt>
         <dd>{#each on as l (l)}<span class="badge badge-accent">{l}</span> {:else}no layer{/each}</dd>
         {#if layer}

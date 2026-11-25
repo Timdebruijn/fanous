@@ -5,6 +5,7 @@
 import type { CaptureLiveDoc, LayerStatus, PatchEntry, ProjectDoc, ResolvedParameter, SyphonServerDoc } from './docs';
 import { codecLabel, displayName } from './media';
 import type { ParamSpec } from './patch-screen';
+import type { DotTone } from './system';
 
 /** 1…`layerCount` (the project's, guarded against a bad document). */
 export function layerNumbers(layerCount: number): number[] {
@@ -69,6 +70,11 @@ export function zeroCaption(item: FolderZeroItem): string | null {
   if (item.inUse) return 'in use by another app';
   if (item.running) return null;
   return item.gone ? 'not seen since the engine started' : 'not running';
+}
+
+/** The status dot of a live input: yellow in use by another app, green running, else off. */
+export function zeroDot(item: FolderZeroItem): DotTone {
+  return item.inUse ? 'yellow' : item.running ? 'green' : 'off';
 }
 
 /** "folder/file" → the layers showing it ("Layer 2"), for the badges on Media's tiles and on the Inputs screen. */
@@ -190,7 +196,6 @@ export function playSteps(params: ResolvedParameter[] | undefined, folder: numbe
 }
 
 export type Tone = 'normal' | 'faint' | 'error';
-export type DotColor = 'red' | 'green' | 'off';
 
 /** `mm:ss.s`, truncated to a tenth (never rounds 59.96 up to 60.0); minutes are not capped at 59. */
 export function formatTime(seconds: number): string {
@@ -248,7 +253,7 @@ export function mediaLine(layer: LayerStatus | undefined): { text: string; title
 }
 
 /** Status dot plus the same state as a short word, so the colour never carries it alone. */
-export function layerState(layer: LayerStatus | undefined): { dot: DotColor; label: string; chip: string } {
+export function layerState(layer: LayerStatus | undefined): { dot: DotTone; label: string; chip: string } {
   if (!layer || layer.kind === 'none') return { dot: 'off', label: 'No media', chip: 'No media' };
   if (layer.kind === 'missing') return { dot: 'red', label: 'Media file is missing', chip: 'Missing file' };
   // Syphon: "not running" or "could not connect"

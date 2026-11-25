@@ -7,7 +7,7 @@
   import { app } from '../lib/state.svelte';
 
   // Select puts Master or an output in the Layers side panel, where its Control switch sets it from the UI (B27).
-  let { selected = null, onselect }: { selected?: string | null; onselect?: (fixture: string) => void } = $props();
+  let { selected, onselect }: { selected: string | null; onselect: (fixture: string) => void } = $props();
 
   const master = $derived(app.live.dmx.fixtures['Master']);
   const outputs = $derived(outputFixtures(app.live.dmx.fixtures));
@@ -22,9 +22,7 @@
 {/snippet}
 
 {#snippet pick(fixture: string)}
-  {#if onselect}
-    <button type="button" class="btn pick" aria-pressed={selected === fixture} onclick={() => onselect(fixture)}>{selected === fixture ? 'Selected' : 'Select'}</button>
-  {/if}
+  <button type="button" class="btn pick" aria-pressed={selected === fixture} onclick={() => onselect(fixture)}>{selected === fixture ? 'Selected' : 'Select'}</button>
 {/snippet}
 
 <div class="strips" role="group" aria-label="Master and outputs">

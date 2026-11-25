@@ -18,7 +18,7 @@
     type LibraryItem,
     type LibrarySnapshot,
   } from '../lib/media';
-  import { folderZeroItems, layerNumbers, layersShowing, zeroCaption, zeroGroups } from '../lib/layers';
+  import { folderZeroItems, layerNumbers, layersShowing, zeroCaption, zeroDot, zeroGroups } from '../lib/layers';
   import { lowestFree } from '../lib/outputs';
   import { LOCKED_TITLE } from '../lib/patch-screen';
   import { plural } from '../lib/system';
@@ -261,7 +261,7 @@
               <li>
                 <button class="list-row" class:dim={item.gone} aria-pressed={pickedZero === item.file} onclick={() => (pickedZero = pickedZero === item.file ? null : item.file)}>
                   <span class="num mono">{item.file}</span>
-                  {#if item.kind !== 'generator'}<span class="dot {item.inUse ? 'dot-yellow' : item.running ? 'dot-green' : 'dot-off'}" aria-hidden="true"></span>{/if}
+                  {#if item.kind !== 'generator'}<span class="dot dot-{zeroDot(item)}" aria-hidden="true"></span>{/if}
                   <span class="ellipsis grow" title={item.name}>{item.name}</span>
                   {#if zeroCaption(item)}<span class="caption">{zeroCaption(item)}</span>{/if}
                   {#each on as layer (layer)}<span class="badge badge-accent">{layer}</span>{/each}

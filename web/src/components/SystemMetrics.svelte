@@ -3,11 +3,13 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { app } from '../lib/state.svelte';
-  import { metricTiles, parseMetrics, plural, pushHistory, sparkline, type Metrics } from '../lib/system';
+  import { metricTiles, parseMetrics, plural, sparkline, type Metrics } from '../lib/system';
 
   const W = 240;
   const H = 48;
   const POLL_MS = 2000;
+  /** polls kept in the sparkline (the cap the removed pushHistory test asserted) */
+  const HISTORY = 60;
 
   let metrics = $state.raw<Metrics | null>(null);
   let history = $state.raw<number[]>([]);
@@ -27,7 +29,7 @@
         const next = parseMetrics(await response.json());
         if (!alive) return;
         metrics = next;
-        history = pushHistory(history, next.gpuMsP99);
+        history = [...history, next.gpuMsP99].slice(-HISTORY);
         error = '';
       } catch (e) {
         if (alive) error = e instanceof Error ? e.message : String(e);
@@ -84,7 +86,7 @@
       {#if trace.refY !== null}<line class="ref" x1="0" x2={W} y1={trace.refY} y2={trace.refY} />{/if}
       {#if trace.points}<polyline class="trace" points={trace.points} />{/if}
     </svg>
-    <figcaption class="caption">GPU p99 per poll, last {history.length} of 60{budget ? `; dashed line is the ${budget.toFixed(1)} ms frame budget` : ''}</figcaption>
+    <figcaption class="caption">GPU p99 per poll, last {history.length} of {HISTORY}{budget ? `; dashed line is the ${budget.toFixed(1)} ms frame budget` : ''}</figcaption>
   </figure>
 </section>
 

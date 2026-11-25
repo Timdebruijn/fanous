@@ -49,7 +49,7 @@ export function dismissToast(): void {
   shell.toast = null;
 }
 
-export const roleRank: Record<Role, number> = { monitor: 0, operator: 1, programmer: 2 };
+const roleRank: Record<Role, number> = { monitor: 0, operator: 1, programmer: 2 };
 export function can(role: Role): boolean {
   return roleRank[app.role] >= roleRank[role];
 }
@@ -121,9 +121,9 @@ export const client = new FanousClient(
   },
   {
     onDocs(welcome) {
-      app.role = welcome.role;
+      if (welcome.role) app.role = welcome.role;
       app.rev = welcome.rev;
-      app.caps = welcome.caps;
+      if (welcome.caps) app.caps = welcome.caps;
       app.project = { ...structuredClone(emptyProject), ...(welcome.project as unknown as ProjectDoc) };
       app.live = { ...structuredClone(emptyLive), ...(welcome.live as unknown as LiveDoc) };
     },
@@ -185,13 +185,18 @@ export async function playOnLayer(n: number, folder: number, file: number): Prom
   return true;
 }
 
-export async function subscribeDMX(universe: string, listener: (payload: Uint8Array) => void): Promise<() => void> {
-  const id = await client.subscribeDMX(universe);
+/** A binary stream's frames to `listener` once the engine names its id; resolves with its stop. */
+async function listen(idPromise: Promise<number>, listener: (payload: Uint8Array) => void): Promise<() => void> {
+  const id = await idPromise;
   binaryListeners.set(id, (_kind, payload) => listener(payload));
   return () => {
     binaryListeners.delete(id);
     client.unsubscribe(id);
   };
+}
+
+export function subscribeDMX(universe: string, listener: (payload: Uint8Array) => void): Promise<() => void> {
+  return listen(client.subscribeDMX(universe), listener);
 }
 
 /** Canvas preview: H.264 access units (kind 1) or JPEGs (kind 2) plus the decoder description for H.264. */
@@ -218,11 +223,6 @@ export async function subscribePreview(
 }
 
 /** Live layer thumbnails (B29): every frame of the `thumbs` stream (`parseThumbFrame`); resolves with its stop. */
-export async function subscribeThumbs(onFrame: (payload: Uint8Array) => void): Promise<() => void> {
-  const id = await client.subscribeThumbs();
-  binaryListeners.set(id, (_kind, payload) => onFrame(payload));
-  return () => {
-    binaryListeners.delete(id);
-    client.unsubscribe(id);
-  };
+export function subscribeThumbs(onFrame: (payload: Uint8Array) => void): Promise<() => void> {
+  return listen(client.subscribeThumbs(), onFrame);
 }

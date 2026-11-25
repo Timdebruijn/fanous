@@ -32,7 +32,7 @@ const finite = (v: unknown): number => (typeof v === 'number' && Number.isFinite
 export function resumedText(resumedAt: number | null | undefined): string | null {
   if (!resumedAt || !(resumedAt > 0)) return null;
   const d = new Date(resumedAt * 1000);
-  return `Show mode resumed after the engine restarted at ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+  return `Show mode resumed after the engine restarted at ${clock(d)}`;
 }
 
 /** What the status bar's red "not ready: …" names while show mode is on and an item blocks, failing unacknowledged or hard
@@ -53,11 +53,14 @@ export function formatClock(seconds: number): string {
   return `${Math.floor(s / 3600)}:${pad2(Math.floor((s % 3600) / 60))}:${pad2(s % 60)}`;
 }
 
+/** "hh:mm", or "hh:mm:ss" with `seconds`, in local time on a 24-hour clock. */
+export function clock(d: Date, seconds = false): string {
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: seconds ? '2-digit' : undefined });
+}
+
 /** "hh:mm:ss" in local time for a stamp in epoch seconds; 0 means it never happened. */
 export function stampText(epochSeconds: number): string {
-  if (!(epochSeconds > 0)) return 'never';
-  const d = new Date(epochSeconds * 1000);
-  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return epochSeconds > 0 ? clock(new Date(epochSeconds * 1000), true) : 'never';
 }
 
 /** "M4 Max · macOS 27.0 · engine 0.7.0 · up 1:02:03"; parts the engine has not published yet are left out. */
@@ -221,11 +224,6 @@ export function metricTiles(m: Metrics | null, showMode: boolean): Tile[] {
       tone: m?.audio && m.audio.underruns > 0 ? 'yellow' : '',
     },
   ];
-}
-
-/** Appends to a rolling history of at most `max` values. */
-export function pushHistory(history: readonly number[], value: number, max = 60): number[] {
-  return [...history, value].slice(-max);
 }
 
 /**
