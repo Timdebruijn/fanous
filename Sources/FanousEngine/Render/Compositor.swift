@@ -449,6 +449,7 @@ public final class Compositor: @unchecked Sendable {
                 if case .master(let group) = p.sync { publishMaster(current, p, group: group, layer: layer.index, in: frame) }
             }
             if frame.stale != staleBefore { layer.staleFrames.wrappingAdd(Int(frame.stale - staleBefore), ordering: .relaxed) }
+            layer.shownFrame.store(layer.current.map { $0.clock.frame(lo: 0, hi: $0.frameCount - 1) } ?? 0, ordering: .relaxed)  // B356
             if syncStatus != layer.syncStatusWritten {  // a layer with Sync off costs no lock
                 let status = syncStatus
                 if layer.syncStatus.withLockIfAvailable({ $0 = status }) != nil { layer.syncStatusWritten = status }

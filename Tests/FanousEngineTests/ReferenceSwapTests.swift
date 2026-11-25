@@ -66,6 +66,58 @@ struct ReferenceSwapGPUTests {
     /// which shows that thread drew this set.
     static func set(_ plan: OutputPlan, replacing marker: OutputSet) -> OutputSet { OutputSet(plans: [plan], previous: marker) }
 
+    /// B356: `RenderLayer.current`, swapped by the tick at every hand-off while the feed (`publishLive`) and CITP
+    /// (`citpLayers`) read the layer's frame through `currentFrame`. The old `currentFrame` read `current` itself; now
+    /// the tick publishes the frame in an atomic. 1000 swaps between a still (frame 0) and a movie parked at frame 7.
+    @Test func currentSwappedWhileTheFeedReadsTheFrame() async throws {
+        let context = try MetalContext()
+        let (compositor, parameters) = try makeCompositor(context, size: (64, 36))
+        let url = tempFile("fanous-b356-frame", ext: "mov")
+        try await writePatternMovie(to: url, size: (64, 36), fps: 25, frames: 20, codec: .hap(.hap))
+        let source = try await MovieSource.open(url: url, device: context.device, poolSize: 3)
+        let ring = FrameRing(capacity: 2)
+        let movie = LayerPlayback(key: MediaKey(folder: 1, file: 1), movie: source, decoder: LayerDecoder(source: source, ring: ring, logger: testLogger), ring: ring)
+        movie.clock.position = 7
+        let layer = RenderLayer.playing(movie)
+        compositor.setLayers([layer])
+        parameters.write { slot in
+            slot.sequence = 1
+            slot.layers[0].intensity = 1
+            slot.layers[0].folder = 1
+            slot.layers[0].file = 1
+            slot.layers[0].speed = 0  // the movie stays on frame 7
+        }
+        let done = Atomic(false)
+        let reads = Atomic(0)
+        let wrong = Atomic(0)
+        async let feed: Void = offPool {
+            while !done.load(ordering: .acquiring) {
+                let frame = layer.currentFrame
+                if frame != 0 && frame != 7 { wrong.add(1, ordering: .relaxed) }
+                reads.add(1, ordering: .relaxed)
+            }
+        }
+        try await offPool {
+            ReferenceSwapTests.spin { reads.load(ordering: .relaxed) > 0 }  // the feed thread runs: the swaps overlap its reads
+            for i in 0..<1000 {
+                if i % 2 == 0 {  // a still through the hand-off: swapped in by this tick, the movie retired
+                    layer.pending.withLock { $0.set = true; $0.playback = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: DecodedFrame(poolIndex: 0)) }
+                } else {
+                    layer.current = movie  // the tick's own thread: the movie back without a decoded frame
+                }
+                compositor.tick(target: 1000 + Double(i) / 60, drawable: nil)
+            }
+            done.store(true, ordering: .releasing)
+        }
+        try await feed
+        #expect(reads.load(ordering: .relaxed) > 1)
+        #expect(wrong.load(ordering: .relaxed) == 0)
+        #expect(layer.currentFrame == 7, "the last tick played the movie")
+        layer.pending.withLock { $0.set = true; $0.playback = nil }  // no media
+        compositor.tick(target: 1100, drawable: nil)
+        #expect(layer.currentFrame == 0)
+    }
+
     /// `PreviewStreamer.outputSet`, written by `Engine.previewOutput` at every mapping edit while the compositor taps.
     @Test func previewOutputSetSwappedWhileTheCompositorTaps() async throws {
         let context = try MetalContext()
