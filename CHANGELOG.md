@@ -17,6 +17,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   own, from a layer's position too), Art-Net timecode out and in (B138 step 1, G26); rows B447 and B448 (PR #492).
 - Docs: the guide's LTC and MTC setup steps name the two timecode routes without a cable, LTC over Dante or AVB as an
   audio input and MTC over a network MIDI session (PR #497).
+- Docs: the Patch screen pictures (README, guide, tour) retaken for the Timecode fixture in the Machine group and the
+  typed universe fields (PR #499).
 - Core: `ArtTimeCode` (Art-Net timecode, OpCode 0x9700) is encoded and parsed, with its Type byte mapped to the
   timecode rates and out-of-range fields refused; the engine's Art-Net listener ignores it until the Art-Net timecode
   source lands (`docs/timecode-out.md` step 1). No behaviour change (PR #494).
