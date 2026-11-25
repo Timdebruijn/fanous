@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+## 1.0.0-rc.19 — 2026-11-25
+
 - Docs: the Show screen pictures retaken for the Now button, the next-trigger line and the Start and Layer offset
   fields of PRs #487–#490: `show.png` (README and guide), `screens-show.png`, `show-timecode.png`, `show-timecode-mtc.png`,
   `cue-editor.png` and the show frame of `tour.gif`; the alt texts name the new fields and button (PR #498).
