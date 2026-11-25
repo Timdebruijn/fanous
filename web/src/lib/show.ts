@@ -7,7 +7,7 @@ import type { AudioInputDoc, CueDoc, CueValueDoc, LiveDoc, MIDIMappingDoc, OSCRe
 import { ROOT_SWITCH_CAUSE } from './errors';
 import { clamp01 } from './outputs';
 import { LOCKED_TITLE, type ChannelMap, type FixtureType, type ParamSpec } from './patch-screen';
-import { blockingNote, pad2, plural, stampText } from './system';
+import { blockingNote, pad2, plural, stampText, type DotTone } from './system';
 
 export const LOCKED_OPERATOR = 'Locked: operator only';
 export const LOCKED_SHOW = 'Locked: the show is locked (press L to unlock)';
@@ -238,9 +238,7 @@ export function withFade(value: CueValueDoc, fade: number | null): CueValueDoc {
 
 // ---- timecode and OSC wording --------------------------------------------------------------------------------
 
-export type ClockTone = 'green' | 'yellow' | 'red' | 'off';
-
-export function timecodeBadge(state: LiveDoc['timecode']['state']): { label: string; tone: ClockTone } {
+export function timecodeBadge(state: LiveDoc['timecode']['state']): { label: string; tone: DotTone } {
   switch (state) {
     case 'locked':
       return { label: 'Locked', tone: 'green' };

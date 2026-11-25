@@ -9,7 +9,7 @@
   import { blockingNote, readinessSummary, resumedText } from '../lib/system';
   import { lastVersionText } from '../lib/versions';
   import { app, can, cmd, shell, toggleLock } from '../lib/state.svelte';
-  import { isRootSwitch, ROOT_SWITCH_POPOVER } from '../lib/errors';
+  import { isRootSwitch } from '../lib/errors';
 
   let showLogin = $state(false);
 
@@ -73,7 +73,7 @@
         <div class="pop panel" role="alert">
           <strong>Cannot enter show mode</strong>
           {#if isRootSwitch(refused)}
-            <p class="caption">{ROOT_SWITCH_POPOVER}</p>
+            <p class="caption">The library root is being switched; try again in a few seconds.</p>
           {:else if blocking.length > 0}
             <ul>{#each blocking as item (item.id)}<li>{item.title}{#if item.fix}<span class="caption"> — {item.fix}</span>{/if}</li>{/each}</ul>
           {:else}

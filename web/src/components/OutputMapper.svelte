@@ -2,7 +2,7 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { clamp01, handles, maskHandle, maskOutline, outlines, toolPath, type MapPoint, type MapperMode, type MaskPoint, type MaskTool, type OutputConfig } from '../lib/outputs';
+  import { clampPoint, handles, maskHandle, maskOutline, outlines, toolPath, type MapPoint, type MapperMode, type MaskPoint, type MaskTool, type OutputConfig } from '../lib/outputs';
   import { fromScreen, toScreen, warpedOutline } from '../lib/warp';
 
   // Handles over the output preview (DESIGN.md §12.3): corner pin, mesh points, slice quads or a mask path.
@@ -109,13 +109,13 @@
   function onScreen(event: MouseEvent, free = false): MapPoint {
     const rect = svg!.getBoundingClientRect();
     const p = { x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height };
-    return free ? p : { x: clamp01(p.x), y: clamp01(p.y) };
+    return free ? p : clampPoint(p);
   }
 
   /** the pointer in stored coordinates, on the output; a Bézier handle (`free`) may go past its edge */
   function toPoint(event: PointerEvent, free = false): MapPoint {
     const p = fromScreen(output, mode, onScreen(event, free));
-    return free ? p : { x: clamp01(p.x), y: clamp01(p.y) };
+    return free ? p : clampPoint(p);
   }
 
   function down(event: PointerEvent, hit: string) {

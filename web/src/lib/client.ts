@@ -6,12 +6,13 @@ import type { ClientMessage, CommandArgs, CommandName, JSONValue, PatchOp, Role,
 export type ConnectionState = 'connecting' | 'open' | 'closed';
 export type Doc = Record<string, JSONValue>;
 
+/** A welcome carries the role and caps; a snapshot carries neither, so the last welcome's stay. */
 export interface Welcome {
-  role: Role;
+  role?: Role;
   rev: number;
   project: Doc;
   live: Doc;
-  caps: Doc;
+  caps?: Doc;
 }
 
 export interface AckError {
@@ -183,11 +184,8 @@ export class FanousClient {
       case 'snapshot': {
         this.rev = message.rev;
         this.resync = false;
-        const role = message.t === 'welcome' ? message.role : (this.lastRole ?? 'monitor');
-        const caps = message.t === 'welcome' ? (message.caps as Doc) : (this.lastCaps ?? {});
-        this.lastRole = role;
-        this.lastCaps = caps;
-        this.callbacks.onDocs({ role, rev: message.rev, project: message.project as Doc, live: message.live as Doc, caps });
+        const docs = { rev: message.rev, project: message.project as Doc, live: message.live as Doc };
+        this.callbacks.onDocs(message.t === 'welcome' ? { ...docs, role: message.role, caps: message.caps as Doc } : docs);
         if (message.t === 'welcome') this.callbacks.onState('open');
         break;
       }
@@ -238,9 +236,6 @@ export class FanousClient {
         break;
     }
   }
-
-  private lastRole: Role | null = null;
-  private lastCaps: Doc | null = null;
 
   private handleBinary(bytes: Uint8Array): void {
     if (bytes.length < 5) return;

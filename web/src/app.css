@@ -25,7 +25,6 @@
   --yellow: #ffc532;
   --yellow-bg: #3a2e10;
   --green: #35d07f;
-  --green-bg: #10311f;
   --scrim: color-mix(in srgb, var(--ground) 80%, transparent);
   /* system fonts: no runtime CDN loads (DESIGN §11.4); Inter/JetBrains Mono can be bundled later (B26) */
   /* Atkinson Hyperlegible (Braille Institute, OFL): unambiguous glyphs (Il1, 0O) for fast reading in the dark */

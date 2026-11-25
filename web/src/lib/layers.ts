@@ -5,6 +5,7 @@
 import type { CaptureLiveDoc, LayerStatus, PatchEntry, ProjectDoc, ResolvedParameter, SyphonServerDoc } from './docs';
 import { codecLabel, displayName } from './media';
 import type { ParamSpec } from './patch-screen';
+import type { DotTone } from './system';
 
 /** 1…`layerCount` (the project's, guarded against a bad document). */
 export function layerNumbers(layerCount: number): number[] {
@@ -69,6 +70,11 @@ export function zeroCaption(item: FolderZeroItem): string | null {
   if (item.inUse) return 'in use by another app';
   if (item.running) return null;
   return item.gone ? 'not seen since the engine started' : 'not running';
+}
+
+/** The status dot of a live input: yellow in use by another app, green running, else off. */
+export function zeroDot(item: FolderZeroItem): DotTone {
+  return item.inUse ? 'yellow' : item.running ? 'green' : 'off';
 }
 
 /** "folder/file" → the layers showing it ("Layer 2"), for the badges on Media's tiles and on the Inputs screen. */
@@ -190,7 +196,6 @@ export function playSteps(params: ResolvedParameter[] | undefined, folder: numbe
 }
 
 export type Tone = 'normal' | 'faint' | 'error';
-export type DotColor = 'red' | 'green' | 'off';
 
 /** `mm:ss.s`, truncated to a tenth (never rounds 59.96 up to 60.0); minutes are not capped at 59. */
 export function formatTime(seconds: number): string {
@@ -248,7 +253,7 @@ export function mediaLine(layer: LayerStatus | undefined): { text: string; title
 }
 
 /** Status dot plus the same state as a short word, so the colour never carries it alone. */
-export function layerState(layer: LayerStatus | undefined): { dot: DotColor; label: string; chip: string } {
+export function layerState(layer: LayerStatus | undefined): { dot: DotTone; label: string; chip: string } {
   if (!layer || layer.kind === 'none') return { dot: 'off', label: 'No media', chip: 'No media' };
   if (layer.kind === 'missing') return { dot: 'red', label: 'Media file is missing', chip: 'Missing file' };
   // Syphon: "not running" or "could not connect"
@@ -311,10 +316,6 @@ export function thumbnailIndex(library: LibrarySnapshot | null): Map<string, str
   return index;
 }
 
-export function thumbnailFor(index: Map<string, string>, layer: LayerStatus | undefined): string | null {
-  return layer ? (index.get(`${layer.folder}/${layer.file}`) ?? null) : null;
-}
-
 /** One frame of the `thumbs` stream (B29, engine `ThumbnailAtlas.frame`): `[u8 layer number][u16 be w][u16 be h][JPEG]`;
  * w and h 0 (no JPEG) = the layer shows nothing. Null for a frame too short to have the header, or a size without JPEG
  * bytes (it would make a broken image). */
@@ -323,11 +324,6 @@ export function parseThumbFrame(payload: Uint8Array): { layer: number; w: number
   const w = (payload[1]! << 8) | payload[2]!;
   if (w > 0 && payload.length === 5) return null;
   return { layer: payload[0]!, w, h: (payload[3]! << 8) | payload[4]!, jpeg: payload.subarray(5) };
-}
-
-/** A layer row's picture: the live thumbnail while the engine sends one, otherwise the library thumbnail (or none). */
-export function rowThumb(live: string | undefined, library: string | null): { src: string | null; live: boolean } {
-  return live ? { src: live, live: true } : { src: library, live: false };
 }
 
 /** What the Layers screen preview shows: the whole canvas or the selected layer alone. */

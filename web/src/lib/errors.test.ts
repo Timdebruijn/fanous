@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
-import { errorHint, isRootSwitch, ROOT_SWITCH_POPOVER } from './errors';
+import { errorHint, isRootSwitch } from './errors';
 
 describe('errors', () => {
   it('maps known codes to a next step', () => {
@@ -25,6 +25,5 @@ describe('errors', () => {
     expect(isRootSwitch('readiness: libraryRootChanging')).toBe(true);
     expect(isRootSwitch('readiness: outputs, spotlight')).toBe(false);
     expect(isRootSwitch('readiness: libraryRootChanging, outputs')).toBe(false);
-    expect(ROOT_SWITCH_POPOVER).toBe('The library root is being switched; try again in a few seconds.');
   });
 });

@@ -31,7 +31,7 @@
   import WallWizard from '../components/WallWizard.svelte';
   import Preview from '../components/Preview.svelte';
   import {
-    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, circleMask, finishMask, handles, keystoneBadges, maskHandle, maskRemoval, maskTarget, modeText, movedHandle, nextSliceId, outputSize, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, redrawIndex, sourceFromPixels, sourcePixels, spreadSources, statusText, toggleSmooth, toolPath, triangleDest,
+    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clampPoint, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, circleMask, finishMask, handles, keystoneBadges, maskHandle, maskRemoval, maskTarget, modeText, movedHandle, nextSliceId, outputSize, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, redrawIndex, sourceFromPixels, sourcePixels, spreadSources, statusText, toggleSmooth, toolPath, triangleDest,
     type MapPoint, type MapperMode, type MaskPoint, type MaskShape, type MaskTool,
   } from '../lib/outputs';
   import { mediaOptions, mediaPath, type LibrarySnapshot } from '../lib/layers';
@@ -48,7 +48,7 @@
   import { cancelWizard, endCheck, startWizard, wallUI } from '../lib/wall-session.svelte';
 
   const locked = $derived(!can('programmer'));
-  /** why the remote cannot move points: the role, or the show lock (the engine would refuse) */
+  /** why the remote cannot move points, or a wall cannot be made or changed: the role, or the show lock (the engine would refuse) */
   const moveLock = $derived(programmerLock());
   const outputs = $derived(app.project.outputs);
   const displays = $derived(app.live.displays);
@@ -65,8 +65,6 @@
   const walls = $derived(app.project.walls ?? []);
   /** the wall the selected output is in */
   const wall = $derived(output ? wallOf(walls, output.id) : undefined);
-  /** why a wall cannot be made or changed: the role, the show lock */
-  const wallLock = $derived(programmerLock());
   const freeCount = $derived(freeOutputs(outputs, walls).length);
   const checking = $derived(wallUI.check ? walls.find((w) => w.id === wallUI.check?.wall) : undefined);
   // a seam check whose wall went (Undo, another client) ends
@@ -78,7 +76,7 @@
     endCheck();
     cancelWizard();
   });
-  const newWallReason = $derived(wallLock ?? (freeCount < 2 ? 'Add at least two outputs that are in no wall yet.' : null));
+  const newWallReason = $derived(moveLock ?? (freeCount < 2 ? 'Add at least two outputs that are in no wall yet.' : null));
   /** a wall panel's "Open in Warp & Slices" and the Grid step of the seam check */
   function openWarp(id: number) {
     pickOutput(id);
@@ -263,7 +261,7 @@
   function moveSelected(on: { x?: number; y?: number }) {
     if (!output || !ui.handle || !selectedScreen) return;
     const p = fromScreen(output, ui.mapper, { x: on.x ?? selectedScreen.x, y: on.y ?? selectedScreen.y });
-    point(ui.handle, { x: clamp01(p.x), y: clamp01(p.y) });
+    point(ui.handle, clampPoint(p));
   }
   function select(next: { group: Group; anchor: number }) {
     ui.group = next.group;
@@ -346,7 +344,7 @@
   function addMaskAt(p: MapPoint) {
     const slice = output?.slices[sliceIndex];
     if (!output || !slice || locked) return;
-    const q = { x: clamp01(p.x), y: clamp01(p.y) };
+    const q = clampPoint(p);
     if (ui.draft) {
       ui.draft = [...ui.draft, q];
       return;
@@ -407,9 +405,9 @@
 <div class="toolbar">
   <h1>Outputs &amp; Mapping</h1>
   <div class="segmented" role="group" aria-label="Section">
-    <button type="button" class="btn" aria-pressed={ui.tab === 'canvases'} onclick={() => (ui.tab = 'canvases')}>Canvases</button>
-    <button type="button" class="btn" aria-pressed={ui.tab === 'outputs'} onclick={() => (ui.tab = 'outputs')}>Outputs</button>
-    <button type="button" class="btn" aria-pressed={ui.tab === 'warp'} onclick={() => (ui.tab = 'warp')}>Warp &amp; Slices</button>
+    {#each [['canvases', 'Canvases'], ['outputs', 'Outputs'], ['warp', 'Warp & Slices']] as const as [tab, text] (tab)}
+      <button type="button" class="btn" aria-pressed={ui.tab === tab} onclick={() => (ui.tab = tab)}>{text}</button>
+    {/each}
   </div>
   <span class="spacer"></span>
   <span class="caption">{plural(outputs.length, 'output')} · {plural(displays.length, 'display')} connected</span>
@@ -609,7 +607,7 @@
             <div class="edge panel" role="group" aria-label="{edge} edge">
               <div class="ehead"><span class="label">{edge}</span>{#if isManual(wall, output.id, `overlap.${edge}`)}<span class="badge badge-warn">manual</span>{/if}<svg class="curve" viewBox="0 0 100 40" aria-hidden="true"><path d={blendCurvePath(e, 100, 40)} fill="none" style:stroke="var(--accent)" stroke-width="2" /></svg></div>
               <label class="field"><span>Overlap (px)</span><input class="input mono" type="number" min="0" value={e.overlap} disabled={locked} onchange={(ev) => number(ev, `/blend/${edge}/overlap`)} /></label>
-              {#if isManual(wall, output.id, `overlap.${edge}`)}<button type="button" class="btn" disabled={!!wallLock} title={wallLock ?? `Give this overlap back to ${wall?.name}`} onclick={() => backToWall(`overlap.${edge}`)}>Back to wall</button>{/if}
+              {#if isManual(wall, output.id, `overlap.${edge}`)}<button type="button" class="btn" disabled={!!moveLock} title={moveLock ?? `Give this overlap back to ${wall?.name}`} onclick={() => backToWall(`overlap.${edge}`)}>Back to wall</button>{/if}
               <p class="caption">Overlap: width of the strip shared with the neighbouring projector, in pixels of this output.</p>
               <label class="field"><span>Power</span><input class="input mono" type="number" min="0.1" max="10" step="0.1" value={e.power} disabled={locked} onchange={(ev) => number(ev, `/blend/${edge}/power`)} /></label>
               <p class="caption">Power: steepness of the fade. 2 is a smooth S-curve; higher is sharper in the middle.</p>
@@ -646,10 +644,9 @@
         <div class="head2">
           <h2>{output.name}</h2>
           <div class="segmented wrap" role="group" aria-label="Edit">
-            <button type="button" class="btn" aria-pressed={ui.mapper === 'cornerPin'} onclick={() => (ui.mapper = 'cornerPin')}>Corner pin · 4 points</button>
-            <button type="button" class="btn" aria-pressed={ui.mapper === 'mesh'} onclick={() => (ui.mapper = 'mesh')}>Mesh · up to 33 × 33</button>
-            <button type="button" class="btn" aria-pressed={ui.mapper === 'slices'} onclick={() => (ui.mapper = 'slices')}>Slices</button>
-            <button type="button" class="btn" aria-pressed={ui.mapper === 'mask'} onclick={() => (ui.mapper = 'mask')}>Mask</button>
+            {#each [['cornerPin', 'Corner pin · 4 points'], ['mesh', 'Mesh · up to 33 × 33'], ['slices', 'Slices'], ['mask', 'Mask']] as const as [mode, text] (mode)}
+              <button type="button" class="btn" aria-pressed={ui.mapper === mode} onclick={() => (ui.mapper = mode)}>{text}</button>
+            {/each}
           </div>
           <button type="button" class="btn" aria-pressed={ui.remote} title="Big controls for aligning from an iPad: step through the points, nudge them, drag on a trackpad" onclick={() => setRemote(!ui.remote)}>Remote</button>
           <button type="button" class="btn" disabled={!sliceCanvas} title="A PNG at canvas size showing which part of the canvas each slice uses and what its mask leaves visible: a guide for making content" onclick={exportTemplate}>Content template (PNG)</button>
@@ -669,6 +666,13 @@
             <p class="caption">Tap a handle on the picture, then nudge it here. 10 px moves ten pixels per press; hold an arrow for 0.25 px. Keyboard: arrow keys, Shift for ten, Tab for the next point. Remote has bigger controls.</p>
           </div>
         {/if}
+        {#snippet slicePicker()}
+          <label class="field"><span>Slice</span>
+            <select class="select" value={sliceIndex} onchange={(e) => (ui.slice = Number(e.currentTarget.value))}>
+              {#each output.slices as s, i (s.id)}<option value={i}>Slice {s.id}</option>{/each}
+            </select>
+          </label>
+        {/snippet}
         {#if ui.mapper === 'cornerPin'}
           <div class="fields">
             <p class="caption grow">Drag the four corners on the preview; arrow keys nudge the selected corner by one pixel (Shift: ten). For a curved or uneven surface, switch to Mesh and pick a density; the mesh works on top of the corner pin.</p>
@@ -687,11 +691,7 @@
           </div>
         {:else if ui.mapper === 'slices'}
           <div class="fields">
-            <label class="field"><span>Slice</span>
-              <select class="select" value={sliceIndex} onchange={(e) => (ui.slice = Number(e.currentTarget.value))}>
-                {#each output.slices as s, i (s.id)}<option value={i}>Slice {s.id}</option>{/each}
-              </select>
-            </label>
+            {@render slicePicker()}
             {#if output.slices[sliceIndex]}
               {@const s = output.slices[sliceIndex]!}
               <label class="field"><span>Canvas</span>
@@ -707,7 +707,7 @@
                   {/each}
                 </span>
               </div>
-              {#if s.id === 1 && isManual(wall, output.id, 'source')}<button type="button" class="btn" disabled={!!wallLock} title={wallLock ?? `Give slice 1's part of the canvas back to ${wall?.name}`} onclick={() => backToWall('source')}>Back to wall</button>{/if}
+              {#if s.id === 1 && isManual(wall, output.id, 'source')}<button type="button" class="btn" disabled={!!moveLock} title={moveLock ?? `Give slice 1's part of the canvas back to ${wall?.name}`} onclick={() => backToWall('source')}>Back to wall</button>{/if}
               <label class="field"><span>Opacity %</span><input class="input mono" type="number" min="0" max="100" value={Math.round(s.opacity * 100)} disabled={locked} onchange={(e) => set(`/slices/${sliceIndex}/opacity`, Number(e.currentTarget.value) / 100)} /></label>
             {/if}
             <button type="button" class="btn" disabled={locked} onclick={addSlice}>Add slice</button>
@@ -720,11 +720,7 @@
         {:else}
           {@const s = output.slices[sliceIndex]}
           <div class="fields">
-            <label class="field"><span>Slice</span>
-              <select class="select" value={sliceIndex} onchange={(e) => (ui.slice = Number(e.currentTarget.value))}>
-                {#each output.slices as sl, i (sl.id)}<option value={i}>Slice {sl.id}</option>{/each}
-              </select>
-            </label>
+            {@render slicePicker()}
             <div class="segmented wrap" role="group" aria-label="Mask tools">
               <button type="button" class="btn" aria-pressed={!!ui.draft} disabled={locked || !s} title="Tap the corners of the area that stays visible" onclick={() => ui.draft || startTool('polygon')}>Polygon</button>
               {#each [['rectangle', 'Rectangle'], ['ellipse', 'Ellipse'], ['freehand', 'Freehand']] as const as [tool, name] (tool)}

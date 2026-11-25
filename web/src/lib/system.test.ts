@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { ReadinessItemDoc } from './docs';
 import {
   ageText, blockingNote, droppedTone, filterLines, formatClock, headerCaption, memoryText, metricTiles, outputTone, parseMetrics, parseOpenRoles, permissionRow,
-  plural, pushHistory, readinessBadge, readinessSummary, resumedDetail, resumedText, sparkline, stampText, thermalTone, typedNumber,
+  plural, readinessBadge, readinessSummary, resumedDetail, resumedText, sparkline, stampText, thermalTone, typedNumber,
 } from './system';
 
 const item = (state: ReadinessItemDoc['state'], acknowledged = false): ReadinessItemDoc => ({ id: state, title: state, state, detail: '', fix: '', acknowledged });
@@ -160,13 +160,6 @@ describe('sparkline', () => {
     expect(sparkline([], 100, 24).points).toBe('');
     expect(sparkline([3], 100, 24).points).toBe('');
     expect(sparkline([0, 0, -1], 100, 24).points).toBe('0.0,22.0 50.0,22.0 100.0,22.0');
-  });
-
-  it('keeps the last 60 polls', () => {
-    const history = Array.from({ length: 80 }, (_, i) => i).reduce((h, v) => pushHistory(h, v), [] as number[]);
-    expect(history).toHaveLength(60);
-    expect(history[0]).toBe(20);
-    expect(history.at(-1)).toBe(79);
   });
 });
 

@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { app } from '../lib/state.svelte';
-  import { metricTiles, parseMetrics, plural, pushHistory, sparkline, type Metrics } from '../lib/system';
+  import { metricTiles, parseMetrics, plural, sparkline, type Metrics } from '../lib/system';
 
   const W = 240;
   const H = 48;
@@ -27,7 +27,7 @@
         const next = parseMetrics(await response.json());
         if (!alive) return;
         metrics = next;
-        history = pushHistory(history, next.gpuMsP99);
+        history = [...history, next.gpuMsP99].slice(-60);
         error = '';
       } catch (e) {
         if (alive) error = e instanceof Error ? e.message : String(e);
