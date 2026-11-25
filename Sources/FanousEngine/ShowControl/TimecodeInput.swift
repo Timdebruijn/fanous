@@ -131,7 +131,7 @@ struct PeakWindow {
 
 /// LTC from a CoreAudio input device through an `AVAudioSinkNode` (real-time thread → biphase decoder).
 public final class LTCInput: @unchecked Sendable {
-    private let engine = AVAudioEngine()
+    let engine = AVAudioEngine()  // internal for the B280 test
     private let clock: TimecodeClock
     private let logger: Logger
     private let channel: Int
@@ -161,11 +161,25 @@ public final class LTCInput: @unchecked Sendable {
         set { report.withLock { $0.error = newValue } }
     }
     private let report = Mutex<(device: String, error: String?)>(("", nil))
+    /// The input's device dropped, changed its sample rate, or the default input moved (B280): the engine stopped on
+    /// its own and the decoder's sample rate is stale, so the owner opens a new input. Called on the notification's
+    /// thread; set before `start`.
+    nonisolated(unsafe) public var onConfigurationChange: (() -> Void)?
+    private var configurationObserver: (any NSObjectProtocol)?
 
     public init(clock: TimecodeClock, channel: Int = 0, logger: Logger) {
         self.clock = clock
         self.channel = channel
         self.logger = logger
+        configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { [weak self] _ in
+            guard let self, !lifecycle.withLock({ $0.stopped }) else { return }
+            logger.info("LTC input: audio configuration changed; reopening")
+            onConfigurationChange?()
+        }
+    }
+
+    deinit {
+        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
     }
 
     /// Starts on the named input device (nil = the system default). Asks for the microphone permission once.

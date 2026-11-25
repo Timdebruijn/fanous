@@ -1228,6 +1228,26 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
+    /// The running LTC input lost its device or its rate changed (B280): a new input, on the settings queue, while
+    /// `input` is still the one in use (a later `timecode.set` may have replaced it meanwhile).
+    private func reopenLTC(_ input: LTCInput) {
+        store?.queue.async { [weak self] in
+            guard let self, self.ltc === input else { return }
+            self.applyTimecodeSettings(self.lastTimecodeSettings, reopen: true)
+        }
+    }
+
+    /// A named LTC device that was missing when the input opened (it fell back to the default input) came back
+    /// (B280): called with every fresh audio device list; the check runs on the settings queue, where the settings are.
+    private func reopenLTCIfDeviceReturned(_ devices: [LTCInput.Device]) {
+        store?.queue.async { [weak self] in
+            guard let self, let input = self.ltc, input.lastError == nil, let wanted = self.lastTimecodeSettings.device,
+                input.deviceName != wanted, devices.contains(where: { $0.name == wanted })
+            else { return }
+            self.applyTimecodeSettings(self.lastTimecodeSettings, reopen: true)
+        }
+    }
+
     /// An offset, a layer offset or the freewheel time applies to the running input and clock; only a change of what
     /// opens the input (source, device, LTC channel, the switch) or a `reopen` restarts it and clears the clock (B289).
     private func applyTimecodeSettings(_ settings: ShowCommands.TimecodeSettings, reopen: Bool = false) {
@@ -1248,6 +1268,9 @@ public final class Engine: @unchecked Sendable {
         case .off: break
         case .ltc:
             let input = LTCInput(clock: timecodeClock, channel: settings.channel, logger: logger)
+            input.onConfigurationChange = { [weak self, weak input] in
+                if let input { self?.reopenLTC(input) }
+            }
             ltc = input
             Task { _ = await input.start(device: settings.device) }
         case .mtc:
@@ -1861,8 +1884,10 @@ public final class Engine: @unchecked Sendable {
                 }
                 if first { listenForAudioDevices() }
                 let midi = timed("midi", MTCInput.sources)
-                let audio = audioDevicesChanged.exchange(false, ordering: .relaxed) || !audioListening.load(ordering: .relaxed) ? timed("audio", LTCInput.inputDevices) : facts.audioInputs
+                let fresh = audioDevicesChanged.exchange(false, ordering: .relaxed) || !audioListening.load(ordering: .relaxed)
+                let audio = fresh ? timed("audio", LTCInput.inputDevices) : facts.audioInputs
                 if audio.isEmpty { audioDevicesChanged.store(true, ordering: .relaxed) }  // an empty answer (a HAL error, or no device yet) is asked again
+                if fresh, !audio.isEmpty { reopenLTCIfDeviceReturned(audio) }
                 let addresses = timed("addresses") { SystemInfo.ipv4Addresses }
                 let interfaces = timed("interfaces") { SystemInfo.ipv4Interfaces }
                 let metadata: Logger.Metadata = seconds.mapValues { "\(String(format: "%.2f", $0)) s" }

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
+import AVFoundation
 import CoreMIDI
 import Foundation
 import FanousCore
@@ -1667,4 +1668,19 @@ struct ShowControlGPUTests {
         // (100 − 25 − 5) frames at 25 fps = 2.8 s = frame 70 of the file
         #expect(abs(playback.clock.position - 70) < 1e-6, "\(playback.clock.position)")
     }
+    // B280: the audio engine posts a configuration change when its device drops, changes rate or the default input
+    // moves; the input hands it to its owner (the engine opens a new input) unless it was stopped already
+    @Test func ltcInputReportsAnAudioConfigurationChangeUntilStopped() async {
+        let clock = TimecodeClock()
+        let input = LTCInput(clock: clock, logger: Logger(label: "test"))
+        let changes = Atomic<Int>(0)
+        input.onConfigurationChange = { changes.wrappingAdd(1, ordering: .relaxed) }
+        NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: input.engine)
+        NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: AVAudioEngine())  // another engine's
+        #expect(changes.load(ordering: .relaxed) == 1)
+        input.stop()
+        NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: input.engine)
+        #expect(changes.load(ordering: .relaxed) == 1)
+    }
+
 }
