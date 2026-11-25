@@ -29,11 +29,14 @@ enum SlaveClock {
     /// `offsetMs`: how far the entry's position is from where the slave's clock would have been without it (its
     /// previous position advanced by the entry's rate), i.e. the correction a locked tick applies; a whole-file jump
     /// (the master looping) does not count. `jumped`: a locked tick set the clock more than `jumpMillis` away from
-    /// where it would have run on in host time (`elapsed` seconds since the previous tick, not `dt`: a late tick is
-    /// no jump, and the audio extrapolates its clock in host time too): the master was retriggered, or the slave
-    /// locked on (first, or again after freewheeling or a freeze); its audio then reseeks to the new clock instead
-    /// of nudging towards it (B395). A tick that clamps the clock to the file (the master's file is longer) is no
-    /// jump: the clock stands at the last frame.
+    /// where it would have run on, both in host time (`elapsed` seconds since the previous tick; the audio
+    /// extrapolates its clock in host time, so a slave tick that starts late moved no audio) and in target time
+    /// (`dt`; a local master's entry steps with the target, so the same late tick reads as a step there): the master
+    /// was retriggered, or the slave locked on (first, or again after freewheeling or a freeze); its audio then
+    /// reseeks to the new clock instead of nudging towards it (B395). A tick that clamps the clock to the file (the
+    /// master's file is longer) is no jump: the clock stands at the last frame. At the master's loop wrap the fold
+    /// leaves the clamped last frame's remainder, under one frame: past 20 ms only below 50 fps, where the producer
+    /// reseeks at the wrap anyway (a slave reads no loop range).
     static func follow(
         _ clock: inout LayerClock, entry: SyncPacket.Layer, age: Double, dt: Double, elapsed: Double? = nil, interval: Double, fps: Double,
         frameCount: Int
@@ -43,11 +46,11 @@ enum SlaveClock {
         let predicted = clock.position + rate * dt
         let implied = implied(entry, age: age, fps: fps)
         let state = state(age: age, interval: interval)
-        let jump = fold(implied - (clock.position + rate * (elapsed ?? dt)), span) * 1000 / fps
+        let jump = min(abs(fold(implied - (clock.position + rate * (elapsed ?? dt)), span)), abs(fold(implied - predicted, span))) * 1000 / fps
         clock.position = state == .locked ? min(span - 1, max(0, implied)) : wrap(predicted, span)
         clock.direction = entry.direction < 0 ? -1 : 1
         clock.finished = entry.finished
-        let jumped = state == .locked && implied >= 0 && implied <= span - 1 && abs(jump) > jumpMillis
+        let jumped = state == .locked && implied >= 0 && implied <= span - 1 && jump > jumpMillis
         return (state, fold(implied - predicted, span) * 1000 / fps, jumped)
     }
 

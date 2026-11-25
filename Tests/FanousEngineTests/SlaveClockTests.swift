@@ -118,17 +118,29 @@ struct SlaveClockTests {
         let stale = SlaveClock.follow(
             &clock, entry: Self.entry(position: 60), age: 0.5, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
         #expect(stale.state == .freewheel && !stale.jumped)
-        // the master looped: from frame 99.5 to 0.5 is one frame on, not a jump
-        clock.position = 99.5
+        // the master looped: the slave stood clamped at frame 99 (the entry was at 99.5), the entry is at 0.5 now: half a
+        // frame on at 50 fps, no jump; at 25 fps the same wrap is a whole frame (40 ms) and reseeks, as the producer does
+        // there anyway
+        clock.position = 99
         let wrap = SlaveClock.follow(
             &clock, entry: Self.entry(position: 0.5), age: 0, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
-        #expect(!wrap.jumped && abs(wrap.offsetMs) < 1e-6)
-        // a late tick (50 ms of host time for a 20 ms target step): the entry aged with it, the clock ran on with it; the
-        // offset shows the 30 ms the tick is late, the audio, which runs in host time, saw no jump
+        #expect(!wrap.jumped && abs(wrap.offsetMs - 10) < 1e-6)
+        clock.position = 99
+        let slowWrap = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 0.5, fps: 25, rate: 25), age: 0, dt: 0.02, interval: Self.interval, fps: 25, frameCount: 100)
+        #expect(slowWrap.jumped && abs(slowWrap.offsetMs - 40) < 1e-6)
+        // a slave tick 30 ms late (50 ms of host time for a 20 ms target step) under a remote master: the entry aged with
+        // it and the clock ran on with it in host time; the offset shows the 30 ms, the audio saw no jump
         clock.position = 10
         let late = SlaveClock.follow(
             &clock, entry: Self.entry(position: 10), age: 0.05, dt: 0.02, elapsed: 0.05, interval: Self.interval, fps: 50, frameCount: 100)
         #expect(!late.jumped && abs(late.offsetMs - 30) < 1e-6)
+        // the same late tick under a local master, whose entry stepped with the target (one frame, age 0): in host time the
+        // clock seems 30 ms behind the entry, in target time it is on it; no jump either
+        clock.position = 10
+        let localLate = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 11), age: 0, dt: 0.02, elapsed: 0.05, interval: Self.interval, fps: 50, frameCount: 100)
+        #expect(!localLate.jumped && abs(localLate.offsetMs) < 1e-6)
         // the master's file is longer: the slave stands at its last frame while the entry runs past it, no jump on any tick
         clock.position = 99
         for position in [105.0, 106, 110] {

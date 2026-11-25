@@ -146,8 +146,9 @@ struct SyncCompositorTests {
         #expect(rig.position(0) >= 8 && rig.position(0) < 8.05, "relocked")
     }
 
-    /// B395: the master is retriggered (its entry jumps back 50 ms, within the audio's 100 ms resync window; the rig's
-    /// ticks are milliseconds apart in host time, so the 1/60 s target step plays no part in the jump). The slave's
+    /// B395: the master is retriggered (its entry jumps back 50 ms from where it would be one tick on: a 33 ms jump in
+    /// host time, since the rig's ticks are milliseconds apart there, 50 ms in target time; both past 20 ms, inside the
+    /// audio's 100 ms resync window). The slave's
     /// clock follows at once, and its audio must reseek to the new clock like the master's own does, not be repeated
     /// 2 ms per callback towards it. The channel is driven from the test (no reader on the decoder): a fill after the
     /// jump asks for a drain, and the next one starts a segment at the new clock.

@@ -273,7 +273,6 @@ public final class Compositor: @unchecked Sendable {
         tickIndex = 2
         canvasValid = false
         lastTarget = 0
-        lastNow = 0
     }
 
     private let canvasSize: Atomic<UInt64>
@@ -394,7 +393,7 @@ public final class Compositor: @unchecked Sendable {
             dt = interval
         }
         lastTarget = target
-        let elapsed = lastNow > 0 ? cpuStart - lastNow : 0
+        let hostElapsed = lastNow > 0 ? cpuStart - lastNow : 0  // not reset with `lastTarget`: a reconfigure's gap is real time the clock ran
         lastNow = cpuStart
 
         let snapshot = parameters.read()
@@ -406,7 +405,7 @@ public final class Compositor: @unchecked Sendable {
         let wantsPixels = needsPixels(drawable: drawable)
         var frame = TickContext(
             dt: snapshot.masterControl == .freezeAll ? 0 : dt, target: target, masterIntensity: snapshot.masterControl == .blackout ? 0 : snapshot.master,
-            masterSpeed: snapshot.masterSpeed, time: Float(target.truncatingRemainder(dividingBy: Self.timeWrap)), now: cpuStart, elapsed: elapsed)
+            masterSpeed: snapshot.masterSpeed, time: Float(target.truncatingRemainder(dividingBy: Self.timeWrap)), now: cpuStart, elapsed: hostElapsed)
         drawItems.removeAll(keepingCapacity: true)
 
         layerCanvasBox.withLockIfAvailable { tickLayerCanvas = $0 }  // busy: last tick's assignment once more
