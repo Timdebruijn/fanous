@@ -12,6 +12,17 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Timecode: the LTC chase and LTC cue triggers are on the frame, no longer one frame late (B290). An LTC frame's address
   is decoded when its sync word ends, as the next frame starts; the clock took it as the time at that moment (PR #459).
+- Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
+  slot, not the slot itself (B386). After the ring drained,
+  the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
+  the same tick: a wrong label and a replaced texture under the GPU, and a HAP frame, decoded in place into its pool
+  texture, changed pixels. The playback's own held frame now exchanges pictures with the drained slot, pool texture
+  included (the movie's pool has one texture more than the ring for it) (PR #453).
+- Playback: a chased or sync-slave layer's first frame is its clock's frame (B404). The hand-off asked the decoder for
+  the in point (the out point in a reverse mode), and the swap tick moved the clock to the timecode or the master's
+  position, so the cut showed a frame of the in point; a slave with a reverse play mode also filled the ring backwards
+  under a forward master. The hand-off now sets the clock as the swap tick will and asks for that frame and direction
+  (PR #456).
 - Playback: a file's first frame is its start position (B294). The loader asked the decoder for frame 0 at start,
   before the compositor's hand-off asked for the in point and the direction, so a cut to an in point flashed the last
   pre-decoded frame (3 at a ring of 4) and a reverse mode showed frame 0 for about ten frames. The decoder now decodes
