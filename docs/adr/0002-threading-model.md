@@ -135,13 +135,14 @@ completion handlers must not block the queue they run on.
 
 ## Amendment 2026-11-25 (B285, B286): readers off the DMX queue, a GO off Control
 
-**B286, Control.** Control stays the one serial queue for the project model and the commands that
-change it. Work that grows with the project and changes nothing leaves it: a
-welcome or snapshot copies the documents there and is redacted and encoded off
-it, one at a time on a serial `.utility` queue, so 20 clients joining take one
-core as they did on Control (68 ms for a 1.6 MB welcome of a large show,
-optimised build, on a loaded Mac), and `project.snapshot` writes its version file on the
-caller's thread (the versions' lock orders the writes). `cue.go`, `cue.back`
+**B286, Control.** Control stays the one serial queue for the project model
+and the commands that change it. Work that grows with the project and changes
+nothing leaves it: a welcome or snapshot copies the documents there and is
+redacted and encoded off it, one at a time on a serial queue of its own
+(`queue.sync` from the connection, so at the connection's QoS), so 20 clients
+joining take one core as they did on Control (68 ms for a 1.6 MB welcome of a
+large show, optimised build, on a loaded Mac), and `project.snapshot` writes
+its version file on the caller's thread (the versions' lock orders the writes). `cue.go`, `cue.back`
 and `cue.goto` from OSC and MIDI run on the engine's command queue without
 Control: they read no project, and the cue runner's own serial queue keeps them
 after a list change that was acknowledged before them. A GO sent while 20

@@ -365,8 +365,9 @@ public final class StateStore: @unchecked Sendable {
         }
     }
 
-    /// Welcome and snapshot encoding, one at a time (see `send(to:setup:make:)`).
-    private let encodeQueue = DispatchQueue(label: "org.fanous.control.encode", qos: .utility)
+    /// Welcome and snapshot encoding, one at a time (see `send(to:setup:make:)`); entered with `sync`, so the work runs at
+    /// the waiting connection's QoS, as it did on the control queue.
+    private let encodeQueue = DispatchQueue(label: "org.fanous.control.encode")
 
     /// Test hook: called between the copy and the encoding of a welcome or snapshot.
     nonisolated(unsafe) var whileWelcoming: (@Sendable () -> Void)?
