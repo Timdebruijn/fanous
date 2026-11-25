@@ -28,7 +28,7 @@ import Testing
                 #expect(dmx.data.count >= 2 && dmx.data.count <= 512, Comment(rawValue: file.lastPathComponent))
                 #expect(dmx.encoded().count == bytes.count || dmx.data.count % 2 == 1, Comment(rawValue: file.lastPathComponent))
             }
-            if case .other = packet { Issue.record("unknown Art-Net opcode in \(file.lastPathComponent)") }
+            if packet == nil { Issue.record("Art-Net opcode other than ArtPoll/ArtDmx in \(file.lastPathComponent)") }
         }
     }
 

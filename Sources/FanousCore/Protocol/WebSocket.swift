@@ -102,29 +102,20 @@ public struct WebSocketFrame: Equatable, Sendable {
     }
 
     /// Wire format for server-to-client frames, which are never masked.
-    public func serialized() -> [UInt8] { encode(key: nil) }
-
-    /// Wire format: masked with `key` (client-to-server frames, built by tests), unmasked for nil.
-    func encode(key: (UInt8, UInt8, UInt8, UInt8)?) -> [UInt8] {
+    public func serialized() -> [UInt8] {
         var out: [UInt8] = [(fin ? 0x80 : 0) | opcode.rawValue]
-        let maskBit: UInt8 = key != nil ? 0x80 : 0
         let n = payload.count
         if n < 126 {
-            out.append(maskBit | UInt8(n))
+            out.append(UInt8(n))
         } else if n <= 0xFFFF {
-            out += [maskBit | 126, UInt8(n >> 8), UInt8(n & 0xFF)]
+            out += [126, UInt8(n >> 8), UInt8(n & 0xFF)]
         } else {
-            out.append(maskBit | 127)
+            out.append(127)
             for shift in stride(from: 56, through: 0, by: -8) {
                 out.append(UInt8(truncatingIfNeeded: UInt64(n) >> UInt64(shift)))
             }
         }
-        if let key {
-            out += [key.0, key.1, key.2, key.3]
-            out += Self.mask(payload, key: key)
-        } else {
-            out += payload
-        }
+        out += payload
         return out
     }
 }

@@ -64,7 +64,6 @@ public final class ArtNetReceiver: @unchecked Sendable {
                 switch packet {
                 case .dmx(let dmx): store.receive(artnet: dmx, from: source)
                 case .poll: reply(to: connection)
-                default: break
                 }
             }
             if error != nil { return flows.release(flow) }

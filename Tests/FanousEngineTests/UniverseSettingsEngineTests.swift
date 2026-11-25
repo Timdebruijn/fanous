@@ -115,6 +115,16 @@ struct UniverseSettingsEngineTests {
     /// One ArtDmx frame for port address 0 with every channel at `level`.
     static func artnet(_ level: UInt8, sequence: UInt8 = 0) -> [UInt8] { ArtDmx(sequence: sequence, portAddress: 0, data: [UInt8](repeating: level, count: 512)).encoded() }
 
+    /// A real sACNView data packet for universe 1 (`Tests/Fixtures/captures`) with every slot at `level`.
+    static func sacn(_ level: UInt8, sequence: UInt8) throws -> [UInt8] {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "Fixtures/captures/sacn/sacnview-universe1-000.bin")
+        var bytes = Array(try Data(contentsOf: capture))
+        bytes[111] = sequence
+        bytes.replaceSubrange(126..., with: repeatElement(level, count: 512))
+        return bytes
+    }
+
     func receiving(_ loss: UniverseSettings.Loss) async throws -> (DMXStore, ArtNetReceiver, UInt16) {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         var settings = UniverseSettings(for: Self.a0)
@@ -281,8 +291,7 @@ struct UniverseSettingsEngineTests {
         }
         let artPort = try await listeningPort { artnet.boundPort }
         #expect(await Self.listening(artPort))  // the sACN socket is bound in start()
-        let cid: [UInt8] = (1...16).map { UInt8($0) }
-        sendUDP(SACNData(cid: cid, sourceName: "Desk", sequence: 1, universe: 1, slots: [UInt8](repeating: 64, count: 512)).encoded(), to: sacnPort)
+        sendUDP(try Self.sacn(64, sequence: 1), to: sacnPort)
         try await Task.sleep(for: .milliseconds(200))
         #expect(Self.intensity(store)?.raw != 0x4040)  // A 0.0.0 does not listen to sACN yet
 
@@ -290,7 +299,7 @@ struct UniverseSettingsEngineTests {
         settings.protocols = .sacn
         store.setUniverseSettings([Self.a0: settings])
         sacn.update(groups: UniverseSettings.wire([Self.a0], over: .sacn, settings: [Self.a0: settings]))
-        sendUDP(SACNData(cid: cid, sourceName: "Desk", sequence: 2, universe: 1, slots: [UInt8](repeating: 64, count: 512)).encoded(), to: sacnPort)
+        sendUDP(try Self.sacn(64, sequence: 2), to: sacnPort)
         #expect(await waitUntil { Self.intensity(store)?.raw == 0x4040 }, "port \(sacnPort)")
         sendUDP(Self.artnet(255), to: artPort)  // Art-Net no longer reaches A 0.0.0
         try await Task.sleep(for: .milliseconds(200))

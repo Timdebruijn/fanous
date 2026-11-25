@@ -26,12 +26,11 @@ public struct LTCDecoder: Sendable {
     private var register: UInt128 = 0
     private var lastSyncIndex: Int64 = -1
     private var frameRates: [Double] = []
-    private let threshold: Float
+    private let threshold: Float = 0.1
 
-    public init(sampleRate: Double, nominalFrameRate: Double = 25, threshold: Float = 0.1) {
+    public init(sampleRate: Double, nominalFrameRate: Double = 25) {
         self.sampleRate = sampleRate
         self.bitPeriod = sampleRate / (nominalFrameRate * 80)
-        self.threshold = threshold
     }
 
     public mutating func process(_ samples: [Float]) -> [LTCFrame] {

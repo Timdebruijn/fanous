@@ -752,8 +752,9 @@ three existing modes and their footprints alone.
   universe on its interface (§6.5a); unicast sACN on port 5568 is accepted
   on every interface.
 - Every universe update is applied as it arrives; no sync is honoured.
-  `ArtSync` is parsed and then dropped; E1.31 synchronization packets are
-  ignored (not parsed). The user guide says the same
+  `ArtSync`, like every OpCode but ArtPoll and ArtDmx, is ignored (not
+  parsed); E1.31 synchronization packets are ignored (not parsed). The user
+  guide says the same
   (`docs/user/console-setup.md`, "Not honoured").
 
 ### 6.5a Per-universe settings as built (2026-10-26, B28)

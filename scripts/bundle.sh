@@ -2,16 +2,15 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (c) 2026 Tim de Bruijn
 # Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
-# Assembles dist/Fanous.app from SwiftPM products and web/dist, then signs it.
-#   CONFIG=debug|release (default release)   CODESIGN_IDENTITY="Developer ID Application: …" (default ad-hoc "-")
+# Builds the release SwiftPM products and web/dist, assembles dist/Fanous.app from them, then signs it.
+#   CODESIGN_IDENTITY="Developer ID Application: …" (default ad-hoc "-")
 set -euo pipefail
 cd "$(dirname "$0")/.."
-CONFIG=${CONFIG:-release}
 VERSION=$(sed -n 's/.*public static let string = "\(.*\)"/\1/p' Sources/FanousCore/Attribution.swift)
 
-swift build -c "$CONFIG"
-BIN=$(swift build -c "$CONFIG" --show-bin-path)
-if [[ ! -f web/dist/index.html || "${WEB_BUILD:-1}" == 1 ]]; then (cd web && npm run build); fi
+swift build -c release
+BIN=$(swift build -c release --show-bin-path)
+(cd web && npm run build)
 
 APP=dist/Fanous.app
 rm -rf "$APP"
@@ -90,8 +89,6 @@ cat > "$APP/Contents/Library/LaunchAgents/org.fanous.engine.plist" <<PLIST
 </dict></plist>
 PLIST
 
-# The agent shares the app's Info.plist keys (usage strings) through the bundle; it gets the same entitlements.
-cp scripts/entitlements.plist "$APP/Contents/Resources/entitlements.plist"
 IDENTITY=${CODESIGN_IDENTITY:--}
 SIGN=(codesign --force --sign "$IDENTITY" --options runtime --entitlements scripts/entitlements.plist)
 [[ "$IDENTITY" != "-" ]] && SIGN+=(--timestamp)
