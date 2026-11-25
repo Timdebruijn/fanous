@@ -325,7 +325,7 @@ extension LayerAudioChannel {
     @Test func dropsFramesWhenAudioIsBehindAndConvergesToTheClock() {
         let source = RampSource()
         let channel = LayerAudioChannel()
-        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: -1)
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: 0)
         channel.fill(source, wanted: 0)  // ring: source frames 0 ..< 12000
         let frames = 480
         Self.pull(channel, frames: frames, wanted: 0)  // the segment's first pull, on the clock: head 480
@@ -337,7 +337,7 @@ extension LayerAudioChannel {
         var firstPeak = 0.0
         for k in 1..<17 {
             let wanted = Double(lead + k * frames) / 48_000
-            channel.setState(wantedPTS: wanted, active: true, volume: 1, pan: -1)
+            channel.setState(wantedPTS: wanted, active: true, volume: 1, pan: 0)
             let out = Self.pull(channel, frames: frames, wanted: wanted)
             let consumed = previous - channel.bufferedFrames
             previous = channel.bufferedFrames
@@ -346,6 +346,7 @@ extension LayerAudioChannel {
             // heard to the last one consumed (B321: the dropped frames are spread over the callback, not cut at its start)
             #expect(out.left[0] == Float(consumedTotal))
             #expect(out.left[frames - 1] == Float(consumedTotal + consumed - 1))
+            #expect(out.right[0] == -Float(consumedTotal) && out.right[frames - 1] == -Float(consumedTotal + consumed - 1))
             if k == 1 { firstPeak = channel.statistics.maxDriftMillis }
             if k == 10 { #expect(channel.statistics.corrections == 10, "still correcting inside the window") }
             consumedTotal += consumed
@@ -777,6 +778,33 @@ extension LayerAudioChannel {
         }
         #expect(worst.step < omega * Double(frames + LayerAudioChannel.maxCorrectionFrames - 1) / Double(frames - 1), "step \(worst.step)")
         #expect(worst.bend < omega / 2, "second difference \(worst.bend)")
+    }
+
+    /// B321: the resample reads across the end of the storage like the plain copy, and a drop that finds fewer frames
+    /// than the callback plus the drop plays what there is, resampled, consumes it all and leaves the rest silent.
+    @Test func aCorrectionReadsAcrossTheStorageEndAndIntoAnUnderrun() {
+        let source = RampSource()
+        let channel = LayerAudioChannel()
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: 0)
+        channel.fill(source, wanted: 0)  // tail 12 000
+        Self.pull(channel, frames: 11_800, wanted: 0)  // landed, the gain ramped: head 11 800
+        channel.fill(source, wanted: 11_800.0 / 48_000)  // tail 23 800: the head is 200 frames before the storage end
+        var out = Self.pull(channel, frames: 480, wanted: Double(11_800 + 1440) / 48_000)  // 30 ms behind: drop 96
+        #expect(channel.bufferedFrames == 12_000 - 576 && channel.statistics.corrections == 1)
+        for k in 0..<480 {  // the ramp is linear, so its interpolation is exact: 576 frames at a step of 575/479
+            let expected = 11_800 + Float(k) * 575 / 479
+            #expect(abs(out.left[k] - expected) < 0.01 && abs(out.right[k] + expected) < 0.01, "frame \(k): \(out.left[k])")
+        }
+
+        let other = LayerAudioChannel()
+        other.setState(wantedPTS: 0, active: true, volume: 1, pan: 0)
+        other.fill(source, wanted: 0)
+        Self.pull(other, frames: 480, wanted: 0)  // landed
+        Self.pull(other, frames: 11_000, wanted: 480.0 / 48_000)  // on the clock: 520 frames left
+        out = Self.pull(other, frames: 480, wanted: Double(11_480 + 1440) / 48_000)  // 30 ms behind: drop 96 of 520
+        #expect(other.bufferedFrames == 0 && other.statistics.corrections == 1 && other.statistics.underruns == 1)
+        #expect(out.left[0] == 11_480 && out.left[423] == 11_999 && out.right[423] == -11_999)  // 520 frames into 424
+        #expect(out.left[424...].allSatisfy { $0 == 0 } && out.right[424...].allSatisfy { $0 == 0 })
     }
 
     @Test func ringKeepsTheRampContinuousAcrossTheWrap() {

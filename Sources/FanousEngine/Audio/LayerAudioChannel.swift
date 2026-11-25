@@ -56,7 +56,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// 2 ms: the most one pull consumes more or fewer frames than it plays.
     public static let maxCorrectionFrames = 96
     /// 100 ms: beyond this the audio is too far off to nudge back. The producer reseeks, and until it has the
-    /// consumer stays silent (and counts an underrun) instead of dropping or repeating stale audio.
+    /// consumer stays silent (and counts an underrun) instead of correcting towards stale audio.
     /// ponytail: a guess. Up to 100 ms off, the 2 ms-per-callback correction takes at most ~0.5 s at 480-frame callbacks (~1 s at 1024); tune from the drift statistics.
     public static let resyncThresholdFrames = 4800
 
@@ -102,7 +102,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
     private var appliedGeneration = 0
     private var alignedGeneration = 0  // the segment whose first pull landed on the clock (B393)
     private var alignNext = true  // the channel was inactive: the next pull lands on the clock (B393)
-    private var correcting = 0  // -1: dropping frames, 1: repeating, until the audio is on the clock or the drift changes sign, not only until inside the window (B394)
+    private var correcting = 0  // -1: playing faster (dropping frames, as a resample since B321), 1: slower (repeating), until the audio is on the clock or the drift changes sign, not only until inside the window (B394)
     private var previousGainL: Float = 0
     private var previousGainR: Float = 0
 
@@ -451,6 +451,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
         var consumed = 0
         let corrected = drops > 0 || repeats > 0
         if corrected {
+            assert(lead == 0 && skip == 0)  // a landing sets the drift to 0, so no correction runs in the same pull
             // B321: the correction is spread over the callback, a resample instead of a cut. `consumed` ring frames (the
             // drop: the callback plus up to 96, the repeat: the callback less up to 96) are read at a constant step by
             // linear interpolation into `outputs` frames, the first on the frame after the last one heard, the last on
