@@ -378,6 +378,7 @@ count up ([Show control](show-control.md#timecode)).
   (or **Authorize microphone** on the Inputs screen, not in show mode).
 - Freewheel (yellow) means the signal dropped; Lost (red) means it stayed
   away longer than the Freewheel time.
+- Turning **Timecode** off and on again reopens the input.
 
 For MTC the MIDI panel must list the source; connect the interface or
 enable a network MIDI session, then choose it under Device or All sources.
