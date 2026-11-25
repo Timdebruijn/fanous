@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Timecode: three MTC fixes (B292). A full-frame locate holds the clock at the locate position, Locked, until quarter
+  frames run again; it was taken as running time, so a chasing layer played on and froze 2 s past it. With All sources,
+  one source drives the clock (the first to send, until it is unplugged or silent for the Freewheel time) instead of
+  every source in turn. SysEx longer than a full frame is dropped instead of growing the buffer (PR #N).
 - Playback: a chased or sync-slave layer's first frame is its clock's frame (B404). The hand-off asked the decoder for
   the in point (the out point in a reverse mode), and the swap tick moved the clock to the timecode or the master's
   position, so the cut showed a frame of the in point; a slave with a reverse play mode also filled the ring backwards

@@ -213,6 +213,12 @@ Setting up MTC:
 4. Done when the pill reads **Locked** and the source line shows the rate.
    A missing source reads in red under the readout.
 
+With **All sources**, the first source that sends MTC drives the clock;
+another takes over only when that one is unplugged or has sent nothing for
+the Freewheel time. A locate (the full-frame message a sender sends when it
+jumps or parks) sets the time and holds it there, Locked, until the sender
+runs again.
+
 <img src="images/show-timecode-mtc.png" width="1060" alt="The Timecode panel with Source MTC (MIDI) and Device All sources, the readout dashed with the state Off and 'No source', and the red line 'no MIDI source connected'">
 
 ```mermaid

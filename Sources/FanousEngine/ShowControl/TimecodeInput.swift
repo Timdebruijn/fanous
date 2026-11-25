@@ -25,6 +25,8 @@ public final class TimecodeClock: @unchecked Sendable {
         public var source: String = ""
         /// Frames between the source's updates: LTC decodes every frame, MTC assembles a time every 2 (B65).
         public var updateFrames: Int = 1
+        /// False after an MTC full-frame locate (B292): the clock stands at that position, locked, until a running update.
+        public var running = true
 
         public var timecode: Timecode { Timecode(frameCount: max(0, frameCount), rate: rate) }
     }
@@ -44,8 +46,8 @@ public final class TimecodeClock: @unchecked Sendable {
     public init() {}
 
     /// Source thread: one decoded frame at the host time its last bit ended; `everyFrames` is the update interval
-    /// the source promises, which sets the lock window.
-    public func update(_ timecode: Timecode, at hostTime: Double, source: String, everyFrames: Int = 1) {
+    /// the source promises, which sets the lock window. `running: false` is a locate: the time stands still there.
+    public func update(_ timecode: Timecode, at hostTime: Double, source: String, everyFrames: Int = 1, running: Bool = true) {
         sample.withLock { s in
             s.frameCount = timecode.frameCount
             s.rate = timecode.rate
@@ -53,6 +55,7 @@ public final class TimecodeClock: @unchecked Sendable {
             s.state = .locked
             s.source = source
             s.updateFrames = everyFrames
+            s.running = running
         }
         framesSeen.wrappingAdd(1, ordering: .relaxed)
         onFrame?(timecode, hostTime)
@@ -70,9 +73,10 @@ public final class TimecodeClock: @unchecked Sendable {
         Self.extrapolate(sample.withLock { $0 }, at: now, freewheel: freewheelSeconds)
     }
 
-    /// Locked within 1.5 update intervals of the last decode, freewheeling up to `freewheel` seconds, then lost.
+    /// Locked within 1.5 update intervals of the last decode, freewheeling up to `freewheel` seconds, then lost; a
+    /// stopped clock stays locked where it was set.
     static func extrapolate(_ s: Sample, at now: Double, freewheel: Double) -> Sample {
-        guard s.state != .off else { return s }
+        guard s.state != .off, s.running else { return s }
         var out = s
         let age = now - s.hostTime
         let interval = Double(s.updateFrames) / s.rate.exactFrameRate
@@ -90,7 +94,7 @@ public final class TimecodeClock: @unchecked Sendable {
     public func frames(at now: Double) -> Double? {
         let s = read(at: now)
         guard s.state == .locked || s.state == .freewheel else { return nil }
-        return Double(cached.frameCount) + max(0, now - cached.hostTime) * cached.rate.exactFrameRate
+        return Double(cached.frameCount) + (cached.running ? max(0, now - cached.hostTime) * cached.rate.exactFrameRate : 0)
     }
 }
 
@@ -322,7 +326,7 @@ public final class LTCInput: @unchecked Sendable {
 
 /// MTC from CoreMIDI (quarter frames and full-frame SysEx) on every source, or one chosen by name, reconnecting when
 /// sources come and go (B64, as `MIDIInput` does). Everything after the CoreMIDI callback runs on `queue`: one parse
-/// state per source unique id, so two senders never mix their quarter frames.
+/// state per source unique id, so two senders never mix their quarter frames, and one source feeds the clock (B292).
 public final class MTCInput: @unchecked Sendable {
     public struct Status: Sendable {
         public var connected: [String] = []
@@ -337,17 +341,17 @@ public final class MTCInput: @unchecked Sendable {
         var pendingSysexWord: UInt32?
 
         /// One UMP word: type 1 = system message (F1 quarter frame), type 3 = 64-bit SysEx (two words). Returns the
-        /// timecode when one is complete.
-        mutating func feed(_ word: UInt32) -> Timecode? {
+        /// timecode when one is complete: running for quarter frames, stopped for a full-frame locate (B292).
+        mutating func feed(_ word: UInt32) -> (timecode: Timecode, running: Bool)? {
             if let first = pendingSysexWord {
                 pendingSysexWord = nil
-                return sysex(first: first, second: word)
+                return sysex(first: first, second: word).map { ($0, false) }
             }
             switch word >> 28 {
             case 1:
                 guard (word >> 16) & 0xFF == 0xF1, let timecode = decoder.quarterFrame(UInt8((word >> 8) & 0xFF)) else { return nil }
                 // the assembled time is that of piece 0: two frames ago
-                return Timecode(frameCount: timecode.frameCount + 2, rate: timecode.rate)
+                return (Timecode(frameCount: timecode.frameCount + 2, rate: timecode.rate), true)
             case 3:
                 pendingSysexWord = word
                 return nil
@@ -362,6 +366,11 @@ public final class MTCInput: @unchecked Sendable {
             let bytes = [UInt8((first >> 8) & 0xFF), UInt8(first & 0xFF), UInt8(second >> 24), UInt8((second >> 16) & 0xFF), UInt8((second >> 8) & 0xFF), UInt8(second & 0xFF)]
             if status == 0 || status == 1 { sysex = [0xF0] }
             sysex.append(contentsOf: bytes.prefix(count))
+            // a full frame is F0 and 8 bytes before its F7: a longer message is not one, dropped as it grows (B292)
+            guard sysex.count <= 9 else {
+                sysex.removeAll(keepingCapacity: true)
+                return nil
+            }
             guard status == 0 || status == 3 else { return nil }
             sysex.append(0xF7)
             defer { sysex = [] }
@@ -375,10 +384,15 @@ public final class MTCInput: @unchecked Sendable {
     /// share a name).
     private(set) var listener: MIDISourceListener!
     private var parsers: [MIDIUniqueID: Parse] = [:]
+    /// The source whose times the clock takes and the host time of its last one (B292): another takes over only once
+    /// this one is unplugged or has been silent for the freewheel time, so two senders never feed the clock in turn.
+    private var feeding: (uid: MIDIUniqueID, at: Double)?
+    private let logger: Logger
     public let status = Mutex(Status())
 
     public init(clock: TimecodeClock, logger: Logger) {
         self.clock = clock
+        self.logger = logger
         listener = MIDISourceListener(
             label: "MTC", port: "MTC in", queue: queue, logger: logger,
             receive: { [weak self] words, uid in self?.receive(words, uid: uid) },
@@ -409,6 +423,7 @@ public final class MTCInput: @unchecked Sendable {
     /// unplugged source is signal loss like a stopped sender: freewheel, then lost after the freewheel time.
     private func sourcesChanged(_ connected: [MIDIUniqueID: String], gone: Set<MIDIUniqueID>) {
         for uid in gone { parsers[uid] = nil }
+        if let uid = feeding?.uid, gone.contains(uid) { feeding = nil }
         let list = connected.values.sorted()
         let error = list.isEmpty ? Self.missing(listener.wanted) : nil
         status.withLock {
@@ -423,8 +438,11 @@ public final class MTCInput: @unchecked Sendable {
         guard listener.names[uid] != nil else { return }
         var parse = parsers[uid] ?? Parse()
         for (word, hostTime) in words {
-            guard let timecode = parse.feed(word) else { continue }
-            clock.update(timecode, at: hostTime, source: "MTC", everyFrames: 2)
+            guard let (timecode, running) = parse.feed(word) else { continue }
+            if let feeding, feeding.uid != uid, hostTime - feeding.at < clock.freewheelSeconds { continue }
+            if feeding?.uid != uid { logger.info("MTC input: timecode from \(listener.names[uid] ?? "source \(uid)")") }
+            feeding = (uid, hostTime)
+            clock.update(timecode, at: hostTime, source: "MTC", everyFrames: 2, running: running)
         }
         parsers[uid] = parse
     }
@@ -433,6 +451,7 @@ public final class MTCInput: @unchecked Sendable {
         queue.sync {
             listener.stop()
             parsers = [:]
+            feeding = nil
         }
         status.withLock { $0 = Status() }
         clock.stop()
