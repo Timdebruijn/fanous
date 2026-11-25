@@ -15,6 +15,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   they are now encoded off it, one at a time, OSC and MIDI GO, back and goto skip the control queue, and
   `project.snapshot` writes its file off it. The same GO now waits 0.004 ms (OSC, MIDI) or 0.05 ms
   (WebSocket) (PR #480).
+- Docs: the owner's four decisions on the 3D pixel-mapping note (`docs/pixelmap-3d.md` §6, row B407): z up with
+  the up axis a project setting, CSV and OPC import both, the height map on its own canvas, order atlas, kinetic,
+  project (PR #483)
+- Docs: a design note for the pixel mapper in three dimensions and for pixels on winches (`docs/pixelmap-3d.md`,
+  row B407): a point list with x/y/z per LED, three sampling modes, a height map for kinetic groups, and what
+  changes on the wire when Fanous sends Art-Net/sACN (PR #481)
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
