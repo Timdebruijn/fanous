@@ -12,7 +12,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Cleanup: the web UI drops one-caller helpers (thumbnail, history, popover text), the snapshot's role and caps copies, a
   duplicate lock, an unused colour and dev-proxy entry, and shares the Slice picker, the tab buttons, the point clamp,
-  the live-input dot and the 24-hour clock; nothing on screen or on the wire changes (PR #N).
+  the live-input dot and the 24-hour clock; nothing on screen or on the wire changes (PR #445).
 - Sync: a slave's audio reseeks when its master is retriggered (B395). The slave's clock followed the jump at
   once, but its audio was nudged towards the new clock 2 ms per callback (a jump of 20 to 100 ms; under 20 ms
   the lead stayed) instead of reseeked like the master's own. A locked tick that moves the clock by more than
