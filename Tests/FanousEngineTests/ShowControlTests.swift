@@ -1639,7 +1639,7 @@ struct ShowControlTests {
     }
     // B280: the audio engine posts a configuration change when its device drops, changes rate or the default input
     // moves; once opened, the input hands it to its owner (the engine opens a new input) until it is stopped. Selecting
-    // a device posts one of its own a second later with nothing changed (measured in the review of #495): no reopen.
+    // a device posts one of its own a few tenths of a second later with nothing changed (measured, review of #495): no reopen.
     @Test func ltcInputReportsARealConfigurationChangeOnceOpenedUntilStopped() async {
         let changes = Atomic<Int>(0)
         let input = LTCInput(clock: TimecodeClock(), logger: Logger(label: "test")) { _ in changes.wrappingAdd(1, ordering: .relaxed) }
