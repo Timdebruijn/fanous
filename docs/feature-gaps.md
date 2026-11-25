@@ -4,7 +4,9 @@
 
 # Fanous: feature gaps against existing media servers
 
-Research of 2026-10-28. Four web surveys covered console-native servers,
+Research of 2026-10-28; the claims about grandMA3, Eos and Avolites NDI
+(§0.1, §2, G25, §7) were re-checked against the vendors' own pages on
+2026-11-25. Four web surveys covered console-native servers,
 touring/show servers, Mac VJ/theatre software, and the console ecosystem and
 standards. They were merged and checked against this repository. Product facts
 come from manuals, release notes and vendor pages. Four load-bearing claims were
@@ -17,11 +19,21 @@ repository.
 ## 0. Summary
 
 1. **The weak spot is the path into grandMA3 and Eos, not the effect count.**
-   - grandMA3 lists no CITP (protocol page 2.4/2.5; Pixera, Jan 2025: MA "has
-     not yet committed"). Eos has none either.
-   - Their live-preview path is NDI: MA3, and also MagicQ and Onyx (Titan
-     used NDI until it dropped it in v19, Dec 2025). Per the survey, Eos takes
-     an SRT/RTSP H.264 stream.
+   - The grandMA3 manual documents no CITP (protocol page 2.4/2.5; Pixera,
+     Jan 2025: MA "has not yet committed"). MA publishes no complete protocol
+     list for grandMA3, so the manual cannot show that CITP is absent; the
+     pages that were read are listed in §7.
+   - ETC's Eos Family online help page "Control Protocols" (footer: v3.3.10
+     User Manual RevA) lists ACN/E1.17, sACN/E1.31, Art-Net, ETCNet2, ETC Net3
+     and Streaming Video (SRT and RTSP only). CITP is not in it, so Eos has
+     none.
+   - For MA3 the live-preview path is NDI, and also for MagicQ and Onyx. Titan
+     had NDI, and Avolites removed it in v19 (Dec 2025) *temporarily*, for a
+     licence change; whether it is back is unverified (§2).
+   - Eos takes an SRT or RTSP H.264 stream, but only from 3.3.5 (released
+     20 Jan 2026). ETC removed Video Streams entirely in 3.3.0 because the
+     licence terms of the underlying technology changed; 3.3.0 to 3.3.4 have
+     no stream at all (ETC support articles, §8).
    - Our CITP/MSEX therefore reaches only MA2, MagicQ, Hog 4, Onyx and Titan.
    - NDI is designed as a closed plugin and deferred for its licence
      obligations (§4, B74). Until it lands, an MA3 programmer sees no
@@ -89,8 +101,12 @@ repository.
 **Other changes**
 - **Catalyst V5:** Arcus still lists it, but the newest dated evidence is a V5
   beta of March 2015.
-- **Avolites NDI:** removed from Titan, Prism and Ai in Dec 2025 for licensing
-  reasons. Its return is unconfirmed.
+- **Avolites NDI:** *temporarily* removed from Titan, Prism and Ai in Dec 2025
+  "due to changes in the licencing conditions". Avolites' announcement ("Avolites
+  release Titan v19 - important information") says they were close to a new
+  licence agreement with Vizrt and hoped to bring NDI back in the first half
+  of 2026. Titan PC Suite v19.2 is dated 23 Jun 2026 but its release notes
+  were not readable on 2026-11-25, so whether NDI is back is unverified.
 - **Pandoras Box and Widget Designer:** moved from Christie to twoloox on
   2025-10-15, now at V10.
 - **Free tiers:** common, but none can run a show unwatermarked.
@@ -102,7 +118,8 @@ repository.
   | Watchout Producer | no output without a key |
   | MediaMaster | demo |
 
-- **CITP coverage:** grandMA3 and Eos have none (§0.1). The README names the
+- **CITP coverage:** the grandMA3 manual and the Eos protocol list document
+  no CITP (§0.1). The README names the
   desks CITP thumbnails reach in its test request;
   `docs/marketing/positioning.md` should too.
 
@@ -123,7 +140,7 @@ priority for each row comes from §4.
 | # | Capability | Who has it | Fanous | Effort |
 |---|---|---|---|---|
 | G1 | Camera/capture input: UVC, and capture cards with a macOS driver | CN 5/5 · HE 5/6 · Mac 6/6 | `◐` UVC cameras and capture cards with a macOS driver are built as folder 0 files 1–20 (B73 step 2, PRs #116, #120); cards whose only path is a vendor SDK (DeckLink, AJA) are not | SDK-only cards: in-tree source or plugin, after a licence check (DESIGN §8.2.1) |
-| G2 | NDI in and out | CN 3/5 (Ai pulled it) · HE 6/6 in · Mac 6/6 in; **the live-preview path of MA3, MagicQ and Onyx** (Titan until v19) | `D`: closed plugin (ADR-0016), deferred for its licence (B74) | M, plus the plugin loader |
+| G2 | NDI in and out | CN 3/5 (Ai pulled it, temporarily per Avolites) · HE 6/6 in · Mac 6/6 in; **the live-preview path of MA3, MagicQ and Onyx** (Titan until v19; Avolites says temporary, return unverified) | `D`: closed plugin (ADR-0016), deferred for its licence (B74) | M, plus the plugin loader |
 | G3 | Screen/window capture: slides, presentation and lyrics apps | Millumin, VDMX, Isadora, Mitti | `◐` displays are built as folder 0 files 21–28 (B73 step 3, PRs #126, #127); windows (29–32) are not | S–M for windows, when a show asks (B73 step 4) |
 | G4 | Text layer: static and live text over OSC/API, countdown, SRT subtitles | CN 4/5 · HE 5/6 · Mac 5/6 | `◐` clock generator only | M: CoreText into a folder 0 generator; text set over OSC/WebSocket |
 | G5 | Transitions beyond crossfade: through black, fade-up-first, wipes, shader transitions | CN 4/5 (Hippotizer 3, Ai 38, Mbox ~66) · Resolume, Millumin | `◐` crossfade 0.1–25.5 s | S for through black and fade-up-first; M for a catalogue. Needs 1–2 reserved channels |
@@ -155,8 +172,8 @@ priority for each row comes from §4.
 |---|---|---|---|---|
 | G22 | Desk personalities beyond GDTF (MA2 XML, MagicQ head file, Avolites personality, Eos library request, Onyx), plus a test on a real desk. Eos's GDTF import does not create media or models (ETC support page) | CN 5/5 ship desk profiles or appear in MagicQ's patch presets | `◐` GDTF only, untested (B7, B40) | S each, plus owner time |
 | G23 | CITP compliance details. Titan Active Fixtures auto-patch from what the server reports. MagicQ needs layers on ascending DMX addresses with ascending head numbers. Whether to send the v1.0 `SInf` at accept, as the spec says, instead of after 2 s. | MA2, MagicQ, Hog, Onyx, Titan | `◐` MSEX 1.2, verified on loopback only (B40). Built: the v1.0 `SInf` fallback and 0-based contiguous library and element indexes, which also keep the 256 cap (B78, PRs #194, #198) | S |
-| G24 | Thumbnails for desks without CITP (MA3, Eos): export the library thumbnails as an image set named by folder and file, for the desk's image pool | none found (users build it by hand) | `—` | S; first check what MA3 and Eos can import |
-| G25 | SRT/RTSP H.264 preview stream for Eos (3.3.5 and later, per the survey; the page returned 404 on re-check) | Eos side only | `◐` the H.264 encoder exists for the web preview | M |
+| G24 | Thumbnails for desks with no documented CITP (MA3, Eos): export the library thumbnails as an image set named by folder and file, for the desk's image pool | none found (users build it by hand) | `—` | S; first check what MA3 and Eos can import |
+| G25 | SRT/RTSP H.264 preview stream for Eos (3.3.5 and later; 3.3.0 to 3.3.4 have no video streams, ETC support articles, re-read 2026-11-25) | Eos side only | `◐` the H.264 encoder exists for the web preview | M |
 | G26 | Art-Net timecode in (`ArtTimeCode`, 0x9700) | Pixera, Kinetic; MagicQ sends it | `—` | S |
 | G27 | Timecode out, LTC generator | QLab, Millumin, VDMX, Pixera | `◐` `LTCEncoder` in Core, used by tests only; a generator with Art-Net, MTC and LTC out in the backlog (B138) | S–M |
 | G28 | PosiStageNet and tracking | HE 5/6 · Hippotizer; MA3 and MagicQ send PSN | `D` (B53) | M |
@@ -297,22 +314,44 @@ Going past 64 would break eight layers per universe.
 ## 7. Verification and open checks
 
 **Re-read by hand on 2026-10-28:**
-- The grandMA3 protocol page: no CITP. The page body says version 2.4.
+- The grandMA3 protocol page: no CITP. The page body says version 2.4. That
+  page is not a complete protocol list (see the 2026-11-25 re-check below).
 - MA forum thread 7703: "Not yet - afaik" (2022).
 - The ChamSys MediaMaster 26.0 post: macOS in 27.0.
 - The PRG Mbox page: v5.6, Apple Silicon, paid annual licence.
 
-The Eos video-stream page returned 404. Everything else is as the surveys
-reported it.
+The Eos video-stream page returned 404 then; it was read on 2026-11-25. Everything
+else is as the surveys reported it.
+
+**Re-checked on 2026-11-25** (only these four claims; nothing else in the file
+was re-read):
+- Eos video streams: ETC's "Video Stream support in Eos v3.3.0" and "Setting
+  up and using Videos Streams with Eos" (support.etcconnect.com), and the
+  v3.3.5 release announcement on community.etcconnect.com. Removed in 3.3.0
+  over licensing, back in 3.3.5 on SRT and RTSP (H.264).
+- Eos and CITP: the Eos Family online help page "Control Protocols"
+  (footer "Eos Family v3.3.10 User Manual RevA") lists every control protocol;
+  CITP is not in it.
+- Avolites NDI: "Avolites release Titan v19 - important information"
+  (avolites.com). Temporary removal, return hoped for in H1 2026. Titan PC
+  Suite v19.2 (23 Jun 2026): release notes not readable, NDI status unknown.
+- grandMA3: the 2.5 help pages `videos.html`, `network.html`, `dmx.html`,
+  `remote_inputs.html` and `control_other_ma_devices.html` document Art-Net,
+  sACN, NDI, DC, MIDI, DMX, OSC, PSN, MVR-xchange and MSC, and no CITP or
+  MSEX. MA publishes no complete protocol list, so this is "the manual
+  documents no CITP", not "grandMA3 has no CITP". The README's test request
+  and its CITP coverage line rest on that wording.
 
 **Unverified or conflicting:**
-- Eos SRT/RTSP input (G25).
+- Eos SRT/RTSP input (G25): read on 2026-11-25, see above; whether Fanous's
+  H.264 stream suits Eos is untested.
+- Avolites NDI after Dec 2025 (§2): unknown.
 - Which capture cards appear as AVFoundation devices on macOS (G1); check each
   vendor's driver.
 - ChamSys's free 8-layer server against the removal of MagicHD.
 - Hippotizer hot backup.
-- Which desks take CITP (MA2, Hog 4, Onyx, Titan) and Eos having none come
-  from the console survey and were not re-read.
+- Which desks take CITP (MA2, Hog 4, Onyx, Titan) comes
+  from the console survey and was not re-read.
 - Pandoras Box V10 DMX tables (the 8.11 help file was used).
 - NDI SDK, read on 2026-10-28 (licence text of 2025-08-21). Two points are
   open: whether `libndi.dylib` may be bundled (NDI licence §2d), and whether the 6.3.2
@@ -342,11 +381,12 @@ reported it.
   - Isadora: <https://troikatronix.com/isadora/specifications/>
   - Mitti: <https://imimot.com/mitti/>
 - **Consoles**
-  - grandMA3: <https://help.malighting.com/grandMA3/2.5/HTML/network_design_protocols.html>, <https://forum.malighting.com/forum/thread/7703-is-citp-implemented/>
+  - grandMA3: <https://help.malighting.com/grandMA3/2.5/HTML/network_design_protocols.html>, <https://forum.malighting.com/forum/thread/7703-is-citp-implemented/>; re-check 2026-11-25: `videos.html`, `network.html`, `dmx.html`, `remote_inputs.html`, `control_other_ma_devices.html` under <https://help.malighting.com/grandMA3/2.5/HTML/>
   - MagicQ: <https://docs.chamsys.co.uk/magicq/1.9.9.x/manual/media_servers.html>, <https://docs.chamsys.co.uk/magicq-change-notes/stable/version1-9-9/v1.9.9-change-notes.html>
   - Avolites: <https://manual.avolites.com/docs/networking/using-active-fixtures>
   - Onyx: <https://support.obsidiancontrol.com/Content/Onyx_Manual/Networking/CITP.htm>
   - Eos: <https://support.etcconnect.com/ETC/Consoles/Eos_Family/Software_and_Programming/GDTF>
+  - Eos protocols and video streams (2026-11-25): <https://www.etcconnect.com/WebDocs/Controls/EosFamilyOnlineHelp/en/Content/03_Eos_System_Requirements_and_Setup/Eos_Networking_Overview/Network_Protocols/Control_Protocols.htm>, <https://support.etcconnect.com/ETC/Consoles/Eos_Family/Software_and_Programming/Video_Stream_support_in_Eos_v3.3.0>, <https://support.etcconnect.com/ETC/Consoles/Eos_Family/Software_and_Programming/Setting_up_and_using_Videos_Streams_with_Eos>, v3.3.5 announcement <https://community.etcconnect.com/control_consoles/eos-family-consoles/f/eos-family/61969/eos-v3-3-5-is-now-released>
 - **Standards**
   - CITP spec (2020-11-27): <https://bitbucket.org/lars_wernlund/citp/downloads/master_2020-11-27.pdf>
   - GDTF/MVR: <https://github.com/mvrdevelopment/spec>
