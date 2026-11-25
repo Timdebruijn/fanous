@@ -29,7 +29,8 @@ rigs, and which inputs those products take from a media server). Sources in
    the winch controller owns safety (B53, DESIGN §21).
 4. **Generative volume effects stay out.** Fanous is a video server (DESIGN
    §1 non-goals). For noise fields through a volume, Fanous feeds
-   TouchDesigner over Syphon on the same Mac, or MADRIX over NDI (B74).
+   TouchDesigner over Syphon on the same Mac, or, once NDI out exists (B74,
+   deferred), MADRIX on a separate Windows machine.
 
 ## 1. What the field does
 
@@ -70,15 +71,17 @@ Observations:
 
 A **pixel map** is a project object (`pixelMaps[]`, one per rig) holding:
 
-- `points[]`: `x y z` in metres (stage frame: x right, y up, z towards the
-  audience, origin at the stage centre line, the same frame the PSN receiver
-  of B53 will use), `universe`, `address`, `footprint` (`rgb`, `rgbw`,
-  `rgb16`, `w`), optional `group` (a ball, a tube, a strip) and `order`
-  within a group. A tube of 32 LEDs is 32 points in one group.
-- `kinetic` (optional, per group): `heightUniverse`, `heightAddress`,
-  `travel` in metres, `top` (the z at zero travel), `rateLimit` in m/s,
-  `safe` (`0…255` written to the fixture's safety channel when it has one;
-  a project setting, default none).
+- `points[]`: `x y z` in metres (proposed stage frame: x right, y depth
+  towards the audience, z up, origin at the stage centre line on the floor;
+  the LED tools and MADRIX use z up, PSN uses y up, see §6 Q1), `universe`,
+  `address`, `footprint` (`rgb`, `rgbw`, `rgb16`, `w`), optional `group` (a
+  ball, a tube, a strip) and `order` within a group. A tube of 32 LEDs is 32
+  points in one group.
+- `kinetic` (optional, per group, set in the UI; the files below carry only
+  the group name): `heightUniverse`, `heightAddress`, `travel` in metres,
+  `top` (the z at zero travel), `rateLimit` in m/s, `safe` (`0…255` written
+  to the fixture's safety channel when it has one; a project setting,
+  default none).
 
 Three ways in, all producing the same point list:
 
@@ -97,33 +100,37 @@ console patches into Fanous, they are what Fanous patches out. ADR-0008
 
 ## 3. Sampling
 
-One compute pass per tick on the compositor thread, after the canvas pass
-and before the output pass (DESIGN §4.3/§4.4): for every point, a canvas
-coordinate `(u, v)`, one texture read, and a write of the footprint's bytes
-into a universe buffer. The buffers are allocated with the pixel map; the
-pass allocates nothing per tick (ADR-0002).
+One compute pass per tick, encoded by the compositor thread after the
+canvas pass in the same command buffer (DESIGN §4.3): for every point, a
+canvas coordinate `(u, v)`, one texture read, and a write of the footprint's
+bytes into a shared universe buffer, which a sender thread reads at DMX
+cadence (§5). The buffers are allocated with the pixel map; the pass
+allocates nothing per tick (ADR-0002).
 
 | Mode | `(u, v)` from `(x, y, z)` | Use |
 |---|---|---|
-| **Extrude** | drop one axis (default z), scale the other two by the map's bounds onto the canvas | a flat strip or panel; a volume lit "through" from the front, every ball on a line gets the same colour |
-| **Project** | a virtual camera (position, look-at, field of view) projects the point onto the canvas, the same maths as the projector mapper's mesh (DESIGN §21 "3D projection mapping") | video that looks projected through the volume from a chosen seat |
+| **Extrude** | drop one axis (default the depth axis y), scale the other two by the map's bounds onto the canvas | a flat strip or panel; a volume lit "through" from the front, every ball on a line gets the same colour |
+| **Project** | a virtual camera (position, look-at, field of view) projects the point onto the canvas, the camera maths designed for 3D projection mapping (DESIGN §21, not built) | video that looks projected through the volume from a chosen seat |
 | **Atlas** | the canvas holds `n` tiles in a grid, tile `k` is slice `z = k`; `(u, v)` is the point's x/y inside its tile | a true volume from one 2D clip (a flipbook of slices), or from `n` layers each masked to a tile |
 
 Every mode takes the same two extras:
 
-- **Depth weight**: a second canvas (or the same canvas's alpha) sampled by
-  the point's z, multiplied into the colour. A white bar moving through that
-  map is a plane sweeping the volume; in *extrude* mode this is what makes a
-  front-lit volume look three-dimensional.
+- **Depth weight**: a second canvas (or the same canvas's alpha) sampled at
+  (normalised depth y, normalised height z) of the point, multiplied into
+  the colour. A vertical white bar moving across that map is a plane
+  sweeping the volume front to back, a horizontal bar a floor rising; in
+  *extrude* mode this is what makes a front-lit volume look
+  three-dimensional.
 - **Mapping bounds**: which part of the canvas the map covers, as with a
   slice (DESIGN §9.4), so several maps share a canvas.
 
 The point values are converted canvas → fixture: 16 → 8 or 16 bit, optional
 gamma per map, white derived for `rgbw`. No other colour science in v1.
 
-Cost: 8 000 points are 8 000 texture reads and 24 000 bytes, well under a
-millisecond on any Apple Silicon GPU. The 47 universes of a 20 × 20 × 20 rig
-are 47 UDP packets per DMX frame.
+Expected cost, to be measured in the first version: 8 000 points are 8 000
+texture reads and 24 000 bytes. At 170 RGB pixels per universe (no pixel
+straddles a universe) a 20 × 20 × 20 rig is 48 universes, 48 UDP packets per
+DMX frame, before any height or safety channels.
 
 ## 4. Pixels that move
 
@@ -131,11 +138,13 @@ A kinetic group adds one sample per group and tick:
 
 1. `h = luma(heightMap at the group's (x, y))` in the *extrude* projection of
    the height canvas, `0…1`.
-2. The commanded z: `z' = top − h × travel`, moved towards from the last
-   commanded z by at most `rateLimit × dt`, then clamped to `[top − travel,
-   top]`.
-3. `h'` from `z'` is written as 16-bit DMX (coarse, fine) to the height
-   address; the safety byte, when set, with it.
+2. The commanded height: `z' = top − h × travel`, moved towards from the last
+   commanded z (`top` at project load and after Home) by at most
+   `rateLimit × dt`, then clamped to `[top − travel, top]` (a guard for a
+   `travel` or `top` edited while the show runs; with `h` in `0…1` it never
+   bites otherwise).
+3. `h' = (top − z') / travel`, scaled to `0…65535`, is written as 16-bit DMX
+   (coarse, fine) to the height address; the safety byte, when set, with it.
 4. The group's points sample their colour at `z'`, not at their patched z.
 
 So the colour follows the commanded position in every mode, and a ball
@@ -152,28 +161,32 @@ the integrator's.
 
 ## 5. Output path and what changes on the wire
 
-- `ArtDmx.encoded()` and the sACN builder exist (Core, tests). A send path
-  needs a socket thread of its own (ADR-0002 names this as a new ADR), a
-  fixed send cadence (DMX refresh, independent of the canvas rate, last
-  buffer repeated), and one `UniverseID(protocol, number)` per output
+- `ArtDmx.encoded()` is in Core; the sACN packet builder lives in the tests
+  and moves to Core. The sender is the engine's raw UDP socket (`UDPSend`)
+  on a cadence thread of its own: a fixed DMX refresh independent of the
+  canvas rate, last buffer repeated, no Network.framework queue in the path
+  (ADR-0002's socket-thread clause, for the receive side, applies only if
+  measured jitter demands it). One `UniverseID(protocol, number)` per output
   universe, the same key as the input side (DESIGN §6.5). An output universe
   the console also sends to Fanous is a configuration error the Patch screen
   reports.
-- **Wire change, to be named in that PR:** the ArtPollReply currently
-  advertises input ports only (`portTypes = 0x80`); an engine that outputs
-  advertises output ports too, and the sACN sender needs a source CID and a
-  priority setting (default 100).
+- **Wire change, to be named in that PR:** the ArtPollReply advertises
+  output ports only (`portTypes = 0x80`: the node outputs DMX from the
+  network, that is, it consumes ArtDmx); an engine that sends ArtDmx also
+  sets the input bit (`0x40`) with the matching GoodInput and SwIn fields,
+  and the sACN sender needs a source CID and a priority setting (default
+  100).
 - The user sees it on the Outputs screen as a third kind beside displays and
   Syphon: a pixel map with its canvas, mode, bounds, a 3D preview of the
-  points (plain WebGL, no new dependency) and a "send" toggle; a map that is
+  points (a dependency for it needs an ADR) and a "send" toggle; a map that is
   off sends zero frames, not black. Kinetic groups get a travel readout and a
   **Home** button (height map ignored, all groups move to `top` at the rate
   limit).
 
 ## 6. Questions for the owner
 
-1. Stage frame: y up (this note, PSN) or z up (MADRIX, most LED tools)? One
-   choice, documented, with the CSV importer able to swap axes.
+1. Stage frame: z up (this note, MADRIX, most LED tools) or y up (PSN,
+   B53)? One choice, documented, with the CSV importer able to swap axes.
 2. Is the OPC JSON import worth the day it costs, or is CSV enough for v1?
 3. Does the height map come from its own canvas, or from a named layer's luma
    on the same canvas? Own canvas is simpler to reason about and costs one
