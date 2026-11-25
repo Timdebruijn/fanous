@@ -179,9 +179,10 @@ the size limit), 1007 invalid text, 1009 message too large, 4401 auth
 required. A frame or message may be 4 KiB before `hello` is accepted, 64 KiB
 for the monitor role and 4 MiB for the operator and programmer roles (an
 output's whole slice list with its masks, as the Outputs screen sends it,
-must stay below that); the engine also closes a connection with 1009 when all
-connections together hold more than 64 MiB of unfinished messages and this
-one's grows past 64 KiB. Error codes in an
+must stay below that); the engine also closes a connection with 1009 when
+the unfinished messages of all connections, counted beyond 128 KiB each (more
+than a monitor can hold), come to more than 64 MiB and this one's grows.
+Error codes in an
 `ack`: `unknownCommand`, `forbidden` (the role is below the command's),
 `showLocked` (the command changes the configuration and the show is
 locked), `showMode` (refused in show mode), `notReady` (show mode blocked
