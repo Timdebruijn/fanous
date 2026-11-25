@@ -97,6 +97,63 @@ struct SlaveClockTests {
         #expect(clock.finished)
     }
 
+    /// B395: a locked tick that moves the clock by more than the audio's 20 ms tolerance is a jump (the master was
+    /// retriggered, or the slave just locked on); the slave's audio then reseeks like the master's. A smaller correction
+    /// is not, and a freewheeling tick and the master's loop wrap never are.
+    @Test func aLockedTickThatMovesTheClockPastTheToleranceIsAJump() {
+        var clock = LayerClock()
+        clock.position = 10
+        // 20 ms of dt at 50 fps: the slave would be at 11; the entry says 8.5, a jump back of 50 ms
+        let back = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 8.5), age: 0, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
+        #expect(back.jumped && abs(back.offsetMs + 50) < 1e-6)
+        // 10 ms off either way: nudged by the render callback, not a jump
+        let near = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 9), age: 0, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
+        #expect(!near.jumped && abs(near.offsetMs + 10) < 1e-6)
+        let forward = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 12.5), age: 0, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
+        #expect(forward.jumped && abs(forward.offsetMs - 50) < 1e-6)
+        // freewheeling: the clock is not set from the entry, so nothing jumps however far off it is
+        let stale = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 60), age: 0.5, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
+        #expect(stale.state == .freewheel && !stale.jumped)
+        // the master looped: the slave stood clamped at frame 99 (the entry was at 99.5), the entry is at 0.5 now: half a
+        // frame on at 50 fps, no jump; at 25 fps the same wrap is a whole frame (40 ms) and reseeks, as the producer does
+        // there anyway
+        clock.position = 99
+        let wrap = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 0.5), age: 0, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
+        #expect(!wrap.jumped && abs(wrap.offsetMs - 10) < 1e-6)
+        clock.position = 99
+        let slowWrap = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 0.5, fps: 25, rate: 25), age: 0, dt: 0.02, interval: Self.interval, fps: 25, frameCount: 100)
+        #expect(slowWrap.jumped && abs(slowWrap.offsetMs - 40) < 1e-6)
+        // a slave tick 30 ms late (50 ms of host time for a 20 ms target step) under a remote master: the entry aged with
+        // it and the clock ran on with it in host time; the offset shows the 30 ms, the audio saw no jump
+        clock.position = 10
+        let late = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 10), age: 0.05, dt: 0.02, elapsed: 0.05, interval: Self.interval, fps: 50, frameCount: 100)
+        #expect(!late.jumped && abs(late.offsetMs - 30) < 1e-6)
+        // the same late tick under a local master, whose entry stepped with the target (one frame, age 0): in host time the
+        // clock seems 30 ms behind the entry, in target time it is on it; no jump either
+        clock.position = 10
+        let localLate = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 11), age: 0, dt: 0.02, elapsed: 0.05, interval: Self.interval, fps: 50, frameCount: 100)
+        #expect(!localLate.jumped && abs(localLate.offsetMs) < 1e-6)
+        // the master's file is longer: the slave stands at its last frame while the entry runs past it, no jump on any tick
+        clock.position = 99
+        for position in [105.0, 106, 110] {
+            let pinned = SlaveClock.follow(
+                &clock, entry: Self.entry(position: position), age: 0, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
+            #expect(!pinned.jumped && clock.position == 99, "entry \(position)")
+        }
+        // retriggered from beyond the end back into the file: a jump
+        let returned = SlaveClock.follow(
+            &clock, entry: Self.entry(position: 40), age: 0, dt: 0.02, interval: Self.interval, fps: 50, frameCount: 100)
+        #expect(returned.jumped && clock.position == 40)
+    }
+
     @Test func offsetIsTheCorrectionALockedTickApplies() {
         var clock = LayerClock()
         clock.position = 10

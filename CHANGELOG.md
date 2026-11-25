@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Sync: a slave's audio reseeks when its master is retriggered (B395). The slave's clock followed the jump at
+  once, but its audio was nudged towards the new clock 2 ms per callback (a jump of 20 to 100 ms; under 20 ms
+  the lead stayed) instead of reseeked like the master's own. A locked tick that moves the clock by more than
+  the 20 ms tolerance, in host time and in target time both so a late slave tick is none, now signals the jump to the channel (PR #444).
 - Audio: one producer at a time on a layer's channel (B397). A file cut in, or dissolved in while a dissolve
   runs, can get the channel of the playback retired in the same swap, whose decode thread may still be inside a
   fill (a sample read can stall, B391); the two threads then wrote the same ring and the old file's samples were

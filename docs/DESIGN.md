@@ -3564,8 +3564,16 @@ groundwork and small engine pieces first):
   the frames it missed. A layer's own retrigger reaches the decoder as a
   signal from the compositor, so it reseeks whatever the size of the jump
   (also within 100 ms of a start), a new segment, rather than repeating frames
-  towards the clock (a slave whose master was retriggered is not signalled,
-  B395); between two callbacks the ring's head runs up to one callback ahead
+  towards the clock; a slave gets the same signal when a locked tick sets
+  its clock more than the 20 ms tolerance from where it ran on, in host
+  time and in target time both, either way (its master was retriggered, or
+  it locked on: first, or again after freewheeling or a freeze; B395), so
+  its audio reseeks like the master's; a slave tick that starts late is no
+  jump (the audio runs in host time; a local master's entry steps in target
+  time), nor is a tick that holds the slave at its last frame under a
+  longer master file; the master's loop wrap leaves under a frame, a reseek
+  only below 50 fps, where the producer reseeks at the wrap anyway;
+  between two callbacks the ring's head runs up to one callback ahead
   of the clock, so a clock a little behind the ring is normal and is never
   inferred to be a jump. From the signal until the decoder has started the new
   segment the callback plays nothing of the old ring; the same holds when the

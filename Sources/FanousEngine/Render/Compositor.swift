@@ -129,6 +129,7 @@ public final class Compositor: @unchecked Sendable {
     private let maxLayers: Int
     private var canvasIndex = 0
     private var lastTarget = 0.0
+    private var lastNow = 0.0
     /// The thread that ran the last tick (the driver's); the bench counts its allocations (§4.6, B97).
     /// `pthread_t` bits, 0 before the first tick.
     package let tickThread = Atomic<UInt>(0)
@@ -392,6 +393,8 @@ public final class Compositor: @unchecked Sendable {
             dt = interval
         }
         lastTarget = target
+        let hostElapsed = lastNow > 0 ? cpuStart - lastNow : 0  // not reset with `lastTarget`: a reconfigure's gap is real time the clock ran
+        lastNow = cpuStart
 
         let snapshot = parameters.read()
         if snapshot.sequence != lastSequence {
@@ -402,7 +405,7 @@ public final class Compositor: @unchecked Sendable {
         let wantsPixels = needsPixels(drawable: drawable)
         var frame = TickContext(
             dt: snapshot.masterControl == .freezeAll ? 0 : dt, target: target, masterIntensity: snapshot.masterControl == .blackout ? 0 : snapshot.master,
-            masterSpeed: snapshot.masterSpeed, time: Float(target.truncatingRemainder(dividingBy: Self.timeWrap)), now: cpuStart)
+            masterSpeed: snapshot.masterSpeed, time: Float(target.truncatingRemainder(dividingBy: Self.timeWrap)), now: cpuStart, elapsed: hostElapsed)
         drawItems.removeAll(keepingCapacity: true)
 
         layerCanvasBox.withLockIfAvailable { tickLayerCanvas = $0 }  // busy: last tick's assignment once more
@@ -613,6 +616,9 @@ public final class Compositor: @unchecked Sendable {
         let time: Float
         /// Host time at the start of the tick: the age of sync entries is taken against it.
         let now: Double
+        /// Host seconds since the previous tick's `now` (0 at the first): with `dt`, a slave's clock jump is judged in host
+        /// time and in target time (B395).
+        let elapsed: Double
         var misses: UInt16 = 0
         /// Movie pictures queued with a frame other than the clock's (B371); see `prepare`.
         var stale: UInt16 = 0
@@ -739,6 +745,7 @@ public final class Compositor: @unchecked Sendable {
         // a slave file follows its group's master and ignores its own play mode, speed, in/out, chase and retrigger;
         // only the current file: a dissolve's outgoing picture keeps its own clock
         var master: SyncTable.Entry?
+        var slaveJumped = false  // the clock was set more than 20 ms from where it ran (a master retrigger, a lock-on): its audio reseeks (B395)
         if case .slave(let group) = p.sync, slot % 2 == 0, playback.frameCount > 1, playback.live == nil {
             master = syncTable.entries[group - 1]
             syncStatus.state = .noMaster  // no entry ever: its own clock, as if Sync were off
@@ -747,10 +754,11 @@ public final class Compositor: @unchecked Sendable {
                 var state = SlaveClock.state(age: age, interval: 1 / fps)
                 if ctx.dt > 0 {  // freeze-all holds a slave like every other layer; the first tick after relocks
                     let follow = SlaveClock.follow(
-                        &playback.clock, entry: master.clock, age: age, dt: ctx.dt, interval: 1 / fps, fps: playback.frameRate,
+                        &playback.clock, entry: master.clock, age: age, dt: ctx.dt, elapsed: ctx.elapsed, interval: 1 / fps, fps: playback.frameRate,
                         frameCount: playback.frameCount)
                     state = follow.state
                     syncStatus.offsetMs = follow.offsetMs
+                    slaveJumped = follow.jumped
                 }
                 syncStatus.state = syncTable.conflict(group: group, now: ctx.now) == nil ? state : .conflict
                 syncStatus.master = master
@@ -797,7 +805,7 @@ public final class Compositor: @unchecked Sendable {
             {
                 loop = (Double(inFrame) / playback.frameRate, Double(outFrame + 1) / playback.frameRate)
             }
-            channel.setState(wantedPTS: playback.clock.position / max(1, playback.frameRate), active: active, volume: p.audioVolume * weight, pan: p.audioPan, loop: loop, jumped: retrigger && master == nil)
+            channel.setState(wantedPTS: playback.clock.position / max(1, playback.frameRate), active: active, volume: p.audioVolume * weight, pan: p.audioPan, loop: loop, jumped: (retrigger && master == nil) || slaveJumped)
         }
         guard let frameIndex else { return }  // once-then-black has finished
         let intensity = p.intensity * weight

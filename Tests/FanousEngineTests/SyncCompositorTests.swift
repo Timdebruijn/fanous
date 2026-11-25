@@ -146,6 +146,38 @@ struct SyncCompositorTests {
         #expect(rig.position(0) >= 8 && rig.position(0) < 8.05, "relocked")
     }
 
+    /// B395: the master is retriggered (its entry jumps back 50 ms from where it would be one tick on: a 33 ms jump in
+    /// host time, since the rig's ticks are milliseconds apart there, 50 ms in target time; both past 20 ms, inside the
+    /// audio's 100 ms resync window). The slave's
+    /// clock follows at once, and its audio must reseek to the new clock like the master's own does, not be repeated
+    /// 2 ms per callback towards it. The channel is driven from the test (no reader on the decoder): a fill after the
+    /// jump asks for a drain, and the next one starts a segment at the new clock.
+    @Test func aSlavesAudioReseeksWhenItsMasterJumpsBack() async throws {
+        let rig = try await Rig([.slave(group: 1)])
+        let channel = LayerAudioChannel()
+        rig.layers[0].current!.decoder!.audioChannel = channel
+        let source = RampSource()
+        rig.inject(group: 1, position: 5)  // 10 fps: 0.5 s
+        rig.tick()
+        #expect(rig.status(0).state == .locked && channel.isActive)
+        channel.fill(source, wanted: 0.5)
+        _ = AudioTests.pull(channel, frames: 480, wanted: 0.5)  // lands on the clock, 10 ms heard
+        #expect(abs(channel.nextFramePTS - 0.51) < 1e-6)
+
+        rig.inject(group: 1, position: 5 + 10.0 / 60 - 0.5)  // retriggered: where the master would be one tick on, 50 ms back
+        rig.tick()
+        #expect(rig.status(0).state == .locked && abs(rig.status(0).offsetMs + 50) < 10, "\(rig.status(0).offsetMs)")
+        channel.fill(source, wanted: 0.45)  // sees the jump: asks for a drain, reads nothing yet
+        #expect(abs(channel.nextFramePTS - 0.51) < 1e-6)
+        var out = AudioTests.pull(channel, frames: 480, wanted: 0.45)  // drains, silent
+        #expect(out.left.allSatisfy { $0 == 0 } && channel.bufferedFrames == 0)
+        channel.fill(source, wanted: 0.45)  // the new segment, from the clock
+        #expect(abs(channel.nextFramePTS - 0.45) < 1e-6)
+        out = AudioTests.pull(channel, frames: 480, wanted: 0.45)  // lands: 10 ms from 0.45 s heard, no correction
+        #expect(abs(channel.nextFramePTS - 0.46) < 1e-6, "480 frames from 0.45 s consumed")
+        #expect(channel.statistics.corrections == 0)
+    }
+
     @Test func aMasterLandsInTheSlotAndALocalSlaveFollowsInTheSameTick() async throws {
         let rig = try await Rig([.master(group: 2), .slave(group: 2), .off])
         rig.tick(5)
