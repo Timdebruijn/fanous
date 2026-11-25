@@ -11,7 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Media: a movie whose header claims more than 1000 fps is unreadable in the library, refused by a layer and fails its
-  ingest, and the playback audio reader refuses a sample rate outside 8–192 kHz (B336) (PR #N).
+  ingest, and the playback audio reader refuses a sample rate outside 8–192 kHz (B336) (PR #485).
 - Docs: a design note for the pixel mapper in three dimensions and for pixels on winches (`docs/pixelmap-3d.md`,
   row B407): a point list with x/y/z per LED, three sampling modes, a height map for kinetic groups, and what
   changes on the wire when Fanous sends Art-Net/sACN (PR #481)
