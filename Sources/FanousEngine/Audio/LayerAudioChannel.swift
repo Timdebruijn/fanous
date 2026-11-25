@@ -227,7 +227,20 @@ public final class LayerAudioChannel: @unchecked Sendable {
     public func fill(from reader: AudioTrackReader, producer: Int) {
         guard activeFlag.load(ordering: .acquiring) else { return }  // the clock read below is then at least the one that activated the channel
         let jump = jumpGeneration.load(ordering: .acquiring)  // before the clock, see `jumpGeneration`
-        fill(wanted: wantedPTS(atHostNanos: Self.hostNanos()), jump: jump, producer: producer, read: { reader.read(into: $0, frameCount: $1) }, seek: { reader.seek(toSeconds: $0) })
+        fill(now: Self.hostNanos(), jump: jump, producer: producer, read: { reader.read(into: $0, frameCount: $1) }, seek: { reader.seek(toSeconds: $0) })
+    }
+
+    /// How far ahead of the time of its call the mixer's last render callback read the clock (B406): when its buffer
+    /// is heard (IO buffer, safety offset, device latency) less the A/V offset. Written by the mixer every callback.
+    let outputLeadNanos = Atomic<Int64>(0)
+
+    /// `fill` with the clock taken at host time `now` (`fill(from:)` passes the time of the call, tests one of their
+    /// own) plus the output lead, so the producer seeks and judges a reseek where the render callback reads the clock;
+    /// at the time of the call, an output lead past the resync threshold (AirPlay, Bluetooth, a large offset) would
+    /// reseek behind the callback for ever.
+    func fill(now: UInt64, jump: Int? = nil, producer: Int = 0, read: (UnsafeMutablePointer<Float>, Int) -> (framesRead: Int, firstFramePTS: Double), seek: (Double) -> Void) {
+        let consumer = UInt64(bitPattern: Int64(bitPattern: now) &+ outputLeadNanos.load(ordering: .relaxed))
+        fill(wanted: wantedPTS(atHostNanos: consumer), jump: jump, producer: producer, read: read, seek: seek)
     }
 
     /// `fill` against any frame source (tests use a synthetic one) and an explicit layer clock. `read` writes up to

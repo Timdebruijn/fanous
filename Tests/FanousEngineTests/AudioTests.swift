@@ -894,7 +894,7 @@ extension LayerAudioChannel {
         func render() {
             for channel in mixer.channels { channel.setState(wantedPTS: Double(rendered) / 48_000, active: channel !== mixer.channels[2], volume: 1, pan: -1) }
             left.withUnsafeMutableBufferPointer { l in
-                right.withUnsafeMutableBufferPointer { r in mixer.render(frames: 480, left: l.baseAddress!, right: r.baseAddress!) }
+                right.withUnsafeMutableBufferPointer { r in mixer.render(frames: 480, left: l.baseAddress!, right: r.baseAddress!, atHostNanos: LayerAudioChannel.hostNanos()) }
             }
             rendered += 480
         }
@@ -910,15 +910,9 @@ extension LayerAudioChannel {
         #expect(mixer.statistics.maxDriftMillis == 0)
     }
 
-    /// B406: a buffer's host time in mach ticks becomes `CLOCK_UPTIME_RAW` nanoseconds (Apple silicon 125/3, Intel
-    /// 1/1), and the output latency is the device's plus its stream's, in frames at the device rate.
-    @Test func mixerConvertsHostTicksAndSumsTheOutputLatency() {
-        let silicon = mach_timebase_info_data_t(numer: 125, denom: 3)
-        #expect(AudioMixer.nanos(ticks: 24_000_000, silicon) == 1_000_000_000)
-        #expect(AudioMixer.nanos(ticks: 24_000_001, silicon) == 1_000_000_041)
-        #expect(AudioMixer.nanos(ticks: 123_456_789, mach_timebase_info_data_t(numer: 1, denom: 1)) == 123_456_789)
-        let large: UInt64 = 1 << 58  // ticks × 125 would overflow
-        #expect(AudioMixer.nanos(ticks: large, silicon) == large / 3 * 125 + large % 3 * 125 / 3)
+
+    /// B406: the output latency is the device's plus its stream's, in frames at the device rate.
+    @Test func mixerSumsTheOutputLatency() {
         #expect(AudioMixer.latencyNanos(frames: 70 + 690, sampleRate: 48_000) == 15_833_333)
         #expect(AudioMixer.latencyNanos(frames: 0, sampleRate: 48_000) == 0)
         #expect(AudioMixer.latencyNanos(frames: 760, sampleRate: 0) == 0, "a device without a rate counts no latency")
@@ -929,12 +923,12 @@ extension LayerAudioChannel {
     @Test func mixerReadsTheClockWhenItsBufferIsHeard() {
         let mixer = AudioMixer(channels: 1)
         mixer.outputLatencyNanos.store(15_833_333, ordering: .relaxed)
-        var timebase = mach_timebase_info_data_t()
-        mach_timebase_info(&timebase)
         var stamp = AudioTimeStamp()
-        stamp.mHostTime = 2_000_000_000 * UInt64(timebase.denom) / UInt64(timebase.numer)
+        stamp.mHostTime = AudioConvertNanosToHostTime(2_000_000_000)
         stamp.mFlags = .hostTimeValid
-        #expect(mixer.heard(stamp) == AudioMixer.nanos(ticks: stamp.mHostTime, timebase) + 15_833_333)
+        let host = AudioConvertHostTimeToNanos(stamp.mHostTime)
+        #expect(abs(Int64(host) - 2_000_000_000) < 100, "the round trip: \(host)")
+        #expect(mixer.heard(stamp) == host + 15_833_333)
         stamp.mFlags = .sampleTimeValid
         let before = LayerAudioChannel.hostNanos()
         let now = mixer.heard(stamp)
@@ -943,14 +937,14 @@ extension LayerAudioChannel {
         // the A/V offset: positive plays the sound later, so the clock is read that much earlier; both paths
         mixer.offsetMs = 30
         stamp.mFlags = .hostTimeValid
-        #expect(mixer.heard(stamp) == AudioMixer.nanos(ticks: stamp.mHostTime, timebase) + 15_833_333 - 30_000_000)
+        #expect(mixer.heard(stamp) == host + 15_833_333 - 30_000_000)
         stamp.mFlags = .sampleTimeValid
         let early = LayerAudioChannel.hostNanos()
         let offsetNow = mixer.heard(stamp)
         #expect(offsetNow >= early - 30_000_000 && offsetNow <= LayerAudioChannel.hostNanos() - 30_000_000)
         mixer.offsetMs = -12.5
         stamp.mFlags = .hostTimeValid
-        #expect(mixer.heard(stamp) == AudioMixer.nanos(ticks: stamp.mHostTime, timebase) + 15_833_333 + 12_500_000)
+        #expect(mixer.heard(stamp) == host + 15_833_333 + 12_500_000)
         mixer.offsetMs = 500
         #expect(mixer.offsetMs == 200, "clamped to ±200 ms")
         mixer.offsetMs = .nan
@@ -972,17 +966,31 @@ extension LayerAudioChannel {
         #expect(channel.statistics.corrections == 0 && channel.statistics.underruns == 0)
     }
 
-    /// B406: settings.json `audio.offsetMs`, field by field like `sync`: out of range or not a number keeps 0 and is
-    /// reported; a broken `audio` takes no other field with it.
-    @Test func theAVOffsetComesFromTheSettingsFile() throws {
-        func decode(_ json: String) throws -> MachineSettings { try JSONDecoder().decode(MachineSettings.self, from: Data(json.utf8)) }
-        #expect(try decode(#"{"audio": {"offsetMs": 45.5}}"#).audio?.offsetMs == 45.5)
-        #expect(try decode(#"{}"#).audio == nil)
-        let far = try decode(#"{"audio": {"offsetMs": 300}}"#)
-        #expect(far.audio?.offsetMs == 0 && far.problems.count == 1 && far.problems[0].hasPrefix("audio.offsetMs"), "\(far.problems)")
-        let text = try decode(#"{"audio": {"offsetMs": "late"}}"#)
-        #expect(text.audio?.offsetMs == 0 && text.problems.count == 1)
-        let broken = try decode(#"{"audio": 7, "sync": {"port": 9000}}"#)
-        #expect(broken.audio == nil && broken.sync?.port == 9000 && broken.problems.count == 1)
+    /// B406 review: the callback reads the clock an output lead ahead of now (150 ms here: AirPlay, Bluetooth, a large
+    /// offset). The producer reads it as far ahead, so its segment starts where the callback reads; at now it would
+    /// start 150 ms behind, past the resync threshold, and the callback would stay silent for ever.
+    @Test func theProducerReadsTheClockWithTheOutputLead() {
+        let mixer = AudioMixer(channels: 1)
+        let channel = mixer.channels[0]
+        let source = RampSource()
+        let t = LayerAudioChannel.hostNanos()
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: 0, atHostNanos: t)
+        var left = [Float](repeating: 0, count: 480)
+        var right = [Float](repeating: 0, count: 480)
+        func render(at host: UInt64) {
+            left.withUnsafeMutableBufferPointer { l in
+                right.withUnsafeMutableBufferPointer { r in mixer.render(frames: 480, left: l.baseAddress!, right: r.baseAddress!, atHostNanos: host) }
+            }
+        }
+        render(at: LayerAudioChannel.hostNanos() + 150_000_000)  // a first callback publishes the lead
+        #expect(abs(Double(channel.outputLeadNanos.load(ordering: .relaxed)) - 150e6) < 5e6)
+        channel.fill(now: t, read: { source.read($0, $1) }, seek: { source.seek($0) })
+        #expect(abs(channel.nextFramePTS - 0.15) < 0.005, "seeked where the callback reads: \(channel.nextFramePTS)")
+        var heard = 0
+        for k in 0..<5 {
+            render(at: t + 150_000_000 + UInt64(k) * 10_000_000)
+            if left.contains(where: { $0 != 0 }) { heard += 1 }
+        }
+        #expect(heard >= 4, "plays after the landing: \(heard) of 5")
     }
 }

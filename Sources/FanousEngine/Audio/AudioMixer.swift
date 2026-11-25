@@ -18,12 +18,6 @@ public final class AudioMixer: @unchecked Sendable {
 
     private let callbackCount = Atomic<Int>(0)
     private var engine: AVAudioEngine?
-    /// Mach ticks to nanoseconds, read once here: the render callback converts its buffer's host time with it.
-    private let timebase: mach_timebase_info_data_t = {
-        var timebase = mach_timebase_info_data_t()
-        mach_timebase_info(&timebase)
-        return timebase
-    }()
     /// The output device's latency after the buffer's host time (B406), in nanoseconds; set by `start`, 0 until then.
     let outputLatencyNanos = Atomic<UInt64>(0)
     /// `offsetMs` in nanoseconds: positive plays the sound later.
@@ -140,15 +134,14 @@ public final class AudioMixer: @unchecked Sendable {
             engine.connect(node, to: engine.mainMixerNode, format: format)
             self.engine = engine
         }
+        // read at every open, before the first callback (whose landing would otherwise keep a lag of the latency):
+        // the engine reopens after an idle stop, so a device changed meanwhile is read then
+        // ponytail: a route change while the engine runs keeps the old latency until the next idle stop; one to another
+        // sample rate or channel count stops AVAudioEngine itself, and nothing restarts it (B279)
+        let latency = engine.map { Self.outputLatency(device: $0.outputNode.auAudioUnit.deviceID) } ?? (0, "")
+        outputLatencyNanos.store(latency.nanos, ordering: .relaxed)
         try engine?.start()
-        // read at every open: the engine reopens after an idle stop, so a device changed meanwhile is read then
-        // ponytail: a route change while the engine runs keeps the old latency until the next idle stop; listen to
-        // AVAudioEngineConfigurationChange if that turns out to matter
-        if let device = engine?.outputNode.auAudioUnit.deviceID {
-            let latency = Self.outputLatency(device: device)
-            outputLatencyNanos.store(latency.nanos, ordering: .relaxed)
-            onOutputLatency?(latency.name, Double(latency.nanos) / 1e6)
-        }
+        onOutputLatency?(latency.name, Double(latency.nanos) / 1e6)
     }
 
     /// The output latency of `device` after a render buffer's host time: device latency plus the first output stream's
@@ -188,18 +181,12 @@ public final class AudioMixer: @unchecked Sendable {
         sampleRate > 0 ? UInt64((Double(frames) / sampleRate * 1e9).rounded()) : 0
     }
 
-    /// Mach ticks in nanoseconds (`CLOCK_UPTIME_RAW`'s unit), without overflowing the multiplication.
-    static func nanos(ticks: UInt64, _ timebase: mach_timebase_info_data_t) -> UInt64 {
-        let numer = UInt64(timebase.numer), denom = UInt64(max(1, timebase.denom))
-        return ticks / denom * numer + ticks % denom * numer / denom
-    }
-
     /// The host time (nanoseconds) at which the layer clocks are read for the buffer stamped `stamp`: when its first
     /// frame is heard (its host time plus the output latency; now when the stamp carries no host time), less the A/V
     /// offset (a sound played later is the media of an earlier time). Real-time safe.
     func heard(_ stamp: AudioTimeStamp) -> UInt64 {
         let heard = stamp.mFlags.contains(.hostTimeValid)
-            ? Self.nanos(ticks: stamp.mHostTime, timebase) &+ outputLatencyNanos.load(ordering: .relaxed) : LayerAudioChannel.hostNanos()
+            ? AudioConvertHostTimeToNanos(stamp.mHostTime) &+ outputLatencyNanos.load(ordering: .relaxed) : LayerAudioChannel.hostNanos()
         return UInt64(bitPattern: Int64(bitPattern: heard) &- offsetNanos.load(ordering: .relaxed))
     }
 
@@ -209,17 +196,20 @@ public final class AudioMixer: @unchecked Sendable {
 
     /// The render callback's body (also called directly by tests, which have no audio device). Overwrites
     /// `left` / `right` with the sum of all channels. `now`: the host time the buffer is heard at (`heard`), at which
-    /// each channel's clock is read (B406). Real-time safe.
+    /// each channel's clock is read (B406); how far that is ahead of the time of the call goes to each channel's
+    /// producer (`outputLeadNanos`), which reads its clock as far ahead. Real-time safe.
     /// ponytail: no limiter; a sum above full scale clips at the device. Add one on the master if programme material needs it.
     func render(
         frames: Int, left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>,
-        atHostNanos now: UInt64 = LayerAudioChannel.hostNanos()
+        atHostNanos now: UInt64
     ) {
         callbackCount.add(1, ordering: .relaxed)
         left.update(repeating: 0, count: frames)
         right.update(repeating: 0, count: frames)
+        let lead = Int64(bitPattern: now &- LayerAudioChannel.hostNanos())
         for i in 0..<channels.count {
             let channel = channels[i]
+            channel.outputLeadNanos.store(lead, ordering: .relaxed)
             channel.pull(into: left, right: right, frames: frames, wantedPTS: channel.wantedPTS(atHostNanos: now))
         }
     }
@@ -244,10 +234,5 @@ public struct AudioOutputSettings: Codable, Sendable, Equatable {
             let value = try c.decodeIfPresent(Double.self, forKey: .offsetMs) ?? offsetMs
             if (-200...200).contains(value) { offsetMs = value } else { problems.append("offsetMs: \(value) is outside -200...200") }
         } catch { problems.append("offsetMs: \(error)") }
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(offsetMs, forKey: .offsetMs)
     }
 }

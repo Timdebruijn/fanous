@@ -52,7 +52,8 @@ you add while the engine runs takes effect at the next such change or at the
 next start, and the file wins then: an editor that saves an older copy brings
 old records back. If `passwords` is not an object, password and sync changes
 are refused until you fix it; a single unreadable record keeps the passwords in
-use until the next start, which would leave every role open.
+use until the next start, which would leave every role open. `audio.offsetMs`
+takes effect at the next engine start only.
 
 ```json
 {

@@ -151,7 +151,7 @@ public final class RenderService {
             mixer.onOutputLatency = { device, millis in
                 logger.info(
                     "audio output opened",
-                    metadata: ["device": "\(device)", "latencyMs": "\((millis * 10).rounded() / 10)", "offsetMs": "\(offset)"])
+                    metadata: ["device": "\(device)", "deviceLatencyMs": "\((millis * 10).rounded() / 10)", "offsetMs": "\(offset)"])
             }
             self.mixer = mixer
             loader.mixer = mixer

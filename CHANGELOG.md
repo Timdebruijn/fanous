@@ -13,7 +13,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Audio: the mix reads each layer's clock at the time its buffer is heard, the buffer's host time plus the output
   device's latency, not at the start of the render callback (B406); the audio came late by the output path, about
   28 ms on MacBook Pro speakers. The latency is logged when the device opens (`audio output opened`). settings.json
-  `audio.offsetMs` (±200 ms, positive plays the sound later) covers a display's own lag (PR #458).
+  `audio.offsetMs` (±200 ms, positive plays the sound later) covers a display's own lag. The decoder reads its clock
+  with the same lead, so an output with a long latency (AirPlay, Bluetooth) plays in time too (PR #458).
 - Playback: a file's first frame is its start position (B294). The loader asked the decoder for frame 0 at start,
   before the compositor's hand-off asked for the in point and the direction, so a cut to an in point flashed the last
   pre-decoded frame (3 at a ring of 4) and a reverse mode showed frame 0 for about ten frames. The decoder now decodes

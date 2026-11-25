@@ -244,4 +244,20 @@ struct RoleAuthTests {
         #expect(RoleAuth.cookie(in: request) == nil)
         #expect(RoleAuth.cookieHeader("v").hasPrefix("fanous_session=v; Path=/; Secure; HttpOnly; SameSite=Strict"))
     }
+
+    /// B406: settings.json `audio.offsetMs`, field by field like `sync`: out of range or not a number keeps 0 and is
+    /// reported; a broken `audio` takes no other field with it.
+    @Test func theAVOffsetComesFromTheSettingsFile() throws {
+        func decode(_ json: String) throws -> MachineSettings { try JSONDecoder().decode(MachineSettings.self, from: Data(json.utf8)) }
+        #expect(try decode(#"{"audio": {"offsetMs": 45.5}}"#).audio?.offsetMs == 45.5)
+        #expect(try decode(#"{}"#).audio == nil)
+        let far = try decode(#"{"audio": {"offsetMs": 300}}"#)
+        #expect(far.audio?.offsetMs == 0 && far.problems.count == 1 && far.problems[0].hasPrefix("audio.offsetMs"), "\(far.problems)")
+        let text = try decode(#"{"audio": {"offsetMs": "late"}}"#)
+        #expect(text.audio?.offsetMs == 0 && text.problems.count == 1)
+        let broken = try decode(#"{"audio": 7, "sync": {"port": 9000}}"#)
+        #expect(broken.audio == nil && broken.sync?.port == 9000 && broken.problems.count == 1)
+        let written = try JSONEncoder().encode(try decode(#"{"audio": {"offsetMs": -20}}"#))
+        #expect(try decode(String(decoding: written, as: UTF8.self)).audio?.offsetMs == -20, "round trip without a hand-written encoder")
+    }
 }

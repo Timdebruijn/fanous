@@ -3565,7 +3565,13 @@ groundwork and small engine pieces first):
   0 for a property a device does not have); a stamp without a host time
   reads the clock at the callback. The machine's A/V offset (settings.json
   `audio.offsetMs`, read at start, §12.1) moves that read earlier by the
-  offset. It compares the ring's
+  offset. Each callback publishes how far ahead of now it read (its lead,
+  about 28 ms on MacBook Pro speakers), and the decoder reads its clock as
+  far ahead, so it seeks and judges a reseek where the callback reads,
+  whatever the output's latency (AirPlay, Bluetooth, HDMI) or the offset. A
+  start whose target is nearer than that lead loses its first milliseconds
+  rather than coming late; the first callback waits silent only for a
+  target further out. It compares the ring's
   head pts with the clock; drift beyond ±20 ms is corrected by dropping or
   repeating up to 2 ms per callback (inaudible for programme material) until
   the audio is on the clock or the drift changes sign, not only back inside
@@ -4419,9 +4425,10 @@ under another uid.
   and the buffer, the device and stream latency are added; the offset is read
   from settings.json at start, `audio.set` is not built). Offset (ms, −200…+200) covers the room: positive sends the sound
   later than the picture (a projector that processes the picture), negative
-  earlier (a PA with its own delay line). A negative offset reads ahead in the
-  layer's PCM ring (250 ms), so it cannot exceed what the ring holds ahead of
-  the clock. Measured with a loopback, as B4 says.
+  earlier (a PA with its own delay line). The decoder reads its clock with
+  the same lead as the callback (§10, B406), so neither the ring (250 ms) nor
+  the 100 ms resync threshold limits the offset; the ±200 ms range does.
+  Measured with a loopback, as B4 says.
 - *Routing (B76):* `layerAudio: {"3": 5}` in the project, keyed by layer like
   `layerCanvas`. The value is the first channel of the layer's output pair,
   odd and from 1; absent means 1, so channels 1–2. Like `layerCanvas`, entries
