@@ -7,6 +7,7 @@ import FanousCore
 import Logging
 import QuartzCore
 import simd
+import Synchronization
 
 public struct ResolvedParameterInfo: Encodable, Sendable {
     public var key: String
@@ -570,7 +571,23 @@ public final class DMXStore: @unchecked Sendable {
         }
     }
 
-    public func snapshot() -> LiveSnapshot { snapshot(at: Self.now) }
+    /// The live document's snapshot (the feed, 10 Hz while a client is connected); kept for `recentSnapshot`.
+    public func snapshot() -> LiveSnapshot {
+        let now = Self.now
+        let snapshot = snapshot(at: now)
+        lastSnapshot.withLock { $0 = (now, snapshot) }
+        return snapshot
+    }
+
+    /// `GET /api/live` (B285): it needs no role, so a request loop must not cost a snapshot each. The feed's last one
+    /// while it is at most `maxAge` old, else a new one.
+    public func recentSnapshot(maxAge: TimeInterval = 0.2) -> LiveSnapshot {
+        if let last = lastSnapshot.withLock({ $0 }), Self.now - last.at <= maxAge { return last.snapshot }
+        return snapshot()
+    }
+
+    /// Taken by readers only, never on the DMX queue.
+    private let lastSnapshot = Mutex<(at: TimeInterval, snapshot: LiveSnapshot)?>(nil)
 
     /// `live.osc.recent`, oldest first: the time (Unix seconds) and the message in its OSC spelling, address then arguments.
     public func recentOSC() -> [(at: Double, text: String)] {

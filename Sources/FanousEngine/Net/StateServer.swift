@@ -79,6 +79,9 @@ public final class StateServer: @unchecked Sendable {
         if changed { onDMXActive?(now) }
     }
 
+    /// DMX monitor streams per connection (B285): the web UI watches one universe; every stream costs a frame per tick.
+    static let dmxStreamLimit = 16
+
     public enum Subscription: Equatable, Sendable {
         case dmx(String)
         case preview
@@ -165,7 +168,15 @@ public final class StateServer: @unchecked Sendable {
                         return
                     }
                     let id = server.nextStream.wrappingAdd(1, ordering: .relaxed).oldValue
-                    subscriptions.withLock { $0[id] = .dmx(universe) }
+                    let added = subscriptions.withLock { subs in
+                        guard subs.values.count(where: { if case .dmx = $0 { true } else { false } }) < StateServer.dmxStreamLimit else { return false }
+                        subs[id] = .dmx(universe)
+                        return true
+                    }
+                    guard added else {
+                        sendError("tooManyStreams", "at most \(StateServer.dmxStreamLimit) dmx streams per connection", on: session)
+                        return
+                    }
                     server.dmxSubscriptionsChanged()
                     reply(["t": "sub", "id": .number(Double(id)), "stream": "dmx", "universe": .string(universe)], on: session)
                 case "preview":

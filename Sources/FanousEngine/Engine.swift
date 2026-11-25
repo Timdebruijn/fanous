@@ -2067,14 +2067,19 @@ public final class Engine: @unchecked Sendable {
 
     private func streamDMX() {
         guard let dmx, let stateServer else { return }
-        var slots: [String: [UInt8]] = [:]
-        for (connection, stream, universe) in stateServer.dmxSubscriptions() {
-            if slots[universe] == nil {
-                guard let id = UniverseID(parsing: universe), let data = dmx.slots(for: id) else { continue }
-                slots[universe] = data
-            }
-            _ = connection.send(stream: stream, kind: .dmx, payload: slots[universe]!)
+        let subscriptions = stateServer.dmxSubscriptions()
+        let frames = Self.dmxFrames(subscriptions.map(\.universe), slots: dmx.slots(for:))
+        for (connection, stream, universe) in subscriptions {
+            if let frame = frames[universe] { _ = connection.send(stream: stream, kind: .dmx, payload: frame) }
         }
+    }
+
+    /// One lookup per universe named, a miss included (B285): subscriptions to a universe never seen cost one sync onto
+    /// the DMX queue per tick, not one each.
+    static func dmxFrames(_ universes: [String], slots: (UniverseID) -> [UInt8]?) -> [String: [UInt8]] {
+        var frames: [String: [UInt8]] = [:]
+        for universe in Set(universes) { frames[universe] = UniverseID(parsing: universe).flatMap(slots) }
+        return frames
     }
 
     public func stop() {

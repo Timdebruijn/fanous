@@ -172,6 +172,42 @@ import Testing
         a.cancel(with: .normalClosure, reason: nil)
     }
 
+    /// A connection holds at most `dmxStreamLimit` DMX monitor streams (B285): the next is refused with `tooManyStreams`
+    /// and holds nothing; an unsub frees a place. On main every `sub dmx` was taken.
+    @Test func dmxStreamsPerConnectionAreCapped() async throws {
+        let f = try await Self.start()
+        defer { f.server.stop() }
+        let a = f.socket()
+        try await a.send(.string(#"{"t":"hello","clientId":"a","schema":1}"#))
+        _ = try await Self.receive(a, until: "welcome")
+        var first: Int?
+        for _ in 0..<StateServer.dmxStreamLimit {
+            try await a.send(.string(#"{"t":"sub","stream":"dmx","universe":"artnet:9.9.9"}"#))
+            let id = try #require(try await Self.receive(a, until: "sub")["id"]?.int)
+            first = first ?? id
+        }
+        try await a.send(.string(#"{"t":"sub","stream":"dmx","universe":"artnet:9.9.9"}"#))
+        let refused = try await Self.receive(a)
+        #expect(refused["t"]?.string == "error" && refused["code"]?.string == "tooManyStreams")
+        #expect(f.stateServer.dmxSubscriptions().count == StateServer.dmxStreamLimit)
+        try await a.send(.string(#"{"t":"unsub","id":\#(try #require(first))}"#))
+        try await a.send(.string(#"{"t":"sub","stream":"dmx","universe":"artnet:9.9.9"}"#))
+        #expect(try await Self.receive(a)["t"]?.string == "sub")
+        a.cancel(with: .normalClosure, reason: nil)
+    }
+
+    /// The DMX monitor looks a universe up once per tick, also one never received (B285): 10 000 subscriptions to it
+    /// cost one lookup, where the loop on main synced onto the DMX queue once per subscription.
+    @Test func dmxFramesLookEachUniverseUpOnce() {
+        let lookups = Mutex(0)
+        let frames = Engine.dmxFrames(Array(repeating: "artnet:9.9.9", count: 10_000) + ["artnet:0.0.0", "nonsense"]) { id in
+            lookups.withLock { $0 += 1 }
+            return id == UniverseID(.artnet, 0) ? [1, 2, 3] : nil
+        }
+        #expect(lookups.withLock { $0 } == 2, "one per universe that parses, a miss included")
+        #expect(frames == ["artnet:0.0.0": [1, 2, 3]])
+    }
+
     /// An `unsub` id that is not a stream id (negative, past UInt32, fractional, huge) is ignored like an unknown id
     /// (no reply) instead of trapping the engine (B261); a valid `unsub` still ends its stream.
     @Test func unsubWithAnIdOutsideUInt32IsIgnored() async throws {

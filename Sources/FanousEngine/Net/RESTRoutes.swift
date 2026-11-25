@@ -77,7 +77,7 @@ struct RESTRoutes: Sendable {
             ]
             return json(health)
         case "/api/live":
-            return json(dmx.snapshot())
+            return json(dmx.recentSnapshot())
         case "/api/login":
             guard request.method == "POST" else { return Self.postOnly }
             guard let body = try? JSONDecoder().decode(JSONValue.self, from: Data(request.body)),
