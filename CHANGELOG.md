@@ -10,6 +10,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Playback: a chased or sync-slave layer's first frame is its clock's frame (B404). The hand-off asked the decoder for
+  the in point (the out point in a reverse mode), and the swap tick moved the clock to the timecode or the master's
+  position, so the cut showed a frame of the in point; a slave with a reverse play mode also filled the ring backwards
+  under a forward master. The hand-off now sets the clock as the swap tick will and asks for that frame and direction
+  (PR #456).
 - Playback: a file's first frame is its start position (B294). The loader asked the decoder for frame 0 at start,
   before the compositor's hand-off asked for the in point and the direction, so a cut to an in point flashed the last
   pre-decoded frame (3 at a ring of 4) and a reverse mode showed frame 0 for about ten frames. The decoder now decodes

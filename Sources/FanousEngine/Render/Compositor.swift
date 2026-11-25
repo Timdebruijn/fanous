@@ -414,7 +414,7 @@ public final class Compositor: @unchecked Sendable {
         // Everything that is not GPU work: hand-off, clocks, audio, decoder requests, frame selection.
         for layer in layers {
             let p = layer.index < snapshot.layers.count ? snapshot.layers[layer.index] : LayerParameters()
-            handOff(layer: layer, p: p, target: target)
+            handOff(layer: layer, p: p, target: target, now: frame.now)
             if Self.usesTaps(p) {
                 requestScratch(for: layer.current, layer: layer)
                 requestScratch(for: layer.outgoing, layer: layer)
@@ -649,7 +649,7 @@ public final class Compositor: @unchecked Sendable {
     }
 
     /// Media hand-off with the loader: ask for what the parameters want, take what has been loaded.
-    private func handOff(layer: RenderLayer, p: LayerParameters, target: Double) {
+    private func handOff(layer: RenderLayer, p: LayerParameters, target: Double, now: Double) {
         let wanted = p.mediaKey.packed
         if layer.wanted.load(ordering: .relaxed) != wanted {
             layer.wanted.store(wanted, ordering: .relaxed)
@@ -673,12 +673,23 @@ public final class Compositor: @unchecked Sendable {
         if let taken {
             if let replaced = layer.staged { retire(replaced, from: layer) }
             if let incoming = taken.playback {
-                // start at the in point and let the decoder fill the ring before the swap
+                // start where the swap tick's `prepare` will put the clock and let the decoder fill the ring before the swap:
+                // the in point (the out point in a reverse mode), a slave's master position and direction, the chased
+                // frame (B404)
                 let last = incoming.frameCount - 1
-                incoming.clock.retrigger(
-                    mode: p.playMode, inFrame: Int((p.inPoint * Float(last)).rounded()), outFrame: Int((p.outPoint * Float(last)).rounded()),
-                    frameCount: incoming.frameCount)
-                incoming.decoder?.request(frame: Int(incoming.clock.position), direction: p.playMode.isReverse ? -1 : 1)
+                let inFrame = Int((p.inPoint * Float(last)).rounded()), outFrame = Int((p.outPoint * Float(last)).rounded())
+                incoming.clock.retrigger(mode: p.playMode, inFrame: inFrame, outFrame: outFrame, frameCount: incoming.frameCount)
+                var direction = p.playMode.isReverse ? -1 : 1
+                if case .slave(let group) = p.sync, incoming.frameCount > 1, incoming.live == nil, let master = syncTable.entries[group - 1] {
+                    _ = SlaveClock.follow(
+                        &incoming.clock, entry: master.clock, age: now - master.receivedAt, dt: 0, interval: 1 / fps, fps: incoming.frameRate,
+                        frameCount: incoming.frameCount)
+                    direction = incoming.clock.direction < 0 ? -1 : 1
+                    incoming.following = true  // the master's direction and end: a swap tick without a master resets them
+                } else if p.playMode == .timecode, let chased = chasePosition(incoming, layer: layer.index, inFrame: inFrame, outFrame: outFrame, at: target) {
+                    incoming.clock.position = chased
+                }
+                incoming.decoder?.request(frame: incoming.clock.frame(lo: 0, hi: last), direction: direction)
                 layer.staged = incoming
             } else {
                 layer.staged = nil
@@ -735,6 +746,17 @@ public final class Compositor: @unchecked Sendable {
         layer.retireLater.append(playback)  // flushed to the loader at the end of the tick
     }
 
+    /// The chase position: (tc − project offset − layer offset) at the file's rate, looped within in/out like a loop's
+    /// clock, so the out and in frames each show for a whole frame (B372); nil without usable timecode. `prepare` sets
+    /// it every tick, `handOff` for a staged file's first request (B404).
+    private func chasePosition(_ playback: LayerPlayback, layer: Int, inFrame: Int, outFrame: Int, at target: Double) -> Double? {
+        guard playback.frameCount > 1, let timecode, let frames = timecode.frames(at: target) else { return nil }
+        let offsets = tickTimecodeOffsets
+        let seconds = (frames - offsets.project - (offsets.layers[layer + 1] ?? 0)) / timecode.read(at: target).rate.exactFrameRate
+        let lo = Double(min(inFrame, outFrame)), hi = Double(max(inFrame, outFrame))
+        return min(hi, max(lo, LayerClock.looped(seconds * playback.frameRate, lo: lo, hi: hi)))
+    }
+
     /// Advances the clock, drives audio and the decoder, picks the frame; queues the picture when it is visible.
     private func prepare(_ playback: LayerPlayback, _ p: LayerParameters, weight: Float, retrigger: Bool, slot: Int, canvas: Int, in ctx: inout TickContext) {
         let last = playback.frameCount - 1
@@ -770,13 +792,8 @@ public final class Compositor: @unchecked Sendable {
         if master != nil { playback.clock.triggered = false }  // a slave never advances: its own clock moves at once
         playback.following = master != nil
         if retrigger && master == nil { playback.clock.retrigger(mode: p.playMode, inFrame: inFrame, outFrame: outFrame, frameCount: playback.frameCount) }
-        if master == nil, p.playMode == .timecode, playback.frameCount > 1, let timecode, let frames = timecode.frames(at: ctx.target) {
-            // chase: (tc − project offset − layer offset) at the file's rate, looped within in/out
-            let offsets = tickTimecodeOffsets
-            let seconds = (frames - offsets.project - (offsets.layers[slot / 2 + 1] ?? 0)) / timecode.read(at: ctx.target).rate.exactFrameRate
-            let lo = Double(min(inFrame, outFrame)), hi = Double(max(inFrame, outFrame))
-            // looped like a loop's clock, so the out and in frames each show for a whole frame (B372)
-            playback.clock.position = min(hi, max(lo, LayerClock.looped(seconds * playback.frameRate, lo: lo, hi: hi)))
+        if master == nil, p.playMode == .timecode, let chased = chasePosition(playback, layer: slot / 2, inFrame: inFrame, outFrame: outFrame, at: ctx.target) {
+            playback.clock.position = chased
         }
         let speed: Double
         let frameIndex: Int?
