@@ -26,8 +26,11 @@ struct PreviewStreamerTests {
         for i in 0..<2 { compositor.tick(target: 0.5 + Double(i) / 60, drawable: nil) }
         await waitUntil { streamer.hasEncoder }
         #expect(streamer.hasEncoder)
-        // every second tick is a preview frame at 30 of 60 fps
-        for i in 0..<8 { compositor.tick(target: 1 + Double(i) / 60, drawable: nil) }
+        // every second tick is a preview frame at 30 of 60 fps; at the engine's cadence, not a burst (B302: 2 in flight skip)
+        for i in 0..<8 {
+            compositor.tick(target: 1 + Double(i) / 60, drawable: nil)
+            await waitUntil { streamer.framesInFlight == 0 }
+        }
         await waitUntil { frames.withLock { $0.count } >= 2 }
         let delivered = frames.withLock { $0 }
         #expect(delivered.count >= 2, "expected encoded frames, got \(delivered.count)")
@@ -42,6 +45,29 @@ struct PreviewStreamerTests {
         for i in 1..<9 { micros = micros << 8 | UInt64(first.payload[i]) }
         #expect(micros >= 1_000_000 && micros < 2_000_000)
         #expect(streamer.framesIn.load(ordering: .relaxed) == 1 + 4)
+    }
+
+    /// B302: with the preview queue stalled, the tap hands at most 2 pixel buffers to it and skips the other frames
+    /// (`skipped`); once the queue runs again, frames go through. On the old code every preview frame took a new buffer.
+    @Test func aStalledPreviewQueueHoldsAtMostTwoFrames() async throws {
+        let context = try MetalContext()
+        let (compositor, parameters) = try makeCompositor(context, size: (320, 180))
+        let streamer = try PreviewStreamer(context: context, width: 320, height: 180, fps: 60, canvasFPS: 60, parameters: parameters, logger: testLogger)
+        streamer.alwaysEncode = true  // every tick a preview frame
+        compositor.previewTap = { canvas, buffer, target, _ in streamer.tap(canvas: canvas, commandBuffer: buffer, target: target) }
+        let gate = DispatchSemaphore(value: 0)
+        streamer.queue.async { gate.wait() }  // the stall
+        for i in 0..<10 { compositor.tick(target: 1 + Double(i) / 60, drawable: nil) }
+        #expect(streamer.framesIn.load(ordering: .relaxed) == 2)
+        #expect(streamer.skipped.load(ordering: .relaxed) == 8)
+        gate.signal()
+        var ticks = 10
+        let resumed = await waitUntil {
+            compositor.tick(target: 1 + Double(ticks) / 60, drawable: nil)
+            ticks += 1
+            return streamer.framesIn.load(ordering: .relaxed) > 2
+        }
+        #expect(resumed, "no frame after the queue ran again")
     }
 
     /// B66: no VideoToolbox session at init (engine start makes the canvas streamer); JPEG works without one, the first

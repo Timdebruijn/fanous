@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Preview: the canvas, output and layer previews skip a frame while 2 are still waiting to be encoded, so a stalled preview
+  queue no longer piles up pixel buffers allocated on the compositor thread (B302) (PR #N).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in

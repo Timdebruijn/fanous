@@ -19,6 +19,9 @@ enum BGRAPixelPool {
         return pool
     }
 
+    /// At most `buffers` in use from a pool (`buffer(limit:)`); made once, not per frame.
+    static func threshold(_ buffers: Int) -> CFDictionary { [kCVPixelBufferPoolAllocationThresholdKey: buffers] as CFDictionary }
+
     static func textureCache(device: MTLDevice) -> CVMetalTextureCache? {
         var cache: CVMetalTextureCache?
         guard CVMetalTextureCacheCreate(nil, nil, device, nil, &cache) == kCVReturnSuccess else { return nil }
@@ -26,9 +29,10 @@ enum BGRAPixelPool {
     }
 
     /// A buffer from `pool` and its `.bgra8Unorm` view of `width` × `height`; the view must outlive the GPU work on it.
-    static func buffer(from pool: CVPixelBufferPool, cache: CVMetalTextureCache, width: Int, height: Int) -> (CVPixelBuffer, CVMetalTexture)? {
+    /// `limit`: a `threshold(_:)` dictionary; with it the call returns nil while that many buffers of the pool are in use.
+    static func buffer(from pool: CVPixelBufferPool, cache: CVMetalTextureCache, width: Int, height: Int, limit: CFDictionary? = nil) -> (CVPixelBuffer, CVMetalTexture)? {
         var buffer: CVPixelBuffer?
-        guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer) == kCVReturnSuccess, let buffer else { return nil }
+        guard CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(nil, pool, limit, &buffer) == kCVReturnSuccess, let buffer else { return nil }
         var texture: CVMetalTexture?
         guard CVMetalTextureCacheCreateTextureFromImage(nil, cache, buffer, nil, .bgra8Unorm, width, height, 0, &texture) == kCVReturnSuccess, let texture
         else { return nil }

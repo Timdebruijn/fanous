@@ -52,7 +52,7 @@ public final class PreviewStreamer: @unchecked Sendable {
     private let mappedUniforms: MTLBuffer
     private let context: MetalContext
     private let logger: Logger
-    private let queue = DispatchQueue(label: "org.fanous.preview", qos: .utility)
+    let queue = DispatchQueue(label: "org.fanous.preview", qos: .utility)  // tests block it (B302)
     private let subscribers = Mutex<[Subscriber]>([])
     private var pool: CVPixelBufferPool?
     private var textureCache: CVMetalTextureCache?
@@ -76,6 +76,14 @@ public final class PreviewStreamer: @unchecked Sendable {
     public let framesIn = Atomic<Int>(0)
     public let framesOut = Atomic<Int>(0)
     public let skipped = Atomic<Int>(0)
+    /// B302: preview frames tapped whose encode on the preview queue has not finished. At 2 the tap skips (`skipped`), so a
+    /// stalled queue (a JPEG encode that hangs, B99; a saturated GPU; starved utility QoS) holds 2 pixel buffers, not one per
+    /// preview frame allocated on the compositor thread. The pool refuses more than `poolLimit` in use besides (VideoToolbox
+    /// holds the frames it encodes).
+    private let inFlight = Atomic<Int>(0)
+    private let poolLimit = BGRAPixelPool.threshold(8)
+    /// Tests: `inFlight`.
+    var framesInFlight: Int { inFlight.load(ordering: .relaxed) }
     /// JPEG frames made (`/metrics` `preview.jpegOut`), frames whose JPEG encode returned nil (`preview.jpegFailed`,
     /// logged once per streamer) and JPEG sends a subscriber's connection refused (`preview.jpegDropped`): a JPEG viewer
     /// that gets nothing tells the encoder from the send queue and from what comes after it (B99).
@@ -182,7 +190,8 @@ public final class PreviewStreamer: @unchecked Sendable {
     public func tap(canvas: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double, canvases: ((Int) -> MTLTexture?)? = nil, live: OutputSet? = nil) {
         tickCounter &+= 1
         guard wantsFrames, tickCounter % (wantsH264 ? everyNth : jpegEveryNth) == 0, let pool, let textureCache else { return }
-        guard let (pixelBuffer, cvTexture) = BGRAPixelPool.buffer(from: pool, cache: textureCache, width: width, height: height),
+        guard inFlight.load(ordering: .relaxed) < 2,
+            let (pixelBuffer, cvTexture) = BGRAPixelPool.buffer(from: pool, cache: textureCache, width: width, height: height, limit: poolLimit),
             let texture = CVMetalTextureGetTexture(cvTexture)
         else {
             skipped.wrappingAdd(1, ordering: .relaxed)
@@ -242,10 +251,17 @@ public final class PreviewStreamer: @unchecked Sendable {
         framesIn.wrappingAdd(1, ordering: .relaxed)
         // the CVMetalTexture must outlive the GPU work; neither is touched on this thread again
         nonisolated(unsafe) let keep = cvTexture, frame = pixelBuffer
+        inFlight.wrappingAdd(1, ordering: .relaxed)
         commandBuffer.addCompletedHandler { [self] buffer in
             _ = keep
-            guard buffer.status == .completed else { return }
-            queue.async { [self] in encode(frame, target: target) }
+            guard buffer.status == .completed else {
+                inFlight.wrappingSubtract(1, ordering: .relaxed)
+                return
+            }
+            queue.async { [self] in
+                encode(frame, target: target)
+                inFlight.wrappingSubtract(1, ordering: .relaxed)
+            }
         }
     }
 
