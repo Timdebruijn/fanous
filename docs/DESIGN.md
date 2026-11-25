@@ -3581,8 +3581,8 @@ groundwork and small engine pieces first):
   jump (a remote master's entry is extrapolated in host time; a local
   master's entry steps in target time; a late tick shifts a remote slave's
   audio clock by its lateness for that tick: nothing below 20 ms, one
-  short correction for a later tick), nor is a tick that holds the slave at its last frame under a
-  longer master file; the master's loop wrap leaves under a frame, a
+  short correction for a later tick), nor is a tick that holds the slave
+  at its last frame under a longer master file; the master's loop wrap leaves under a frame, a
   reseek only below 50 fps, where the producer reseeks at the wrap anyway;
   between two callbacks the ring's head runs up to one callback ahead
   of the clock, so a clock a little behind the ring is normal and is never

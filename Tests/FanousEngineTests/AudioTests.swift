@@ -279,8 +279,8 @@ extension LayerAudioChannel {
     /// B320 review: the compositor stamps its position with the tick's target, ahead of now, so before the target the
     /// clock reads up to one tick's lead before that position. The producer takes its clock at the stamp: a segment
     /// cued at an in point (1 s) starts there, not before it, and the first pull waits silent until the clock reaches
-    /// it. The target is 1 s ahead so a stalled test machine cannot pass it; a real one is a tick ahead. `fill(now:)`
-    /// is what `fill(from:producer:)` calls with the time of the call; only the reader is a stand-in.
+    /// it (a real target is a tick ahead). `fill(now:)` is what `fill(from:producer:)` calls with the time of the
+    /// call; only the reader is a stand-in.
     @Test func theProducerNeverTakesItsClockBeforeTheStamp() {
         let channel = LayerAudioChannel()
         let now = LayerAudioChannel.hostNanos()
