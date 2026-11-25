@@ -54,7 +54,7 @@ import Testing
         bytes[18] = 2
         bytes[15] = 0
         bytes[16] = 1
-        bytes[14] = 1  // 00:01:00;01 does not exist at drop frame
+        bytes[14] = 1  // 01:01:00;01 does not exist at drop frame
         #expect(throws: ArtNet.ParseError.badField) { try ArtNet.parse(bytes) }
         #expect(throws: ArtNet.ParseError.tooShort) { try ArtNet.parse(Array(Self.timeCodeFixture.prefix(18))) }
     }
