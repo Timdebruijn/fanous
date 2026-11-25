@@ -81,4 +81,31 @@ struct ControlQueueTests {
                 format: "Control queue costs, a %.1f MB welcome: welcome %.1f ms, commit %.1f ms; GO behind 20 joins: %.2f ms",
                 Double(bytes) / 1e6, welcome * 1e3, commit * 1e3, queued * 1e3))
     }
+
+    /// A WebSocket GO sent while 20 clients join takes less than one welcome: on main it waited for the welcomes built on
+    /// the control queue ahead of it (1.4 s for 20 welcomes of 68 ms, measured); now it waits for their copies only.
+    @Test(.offPool) func aGoDoesNotWaitForWelcomes() throws {
+        let fired = Atomic<Int>(0)
+        let store = try Self.bigStore { fired.add(1, ordering: .relaxed) }
+        let welcome = Self.time { _ = store.welcome(role: .programmer, caps: [:]) }
+        let queued = Self.goBehindWelcomes(store)
+        #expect(queued < welcome, "GO took \(queued * 1e3) ms, a welcome \(welcome * 1e3) ms")
+        #expect(fired.load(ordering: .relaxed) == 1)
+    }
+
+    /// A client that joins while a change commits gets the welcome first and the change's patch after it, with the next
+    /// revision: the patch is held while the welcome is built off the queue.
+    @Test func aPatchDuringAWelcomeFollowsIt() throws {
+        let (store, _) = testStore()
+        let client = RecordingClient(role: .programmer)
+        store.whileWelcoming = { _ = store.execute("project.set", args: ["path": "/name", "value": "Tour"], role: .programmer) }
+        store.admit(client, role: client.role, caps: [:]) {}
+        let messages = client.messages.withLock { $0 }
+        #expect(messages.map { $0["t"]?.string } == ["welcome", "patch"])
+        #expect(messages.first?["project"]?["name"]?.string != "Tour", "the welcome is the document from before the change")
+        #expect(messages.last?["rev"]?.int == (messages.first?["rev"]?.int).map { $0 + 1 })
+        store.whileWelcoming = nil
+        _ = try store.execute("project.set", args: ["path": "/name", "value": "Next"], role: .programmer).get()
+        #expect(client.patches.count == 2, "patches after the welcome go out at once")
+    }
 }

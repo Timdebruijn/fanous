@@ -79,7 +79,8 @@ public final class StateStore: @unchecked Sendable {
     }
     /// Consecutive same-path edits from one client closer together than this (a drag) become one undo step.
     public static let coalesceWindow: TimeInterval = 1
-    private struct Client { var client: StateClient; var lagging = false }
+    /// `held`: set while `admit` builds the client's welcome off the queue; patches wait there and go out after it.
+    private struct Client { var client: StateClient; var lagging = false; var held: [(text: String, droppable: Bool)]? }
 
     private var projectDocument: JSONValue
     private var liveDocument: JSONValue = [:]
@@ -300,28 +301,50 @@ public final class StateStore: @unchecked Sendable {
     public var laggingClients: Int { queue.sync { clients.values.filter(\.lagging).count } }
 
     /// The `welcome`/`snapshot` payload for one client.
-    public func welcome(role: Role, caps: JSONValue) -> String { queue.sync { welcomeMessage(role: role, caps: caps) } }
+    public func welcome(role: Role, caps: JSONValue) -> String { Self.welcomeMessage(documents, role: role, caps: caps) }
 
-    /// Makes `client` a member at `role` and sends its welcome in one turn on the queue, so no broadcast (built for
-    /// the new role) can reach it before the redacted document it patches.
+    /// Makes `client` a member at `role` and sends its welcome before any broadcast (built for the new role) reaches it.
+    /// B286: the welcome is redacted and encoded off the queue, from the documents as they were when the client became a
+    /// member; the patches broadcast meanwhile are held and go out after it, in order.
     public func admit(_ client: StateClient, role: Role, caps: JSONValue, setRole: () -> Void) {
-        queue.sync {
+        let id = ObjectIdentifier(client)
+        let copied = queue.sync {
             setRole()
-            clients[ObjectIdentifier(client)] = clients[ObjectIdentifier(client)] ?? Client(client: client)
-            _ = client.send(text: welcomeMessage(role: role, caps: caps), droppable: false)
+            var entry = clients[id] ?? Client(client: client, held: nil)
+            entry.held = entry.held ?? []
+            clients[id] = entry
+            return (revision, projectDocument, liveDocument)
+        }
+        whileWelcoming?()
+        let text = Self.welcomeMessage(copied, role: role, caps: caps)
+        queue.sync {
+            guard let held = clients[id]?.held else { return }  // gone meanwhile
+            clients[id]?.held = nil
+            _ = client.send(text: text, droppable: false)
+            for message in held { deliver(message.text, droppable: message.droppable, to: id) }
         }
     }
 
-    /// Queue only.
-    private func welcomeMessage(role: Role, caps: JSONValue) -> String {
-        var message = snapshotObject(role: role)
+    /// Test hook: called by `admit` between the copy and the welcome's encoding.
+    nonisolated(unsafe) var whileWelcoming: (@Sendable () -> Void)?
+
+    /// The revision and both documents, copied on the queue (shared storage: no copy of the documents).
+    private var documents: (UInt64, JSONValue, JSONValue) { queue.sync { (revision, projectDocument, liveDocument) } }
+
+    private static func welcomeMessage(_ documents: (UInt64, JSONValue, JSONValue), role: Role, caps: JSONValue) -> String {
+        var message = snapshotObject(documents, role: role)
         message["t"] = "welcome"
         message["role"] = .string(role.rawValue)
         message["caps"] = caps
-        return encode(.object(message))
+        return JSONValue.encodeCompact(.object(message))
     }
 
-    public func snapshot(role: Role) -> String { queue.sync { snapshotMessage(type: "snapshot", role: role) } }
+    /// Redacted and encoded off the queue (B286).
+    public func snapshot(role: Role) -> String {
+        var message = Self.snapshotObject(documents, role: role)
+        message["t"] = "snapshot"
+        return encode(.object(message))
+    }
 
     /// Clears the lagging flag once a client re-snapshotted.
     public func clearLagging(_ client: StateClient) { queue.sync { clients[ObjectIdentifier(client)]?.lagging = false } }
@@ -332,28 +355,31 @@ public final class StateStore: @unchecked Sendable {
         for (id, entry) in clients {
             let role = entry.client.role
             if messages[role] == nil { messages[role] = patchMessage(doc: doc, patch: Redaction.patch(patch, doc: doc, role: role)) }
-            if entry.client.send(text: messages[role]!, droppable: droppable) { continue }
-            if droppable {
-                if !entry.lagging { logger.warning("client lagging; live patches dropped") }
-                clients[id]?.lagging = true
+            if entry.held != nil {
+                clients[id]?.held?.append((messages[role]!, droppable))  // its welcome is being built (`admit`)
             } else {
-                entry.client.disconnect(reason: "cannot keep up with project changes")
-                clients.removeValue(forKey: id)
+                deliver(messages[role]!, droppable: droppable, to: id)
             }
         }
     }
 
-    private func snapshotObject(role: Role) -> [String: JSONValue] {
-        [
-            "rev": .number(Double(revision)), "project": Redaction.document(projectDocument, doc: "project", role: role),
-            "live": Redaction.document(liveDocument, doc: "live", role: role),
-        ]
+    /// Queue only: a full send queue marks the client lagging (live) or drops it (project).
+    private func deliver(_ text: String, droppable: Bool, to id: ObjectIdentifier) {
+        guard let entry = clients[id], !entry.client.send(text: text, droppable: droppable) else { return }
+        if droppable {
+            if !entry.lagging { logger.warning("client lagging; live patches dropped") }
+            clients[id]?.lagging = true
+        } else {
+            entry.client.disconnect(reason: "cannot keep up with project changes")
+            clients.removeValue(forKey: id)
+        }
     }
 
-    private func snapshotMessage(type: String, role: Role) -> String {
-        var message = snapshotObject(role: role)
-        message["t"] = .string(type)
-        return encode(.object(message))
+    private static func snapshotObject(_ documents: (rev: UInt64, project: JSONValue, live: JSONValue), role: Role) -> [String: JSONValue] {
+        [
+            "rev": .number(Double(documents.rev)), "project": Redaction.document(documents.project, doc: "project", role: role),
+            "live": Redaction.document(documents.live, doc: "live", role: role),
+        ]
     }
 
     private func patchMessage(doc: String, patch: JSONPatch) -> String {
