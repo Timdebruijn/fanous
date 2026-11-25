@@ -40,10 +40,15 @@ struct SyncCompositorTests {
         /// Layer 1's in and out point.
         var inOut: (Float, Float) = (0, 1)
 
-        init(_ sync: [LayerSync]) async throws {
+        /// `fps`: a 20-frame pattern movie at that rate instead.
+        init(_ sync: [LayerSync], fps: Int32? = nil) async throws {
             directory = try tempDir("fanous-ingest-tests")
             let url = directory.appending(path: "clip.mov")
-            try await IngestQueueTests.writeSource(to: url, seconds: 2, audio: false)
+            if let fps {
+                try await writePatternMovie(to: url, size: (64, 36), fps: fps, frames: 20)
+            } else {
+                try await IngestQueueTests.writeSource(to: url, seconds: 2, audio: false)
+            }
             let context = try MetalContext()
             source = try await MovieSource.open(url: url, device: context.device, poolSize: 4)
             roles = sync
@@ -205,6 +210,16 @@ struct SyncCompositorTests {
         rig.publish()
         rig.tick()
         #expect(rig.sender.slots.read().packet.layers.first?.rate == 0)
+    }
+
+    /// B316 review: a master file faster than receivers accept (`SyncPacket.maxFps`) is left out of the packet, so it
+    /// does not make every packet of that machine a decode error on every slave.
+    @Test func aMasterFasterThanReceiversAcceptIsNotPublished() async throws {
+        let rig = try await Rig([.master(group: 1)], fps: 20_000)
+        #expect(rig.layers[0].current!.frameRate > Double(SyncPacket.maxFps))
+        rig.tick(3)
+        #expect(rig.sender.slots.read().packet.layers.isEmpty)
+        #expect(rig.receiver.table.withLock { $0.entries[0] } == nil)
     }
 
     /// A dissolve on a slave: the new file follows the master, the outgoing one keeps its own clock.

@@ -85,7 +85,8 @@ struct RFCExample: Sendable, CustomTestStringConvertible {
     @Test func aNonFiniteNumberEncodesAsNull() throws {
         let doc: JSONValue = ["nan": .number(.nan), "inf": .number(-.infinity), "big": .number(1e300), "n": 1]
         #expect(try encoded(doc) == #"{"big":1e+300,"inf":null,"n":1,"nan":null}"#)
-        #expect(JSONValue.number(.nan) == .number(.nan) && doc == doc, "a NaN is not a change against itself")
+        let again: JSONValue = ["nan": .number(.nan), "inf": .number(-.infinity), "big": .number(1e300), "n": 1]
+        #expect(JSONValue.number(.nan) == .number(.nan) && doc == again, "a NaN is not a change against itself")
         #expect(JSONValue.number(.nan) != .number(1) && JSONValue.number(0) == .number(-0.0))
     }
 

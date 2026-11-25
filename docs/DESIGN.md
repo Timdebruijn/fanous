@@ -5220,7 +5220,9 @@ FanousSync v1
   not a normal number in 0–10 000, a position beyond ±1e9 frames, a rate
   beyond ±1e6, a group or direction out of range) is a decode error (B316):
   a position near 1e300 made the slave's offset NaN, and the position bound
-  is the one that keeps the slave's arithmetic finite at any fps. The newest packet per group goes into a
+  is the one that keeps the slave's arithmetic finite at any fps. A master
+  leaves a file above 10 000 fps out of its packet, so one odd file does not
+  make every packet of that machine a decode error. The newest packet per group goes into a
   table `{group: (machine, mediaKey, fps, position, direction, finished,
   rate, receivedAt)}` behind a mutex; the compositor reads it with
   `withLockIfAvailable` once per tick (a busy lock means last tick's entry
