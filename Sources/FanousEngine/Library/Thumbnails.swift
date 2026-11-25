@@ -9,6 +9,7 @@ import ImageIO
 import FanousCore
 import Logging
 import Metal
+import Synchronization
 
 /// Thumbnails (DESIGN.md §8.4): one mid-file frame per movie, decoded by the
 /// engine's own decoders and rendered through the layer pipeline into a
@@ -21,6 +22,12 @@ public final class Thumbnailer: @unchecked Sendable {
     private let logger: Logger
     private var compositor: Compositor?
     private let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
+    /// B358: one `make` at a time. `parameters` has one writer by design, and while the library root is replaced (B51) the
+    /// old index's probe thread and the replacement's both call this thumbnailer; a lock, not a thumbnailer per index, as
+    /// the library thread is no hot path and the old index stops right after the swap.
+    private let one = Mutex(())
+    /// Makes in progress under the lock, and the most at once, for the tests (B358).
+    let inFlight = Atomic<Int>(0), mostInFlight = Atomic<Int>(0)
 
     public init(context: MetalContext, directory: URL, logger: Logger) {
         self.context = context
@@ -31,16 +38,20 @@ public final class Thumbnailer: @unchecked Sendable {
 
     /// Writes `<sha256(path|mtime|size)>.jpg` and returns the file name; nil when the media cannot be decoded.
     public func make(for url: URL, metadata: MediaMetadata, kind: LibraryItem.Kind) -> String? {
-        let name = Self.fileName(for: url)
-        let output = directory.appending(path: name)
-        if FileManager.default.fileExists(atPath: output.path) { return name }
-        let ok: Bool
-        switch kind {
-        case .still, .sequence: ok = stillThumbnail(url, to: output)
-        case .movie: ok = movieThumbnail(url, metadata: metadata, to: output)
-        case .other: ok = false
+        one.withLock { _ in
+            mostInFlight.max(inFlight.wrappingAdd(1, ordering: .relaxed).newValue, ordering: .relaxed)
+            defer { inFlight.wrappingSubtract(1, ordering: .relaxed) }
+            let name = Self.fileName(for: url)
+            let output = directory.appending(path: name)
+            if FileManager.default.fileExists(atPath: output.path) { return name }
+            let ok: Bool
+            switch kind {
+            case .still, .sequence: ok = stillThumbnail(url, to: output)
+            case .movie: ok = movieThumbnail(url, metadata: metadata, to: output)
+            case .other: ok = false
+            }
+            return ok ? name : nil
         }
-        return ok ? name : nil
     }
 
     public static func fileName(for url: URL) -> String {

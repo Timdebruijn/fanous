@@ -566,6 +566,31 @@ struct LibraryIndexGPUTests {
         await #expect { _ = try await MovieSource.open(url: movie, device: device, poolSize: 2) } throws: { "\($0)" == "unknown duration" }
     }
 
+    /// B358: while the library root is replaced, the old index's probe thread and the replacement's call one thumbnailer,
+    /// whose parameter buffer has one writer. Four movies thumbnailed from four threads at once: one make at a time, and
+    /// every thumbnail is made.
+    @Test func aThumbnailerMakesOneThumbnailAtATime() async throws {
+        let directory = try tempDir("fanous-library")
+        var movies: [URL] = []
+        for n in 1...4 {
+            let movie = directory.appending(path: "00\(n)_clip.mov")
+            try await writePatternMovie(to: movie, size: (64, 64), fps: 25, frames: 10)
+            movies.append(movie)
+        }
+        let thumbnailer = Thumbnailer(context: try MetalContext(), directory: directory.appending(path: "thumbnails"), logger: testLogger)
+        var metadata = MediaMetadata()
+        (metadata.width, metadata.height) = (64, 64)
+        let made = Mutex<[String?]>(Array(repeating: nil, count: movies.count)), files = movies, size = metadata
+        try await offPool {
+            DispatchQueue.concurrentPerform(iterations: files.count) { i in
+                let name = thumbnailer.make(for: files[i], metadata: size, kind: .movie)
+                made.withLock { $0[i] = name }
+            }
+        }
+        #expect(made.withLock { $0.allSatisfy { $0 != nil } })
+        #expect(thumbnailer.mostInFlight.load(ordering: .relaxed) == 1)
+    }
+
     /// A playable movie resolves after probing, its thumbnail is requested, and FSEvents picks up a new file.
     @Test func probeResolvesAndWatcherRescans() async throws {
         let root = try tempDir("fanous-library")
