@@ -47,10 +47,10 @@ public final class TimecodeClock: @unchecked Sendable {
 
     public init() {}
 
-    /// Source thread: the time at `hostTime`. LTC passes the frame after the one whose last bit ended then; MTC passes
-    /// piece 0's frame + 2 at piece 7, which comes 1.75 frames after piece 0, so MTC reads a quarter frame ahead.
-    /// `everyFrames` is the update interval the source promises, which sets the lock window (0: none). `running: false`:
-    /// the source stands still and the clock holds `timecode`.
+    /// Source thread: the time at `hostTime`. LTC passes the frame after the one whose last bit ended then (a still
+    /// frame: that frame); MTC passes piece 0's frame + 2 at piece 7, which comes 1.75 frames after piece 0, so MTC reads
+    /// a quarter frame ahead. `everyFrames` is the update interval the source promises, which sets the lock window (0:
+    /// none). `running: false`: the source stands still and the clock holds `timecode`.
     public func update(_ timecode: Timecode, at hostTime: Double, source: String, everyFrames: Int = 1, running: Bool = true) {
         sample.withLock { s in
             s.frameCount = timecode.frameCount
@@ -219,7 +219,7 @@ public final class LTCInput: @unchecked Sendable {
             for frame in frames {
                 // sub-frame phase: the host time at which the frame's last bit ended
                 let offset = Double(frame.endSampleIndex - bufferStart) / sampleRate
-                clock.update(frame.running ? Self.timeAtEnd(of: frame) : frame.timecode, at: bufferHostTime + offset, source: "LTC", running: frame.running)
+                clock.update(Self.timeAtEnd(of: frame), at: bufferHostTime + offset, source: "LTC", running: frame.running)
             }
             return noErr
         }
@@ -245,9 +245,10 @@ public final class LTCInput: @unchecked Sendable {
     }
 
     /// The time when a decoded frame's last bit has ended: the frame after it (B290). A frame's 80 bits carry its own
-    /// address and end with the sync word, so the decoder has the address only as the next frame starts.
+    /// address and end with the sync word, so the decoder has the address only as the next frame starts. A still frame
+    /// (B291) is followed by itself: it keeps its own address.
     static func timeAtEnd(of frame: LTCFrame) -> Timecode {
-        Timecode(frameCount: frame.timecode.frameCount + 1, rate: frame.timecode.rate)
+        Timecode(frameCount: frame.timecode.frameCount + (frame.running ? 1 : 0), rate: frame.timecode.rate)
     }
 
     public func stop() {
