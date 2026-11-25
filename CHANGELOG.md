@@ -12,6 +12,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Feed and CITP: a layer's position is read from a frame number the compositor publishes every tick instead of from the
   playback the tick swaps, a data race of the B273 class (B356) (PR #473).
+- Docs: the owner's four decisions on the 3D pixel-mapping note (`docs/pixelmap-3d.md` §6, row B407): z up with
+  the up axis a project setting, CSV and OPC import both, the height map on its own canvas, order atlas, kinetic,
+  project (PR #483)
+- Docs: a design note for the pixel mapper in three dimensions and for pixels on winches (`docs/pixelmap-3d.md`,
+  row B407): a point list with x/y/z per LED, three sampling modes, a height map for kinetic groups, and what
+  changes on the wire when Fanous sends Art-Net/sACN (PR #481)
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
