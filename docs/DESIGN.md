@@ -3556,7 +3556,14 @@ groundwork and small engine pieces first):
   `speed == 100 %` and direction is forward; otherwise the ring is muted
   (`[OPEN-15]` varispeed/pitch later). Freeze/scrub mute instantly, dissolve
   crossfades audio with the video.
-- Sync: the layer clock is master. The render callback compares the ring's
+- Sync: the layer clock is master. The render callback reads it at the
+  host time its buffer is heard (B406): the buffer's host time from its
+  `AudioTimeStamp` (already past the IO buffer and the safety offset,
+  measured: 12.1 ms after the callback at 512 + 74 frames) plus the output
+  device's latency and its first stream's, read each time the device opens
+  and logged then (`audio output opened`, 15.8 ms on MacBook Pro speakers;
+  0 for a property a device does not have); a stamp without a host time
+  reads the clock at the callback. It compares the ring's
   head pts with the clock; drift beyond ±20 ms is corrected by dropping or
   repeating up to 2 ms per callback (inaudible for programme material) until
   the audio is on the clock or the drift changes sign, not only back inside

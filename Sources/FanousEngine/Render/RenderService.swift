@@ -146,6 +146,9 @@ public final class RenderService {
             mixer.keepRunning = audioKeepRunning
             let logger = logger
             mixer.onError = { logger.warning("audio output unavailable; playing silent", metadata: ["error": "\($0)"]) }
+            mixer.onOutputLatency = { device, millis in
+                logger.info("audio output opened", metadata: ["device": "\(device)", "latencyMs": "\((millis * 10).rounded() / 10)"])
+            }
             self.mixer = mixer
             loader.mixer = mixer
         }

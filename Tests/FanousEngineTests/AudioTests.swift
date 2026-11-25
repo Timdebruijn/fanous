@@ -909,4 +909,50 @@ extension LayerAudioChannel {
         mixer.resetPeakDrift()
         #expect(mixer.statistics.maxDriftMillis == 0)
     }
+
+    /// B406: a buffer's host time in mach ticks becomes `CLOCK_UPTIME_RAW` nanoseconds (Apple silicon 125/3, Intel
+    /// 1/1), and the output latency is the device's plus its stream's, in frames at the device rate.
+    @Test func mixerConvertsHostTicksAndSumsTheOutputLatency() {
+        let silicon = mach_timebase_info_data_t(numer: 125, denom: 3)
+        #expect(AudioMixer.nanos(ticks: 24_000_000, silicon) == 1_000_000_000)
+        #expect(AudioMixer.nanos(ticks: 24_000_001, silicon) == 1_000_000_041)
+        #expect(AudioMixer.nanos(ticks: 123_456_789, mach_timebase_info_data_t(numer: 1, denom: 1)) == 123_456_789)
+        let large: UInt64 = 1 << 58  // ticks × 125 would overflow
+        #expect(AudioMixer.nanos(ticks: large, silicon) == large / 3 * 125 + large % 3 * 125 / 3)
+        #expect(AudioMixer.latencyNanos(frames: 70 + 690, sampleRate: 48_000) == 15_833_333)
+        #expect(AudioMixer.latencyNanos(frames: 0, sampleRate: 48_000) == 0)
+        #expect(AudioMixer.latencyNanos(frames: 760, sampleRate: 0) == 0, "a device without a rate counts no latency")
+    }
+
+    /// B406: the render callback reads the clocks at the host time its buffer is heard: the stamp's host time plus the
+    /// output latency; now when the stamp has no host time.
+    @Test func mixerReadsTheClockWhenItsBufferIsHeard() {
+        let mixer = AudioMixer(channels: 1)
+        mixer.outputLatencyNanos.store(15_833_333, ordering: .relaxed)
+        var timebase = mach_timebase_info_data_t()
+        mach_timebase_info(&timebase)
+        var stamp = AudioTimeStamp()
+        stamp.mHostTime = 2_000_000_000 * UInt64(timebase.denom) / UInt64(timebase.numer)
+        stamp.mFlags = .hostTimeValid
+        #expect(mixer.heard(stamp) == AudioMixer.nanos(ticks: stamp.mHostTime, timebase) + 15_833_333)
+        stamp.mFlags = .sampleTimeValid
+        let before = LayerAudioChannel.hostNanos()
+        let now = mixer.heard(stamp)
+        #expect(now >= before && now <= LayerAudioChannel.hostNanos(), "no host time: now, without the latency")
+
+        // the pulls read the clock at the render's host time: on the clock there (1 s at host 1 s), 10 ms play from 1 s
+        let channel = mixer.channels[0]
+        let source = RampSource()
+        channel.setState(wantedPTS: 1, active: true, volume: 1, pan: 0, atHostNanos: 1_000_000_000)
+        channel.fill(source, wanted: 1)
+        var left = [Float](repeating: 0, count: 480)
+        var right = [Float](repeating: 0, count: 480)
+        left.withUnsafeMutableBufferPointer { l in
+            right.withUnsafeMutableBufferPointer { r in
+                mixer.render(frames: 480, left: l.baseAddress!, right: r.baseAddress!, atHostNanos: 1_000_000_000)
+            }
+        }
+        #expect(abs(channel.nextFramePTS - 1.01) < 1e-6, "\(channel.nextFramePTS)")
+        #expect(channel.statistics.corrections == 0 && channel.statistics.underruns == 0)
+    }
 }
