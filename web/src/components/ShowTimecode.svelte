@@ -126,13 +126,13 @@
         spellcheck="false"
         placeholder="01:00:00:00"
         value={timecodeText(offset, live.rate)}
-        disabled={!editable}
-        title={editTitle ?? 'The time the show timecode starts at: the Offset as a timecode at the current rate'}
+        disabled={!editable || timecodeText(offset, live.rate) === ''}
+        title={editTitle ?? (timecodeText(offset, live.rate) === '' ? 'Start needs a known rate: lock a source first' : 'The time the show timecode starts at: the Offset as a timecode at the current rate')}
         onchange={(e) => {
           const el = e.currentTarget;
           const n = timecodeFrames(el.value, live.rate);
-          if (n === null) el.value = timecodeText(offset, live.rate);
-          else setOffset(n);
+          el.value = timecodeText(n ?? offset, live.rate);
+          if (n !== null) setOffset(n);
         }}
       />
     </label>

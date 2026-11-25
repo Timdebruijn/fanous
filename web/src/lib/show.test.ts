@@ -216,6 +216,8 @@ describe('timecode text and frames (the Start field)', () => {
     expect(timecodeText(-25, '25')).toBe('−00:00:01:00');
     expect(timecodeFrames('−00:00:01:00', '25')).toBe(-25);
     expect(timecodeFrames('00:00:00:25', '25')).toBeNull();
+    expect(timecodeFrames('00:01:00;01', '29.97 DF')).toBeNull();
+    expect(timecodeFrames('00:10:00;01', '29.97 DF')).toBe(17983);
     expect(timecodeFrames('24:00:00:00', '25')).toBeNull();
     expect(timecodeFrames('junk', '25')).toBeNull();
     expect(timecodeFrames('01:00:00:00', '50')).toBeNull();
