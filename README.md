@@ -52,7 +52,7 @@ in the guide's [glossary](docs/user/reference/glossary.md).
 | **Master, Output and Keystone fixtures** | Master intensity and speed; per-output intensity, test patterns and mapping presets; the four corners of an output from the desk |
 | **GDTF export** | Generated from the same parameter spec as the DMX map, so the two cannot drift apart. GDTF only: no grandMA2 XML, Avolites personality or MagicQ head file; the import is not yet verified on a real desk |
 | **Art-Net and sACN** | Merge and Who controls: console only, Fanous only, or console and Fanous together (latest change or highest value wins) |
-| **CITP/MSEX** | Layer status, media libraries, thumbnails and a preview stream for a desk that speaks it (grandMA2, MagicQ, Hog 4, Onyx, Titan); grandMA3 and Eos have no CITP and see no thumbnails. Tested against captured packets, not a desk yet |
+| **CITP/MSEX** | Layer status, media libraries, thumbnails and a preview stream for a desk that speaks it (grandMA2, MagicQ, Hog 4, Onyx, Titan); the grandMA3 and Eos manuals document no CITP, so expect no thumbnails there. Tested against captured packets, not a desk yet |
 | **OSC, MIDI and timecode** | The full OSC address map with feedback and timetags; MIDI Learn and MIDI Show Control; LTC and MTC chase per layer |
 | **Live inputs** | Cameras, capture cards, this Mac's displays and Syphon servers as media, next to the built-in test card, test patterns, clock and motion test |
 | **Several Macs, one picture** | A Sync channel on every layer: one Mac is the Sync master, the others follow its clock |
@@ -191,7 +191,7 @@ with a "where to start" chart: [docs/user/README.md](docs/user/README.md).
 If you have a grandMA, Eos, ChamSys or Avolites desk and a spare Apple Silicon
 Mac, a test report is the most useful contribution right now: does the GDTF
 import, do thumbnails show up (CITP should reach grandMA2, ChamSys MagicQ,
-Hog 4, Onyx and Titan; grandMA3 and Eos have none), does a layer follow your
+Hog 4, Onyx and Titan; the grandMA3 and Eos manuals document none), does a layer follow your
 faders? [Open an issue](https://github.com/Timdebruijn/fanous/issues/new/choose).
 
 ## Free, and how the project is paid for
