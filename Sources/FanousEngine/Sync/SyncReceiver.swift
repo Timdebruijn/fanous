@@ -32,7 +32,9 @@ struct SyncTable: Sendable {
     /// The lowest machine id wins while its entry is fresh (younger than the freewheel time); the other machine is
     /// recorded as the group's conflict. A stale entry is replaced by anyone. From the same machine, a packet whose
     /// `tick` is the fresh entry's or up to `reorderWindow` behind it is a duplicate or arrived out of order: dropped,
-    /// so it never replaces a newer clock (B317). A master that restarts (its ticks from 0) is further behind than that.
+    /// so it never replaces a newer clock (B317). A master that restarts (its ticks from 0) is normally further behind
+    /// than that; one restarted within `reorderWindow` ticks of its previous start is dropped until the entry goes stale
+    /// (at most the freewheel time, 2 s).
     mutating func offer(_ clock: SyncPacket.Layer, from machine: UUID, tick: UInt32? = nil, at now: Double) {
         let g = Int(clock.group) - 1
         guard entries.indices.contains(g) else { return }
@@ -43,7 +45,7 @@ struct SyncTable: Sendable {
                     return
                 }
                 conflicts[g] = Conflict(machine: current.machine, at: now)
-            } else if let tick, let last = current.tick, (0..<Self.reorderWindow).contains(Int32(bitPattern: last &- tick)) {
+            } else if let tick, let last = current.tick, (0...Self.reorderWindow).contains(Int32(bitPattern: last &- tick)) {
                 return
             }
         }
@@ -156,7 +158,7 @@ final class SyncReceiver: @unchecked Sendable {
                     // the only control message: no other option asks for one
                     if count > 0, Int(message.msg_controllen) >= header + 8 {
                         let h = control.loadUnaligned(as: cmsghdr.self)
-                        if h.cmsg_level == SOL_SOCKET, h.cmsg_type == SCM_TIMESTAMP_MONOTONIC {
+                        if h.cmsg_level == SOL_SOCKET, h.cmsg_type == SCM_TIMESTAMP_MONOTONIC, Int(h.cmsg_len) >= header + 8 {
                             stamp = control.loadUnaligned(fromByteOffset: header, as: UInt64.self)
                         }
                     }
@@ -182,7 +184,9 @@ final class SyncReceiver: @unchecked Sendable {
         packetsIn.wrappingAdd(1, ordering: .relaxed)
         guard !packet.layers.isEmpty else { return }  // keepalive
         table.withLock { table in
-            for clock in packet.layers { table.offer(clock, from: packet.machineID, tick: packet.tick, at: now) }
+            // reversed: two masters of one group in one packet share its tick, and the last must win, as it does for
+            // local slaves (the compositor offers its masters in layer order)
+            for clock in packet.layers.reversed() { table.offer(clock, from: packet.machineID, tick: packet.tick, at: now) }
         }
     }
 }

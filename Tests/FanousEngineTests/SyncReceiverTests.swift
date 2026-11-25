@@ -155,6 +155,20 @@ struct SyncReceiverTests {
         #expect(receiver.table.withLock { $0.entries[0]?.clock.position } == 10)
     }
 
+    /// Two masters of one group in one packet (same tick): the last one wins, as for a local slave (review of B317;
+    /// the tick check dropped the second).
+    @Test func theLastMasterOfAGroupInAPacketWins() async throws {
+        let (receiver, port) = try Self.receiver()
+        defer { receiver.stop() }
+        let datagrams = [
+            Self.packet(from: Self.low, tick: 5, [Self.clock(group: 1, position: 1), Self.clock(group: 1, position: 2)]),
+            Self.packet(from: Self.low, tick: 6, [Self.clock(group: 3)]),  // marks the end
+        ]
+        #expect(sendUDP(datagrams, to: port).sent == datagrams.map(\.count))
+        _ = try #require(try await Self.entry(receiver, group: 3))
+        #expect(receiver.table.withLock { $0.entries[0]?.clock.position } == 2)
+    }
+
     /// The tick check holds only within a window behind a fresh entry of the same machine: a master that restarted
     /// (ticks from 0), a tick that wraps, a stale entry and a master on this machine (no tick) all replace it.
     @Test func aRestartedMasterAWrapAStaleEntryAndLocalMastersReplaceTheEntry() {
@@ -168,6 +182,11 @@ struct SyncReceiverTests {
         #expect(table.entries[1]?.clock.position == 4, "the entry was stale")
         table.offer(Self.clock(group: 2, position: 5), from: Self.low, tick: 0, at: 12.3)
         #expect(table.entries[1]?.clock.position == 5, "the wrap forward")
+        table.offer(Self.clock(group: 2, position: 6), from: Self.low, tick: 1000, at: 13)
+        table.offer(Self.clock(group: 2, position: 7), from: Self.low, tick: 1000 - 256, at: 13.1)
+        #expect(table.entries[1]?.clock.position == 6, "256 behind: inside the window")
+        table.offer(Self.clock(group: 2, position: 8), from: Self.low, tick: 1000 - 257, at: 13.2)
+        #expect(table.entries[1]?.clock.position == 8, "257 behind: a restart")
         table.offer(Self.clock(group: 4, position: 1), from: Self.own, at: 20)
         table.offer(Self.clock(group: 4, position: 2), from: Self.own, at: 20)
         #expect(table.entries[3]?.clock.position == 2, "a local master carries no tick")

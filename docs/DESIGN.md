@@ -5221,7 +5221,10 @@ FanousSync v1
   the master look late (B317). Packets from the machine's own id are dropped
   (local groups use the table directly, below). A packet whose tick is the
   entry's or up to 256 ticks behind it, from the same machine, is a duplicate
-  or arrived out of order and is dropped. The newest packet per group goes into a
+  or arrived out of order and is dropped; a master restarted within 256 ticks
+  of its previous start is therefore dropped until its entry goes stale
+  (at most 2 s). Two masters of one group in one packet: the last wins, as
+  for a local slave. The newest packet per group goes into a
   table `{group: (machine, mediaKey, fps, position, direction, finished,
   rate, receivedAt)}` behind a mutex; the compositor reads it with
   `withLockIfAvailable` once per tick (a busy lock means last tick's entry
