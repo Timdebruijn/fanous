@@ -436,6 +436,22 @@ struct LibraryIndexTests {
         #expect(index.snapshot.folders.first?.items.map(\.status) == [.playable, .playable], "cache hits again")
     }
 
+    /// A root that exists but lists no folder (a stale mountpoint, an empty automount) prunes nothing.
+    @Test func anEmptyRootPrunesNothing() async throws {
+        let (root, cache) = try brokenStills(2)
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.saveInterval = 3600
+        index.start()
+        defer { index.stop() }
+        #expect(await probed(index))
+        #expect(await waitUntil(every: .milliseconds(20)) { index.cacheWrites.load(ordering: .relaxed) == 1 })
+        try FileManager.default.moveItem(at: root.appending(path: "001_Show"), to: root.appending(path: "_away"))
+        index.rescan()
+        #expect(index.snapshot.folders.isEmpty)
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(index.cacheWrites.load(ordering: .relaxed) == 1, "nothing pruned, nothing written")
+    }
+
     /// The entries of a root inside this one (`/Show/Act2` under `/Show`, used before) are not this root's to prune.
     @Test func aNestedRootsEntriesAreNotPruned() async throws {
         let outer = try tempDir("fanous-library"), cache = try tempDir("fanous-library-cache")

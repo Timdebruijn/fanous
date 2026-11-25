@@ -622,11 +622,12 @@ public final class LibraryIndex: @unchecked Sendable {
     /// changed and has a new key), and their thumbnails unless another entry names the same one (a v1 entry shares the
     /// file name with its v2 successor). Entries under other roots stay: a switch back needs no probes (B51); so do those
     /// of a root inside this one (`/Show/Act2` under `/Show`): only `folder/file` keys are this root's. Nothing while the
-    /// root is missing (an unplugged disk), after a scan whose listing failed, in show mode, or once replaced.
+    /// root is missing or lists no folder (an unplugged disk, a stale mountpoint), after a scan whose listing failed, in
+    /// show mode, or once replaced.
     private func prune() {
         guard !paused, !retired.load(ordering: .relaxed) else { return }
         let thumbnails = state.withLock { s -> Set<String> in
-            guard s.snapshot.rootExists, s.scanComplete else { return [] }
+            guard s.snapshot.rootExists, s.scanComplete, !s.snapshot.folders.isEmpty else { return [] }  // an empty mountpoint
             let listed = Set(s.snapshot.folders.lazy.flatMap(\.items).map(Self.cacheKey))
             let prefix = root.path + "/"
             let gone = s.cache.keys.filter {
