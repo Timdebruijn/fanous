@@ -57,7 +57,13 @@ public struct CommandError: Error, Equatable, Sendable {
 public protocol StateClient: AnyObject, Sendable {
     var role: Role { get }
     func send(text: String, droppable: Bool) -> Bool
+    /// A welcome or snapshot: outside the send-queue limits for what follows it (`WebSocketSession.send(document:)`).
+    func send(document text: String) -> Bool
     func disconnect(reason: String)
+}
+
+extension StateClient {
+    public func send(document text: String) -> Bool { send(text: text, droppable: false) }
 }
 
 public struct CommandResult: Sendable, Equatable {
@@ -360,7 +366,7 @@ public final class StateStore: @unchecked Sendable {
         queue.sync {
             let held = clients[id]?.held
             clients[id]?.held = nil
-            _ = client.send(text: text, droppable: false)  // also to a client detached meanwhile: its session is closed
+            _ = client.send(document: text)  // also to a client detached meanwhile: its session is closed
             for message in held ?? [] { deliver(message.text, droppable: message.droppable, to: id) }
         }
     }

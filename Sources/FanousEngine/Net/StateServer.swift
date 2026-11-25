@@ -106,6 +106,8 @@ public final class StateServer: @unchecked Sendable {
             session.withLock { $0?.send(text: text, droppable: droppable) ?? false }
         }
 
+        public func send(document text: String) -> Bool { session.withLock { $0?.send(document: text) ?? false } }
+
         public func send(stream: UInt32, kind: StreamKind, payload: [UInt8]) -> Bool {
             var frame = [kind.rawValue, UInt8(stream >> 24), UInt8((stream >> 16) & 0xFF), UInt8((stream >> 8) & 0xFF), UInt8(stream & 0xFF)]
             frame.append(contentsOf: payload)
