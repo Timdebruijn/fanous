@@ -10,7 +10,9 @@ import Synchronization
 /// frame index each tick; the thread fills the ring ahead in play direction
 /// and restarts from the requested index on a seek. It decodes nothing before
 /// the first request (B294): the first frame in the ring is the one the
-/// compositor starts at, in its direction, not frame 0.
+/// compositor's hand-off asks for (the in point, or the out point in a reverse
+/// mode; a chased or slave layer's first request is the in point too, B404),
+/// not frame 0.
 public final class LayerDecoder: @unchecked Sendable {
     public let ring: FrameRing
     public let source: MovieSource
@@ -66,7 +68,7 @@ public final class LayerDecoder: @unchecked Sendable {
     /// differs from the last wake-up: while it has a full ring and nothing changes it sleeps.
     public func request(frame: Int, direction: Int) {
         let dir = direction >= 0 ? 1 : -1
-        wanted.store(frame, ordering: .relaxed)
+        wanted.store(max(0, frame), ordering: .relaxed)  // -1 is "nothing asked yet"
         self.direction.store(dir, ordering: .relaxed)
         let frameChanged = signalledFrame.exchange(frame, ordering: .relaxed) != frame
         let directionChanged = signalledDirection.exchange(dir, ordering: .relaxed) != dir
@@ -149,7 +151,7 @@ public final class LayerDecoder: @unchecked Sendable {
         if run == 1 { runStart = now }
         let file = source.url.lastPathComponent
         if isFailing {
-            // again at most once a second: the loader writes a new layer's status after starting its decoder
+            // again at most once a second: the layer's status is cleared when a selection lands and must come back
             if lastStatus.duration(to: now) >= .seconds(1) {
                 failing?(error.clientText)
                 lastStatus = now

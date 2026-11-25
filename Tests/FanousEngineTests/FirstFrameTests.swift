@@ -46,7 +46,8 @@ import Testing
         var ticks = 0
         func tick() { compositor.tick(target: 3600 + Double(ticks) / 60, drawable: nil); ticks += 1 }
         // tick until the file is on air, and read the frame of that very tick: the one the swap drew
-        for _ in 0..<400 where layer.current !== playback {
+        let deadline = Date().addingTimeInterval(5)
+        while layer.current !== playback, Date() < deadline {
             tick()
             if layer.current !== playback { try await Task.sleep(for: .milliseconds(5)) }
         }

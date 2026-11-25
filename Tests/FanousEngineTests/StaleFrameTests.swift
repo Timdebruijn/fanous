@@ -77,8 +77,7 @@ struct StaleFrameTests {
         defer { rig.decoder.stop() }
         await rig.tick(fed: false)  // the decode thread is not running: an empty ring
         #expect(rig.misses == 1 && rig.stale == 0)
-        rig.decoder.start(name: "test.decode")
-        rig.decoder.request(frame: 0, direction: 1)  // the compositor's first request: a started decoder waits for one (B294)
+        rig.decoder.start(name: "test.decode")  // the tick above requested frame 0: the thread starts on it (B294)
         for _ in 0..<300 { await rig.tick() }
         #expect(rig.misses == 1)
         #expect(rig.stale == 0)
