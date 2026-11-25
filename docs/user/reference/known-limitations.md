@@ -18,7 +18,7 @@ link here. Back to the [index](../README.md).
 | The GDTF file has not been imported into a real grandMA3, Eos or MagicQ yet. If the import fails, build the fixture by hand from the [channel map](../../channel-map.md). | B7 |
 | No real console has talked to Fanous over CITP/MSEX yet; it is tested against captured packets. | B40 |
 | Over CITP, streams and thumbnails come at a fixed size (Canvas 1 at 640 pixels wide, each layer at 160, thumbnails as stored) whatever size the console asks for. | B41 |
-| No NDI. grandMA3 and Eos have no CITP, so they get no thumbnails or preview of Fanous on the desk. | B74 |
+| No NDI. The grandMA3 and Eos manuals document no CITP, so they probably get no thumbnails or preview of Fanous on the desk. | B74 |
 | Only GDTF: no grandMA2 XML, MagicQ head file, Avolites personality, Eos library request or Onyx fixture. Eos's GDTF import creates no media or model list. | B77 |
 | Fanous answers ArtPoll, but has no registered Art-Net OEM code yet. | B13 |
 | The ArtPollReply names the Mac's first network address, which on a Mac with Wi-Fi and a show adapter can be the wrong one, and carries no MAC address, so two Macs look like one node to a desk that keys on it. Enter the Mac's address on the desk by hand. | B166 |
