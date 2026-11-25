@@ -434,18 +434,24 @@ public final class Compositor: @unchecked Sendable {
                     progress = Float(elapsed / layer.dissolveDuration)
                 }
             }
-            let retrigger = p.retrigger && !layer.retriggerLatched
-            layer.retriggerLatched = p.retrigger
+            // Control is edge-triggered: an action runs on the tick its band is entered, not while the value stays
+            let control = p.control != layer.controlLatched ? p.control : .idle
+            layer.controlLatched = p.control
+            let retrigger = control == .retrigger
+            if control == .clearError {  // B363: the loader clears the status and opens a failed selection again
+                layer.clearErrorRequested.store(true, ordering: .relaxed)
+                loaderWake?.signal()
+            }
             syncStatus = LayerSyncStatus(role: p.sync)
             let staleBefore = frame.stale
             if let outgoing = layer.outgoing {
                 // normal: the old picture stays underneath while the new fades in; other modes (and a fade to
                 // no media at all) crossfade the weights
                 let underneath = p.blendMode == .normal && layer.current != nil
-                prepare(outgoing, p, weight: underneath ? 1 : 1 - progress, retrigger: false, slot: layer.index * 2 + 1, canvas: canvas, in: &frame)
+                prepare(outgoing, p, weight: underneath ? 1 : 1 - progress, retrigger: false, resync: false, slot: layer.index * 2 + 1, canvas: canvas, in: &frame)
             }
             if let current = layer.current {
-                prepare(current, p, weight: progress, retrigger: retrigger, slot: layer.index * 2, canvas: canvas, in: &frame)
+                prepare(current, p, weight: progress, retrigger: retrigger, resync: control == .resyncAudio, slot: layer.index * 2, canvas: canvas, in: &frame)
                 if case .master(let group) = p.sync { publishMaster(current, p, group: group, layer: layer.index, in: frame) }
             }
             if frame.stale != staleBefore { layer.staleFrames.wrappingAdd(Int(frame.stale - staleBefore), ordering: .relaxed) }
@@ -759,7 +765,7 @@ public final class Compositor: @unchecked Sendable {
     }
 
     /// Advances the clock, drives audio and the decoder, picks the frame; queues the picture when it is visible.
-    private func prepare(_ playback: LayerPlayback, _ p: LayerParameters, weight: Float, retrigger: Bool, slot: Int, canvas: Int, in ctx: inout TickContext) {
+    private func prepare(_ playback: LayerPlayback, _ p: LayerParameters, weight: Float, retrigger: Bool, resync: Bool, slot: Int, canvas: Int, in ctx: inout TickContext) {
         let last = playback.frameCount - 1
         let inFrame = Int((p.inPoint * Float(last)).rounded())
         let outFrame = Int((p.outPoint * Float(last)).rounded())
@@ -821,11 +827,12 @@ public final class Compositor: @unchecked Sendable {
             {
                 loop = (Double(inFrame) / playback.frameRate, Double(outFrame + 1) / playback.frameRate)
             }
-            // stamped with the target, the tick's nominal presentation time, not now (B320)
+            // stamped with the target, the tick's nominal presentation time, not now (B320); resync: Resync audio, a reseek to
+            // the clock (B363)
             channel.setState(
                 wantedPTS: playback.clock.position / max(1, playback.frameRate), active: active,
                 volume: p.audioVolume * weight, pan: p.audioPan, loop: loop,
-                jumped: (retrigger && master == nil) || slaveJumped, atHostNanos: UInt64(max(0, ctx.target * 1e9)))
+                jumped: (retrigger && master == nil) || slaveJumped || resync, atHostNanos: UInt64(max(0, ctx.target * 1e9)))
         }
         guard let frameIndex else { return }  // once-then-black has finished
         let intensity = p.intensity * weight

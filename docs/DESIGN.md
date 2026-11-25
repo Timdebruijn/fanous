@@ -674,7 +674,7 @@ the fixture is patched and "at default". A freshly patched layer is black
 | 47 | Crop bottom | 8 | 0 | |
 | 48 | Audio volume | 8 | 0 | 0–100 % (default silent) |
 | 49 | Audio pan | 8 | 128 | L … R |
-| 50 | Control | 8 | 0 | 0–7 idle · 8–15 **Retrigger** (jump to In point on rising edge) · 16–23 Resync audio · 24–31 Clear error · 32–255 reserved |
+| 50 | Control | 8 | 0 | 0–7 idle · 8–15 **Retrigger** (jump to In point on rising edge) · 16–23 Resync audio (re-seek the layer's audio to its clock on rising edge) · 24–31 Clear error (clear the layer's error, on rising edge; a selection the layer shows nothing for, a failed open or a missing number, is opened again) · 32–255 reserved |
 | 51 | Sync | 8 | 0 | 0–9 off · 10–89 master group 1–8 · 90–169 slave group 1–8 · 170–255 reserved (§23, B60) |
 | 52–64 | Reserved | — | 0 | ignored |
 

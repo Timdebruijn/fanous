@@ -99,6 +99,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   ingest, and the playback audio reader refuses a sample rate outside 1 Hz–768 kHz (B336) (PR #485).
 - Library: a file whose open on a layer, or whose decode as an image mask, stops the engine is listed as unreadable after
   the second such stop, like a file that stops the probe (B267); a layer selecting it shows that reason (B348) (PR #479).
+- Control channel: "Resync audio" (16–23) re-seeks the layer's audio to its clock and "Clear error" (24–31) clears the
+  layer's error and opens a selection the layer shows nothing for again (a failed open, a missing number), each once on
+  the tick the band is entered (B363). Both were
+  parsed and handled nowhere (PR #468).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)

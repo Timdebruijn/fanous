@@ -32,7 +32,8 @@ public struct AudioStatistics: Sendable, Equatable {
 /// Invariants behind `@unchecked Sendable`:
 /// - `tail` and the producer-only vars belong to the producer thread; `head`, `appliedGeneration`,
 ///   `alignedGeneration`, `alignNext`, `correcting` and the gain state belong to the consumer thread; everything else is an atomic. The producer never writes `head`.
-///   The compositor's retrigger reaches the producer as `jumpGeneration` and the consumer as `staleSegment` (B394).
+///   A jump of the layer's clock (retrigger, slave jump, Resync audio) reaches the producer as `jumpGeneration` and the
+///   consumer as `staleSegment` (B394).
 /// - The clock is one atomic (`clockOffsetBits`); the producer also reads `stampNanos`, a second atomic, for where it
 ///   seeks (never before the stamp, B320). A pair from two ticks (rare: both are stored back to back each tick)
 ///   moves that seek by at most one period; the reseek test uses the clock alone.
@@ -122,10 +123,10 @@ public final class LayerAudioChannel: @unchecked Sendable {
     private var seenJump = 0  // the `jumpGeneration` the producer last reseeked for
     private var lastProducer = 0  // the producer of the last fill: another one starts the ring over (B397)
 
-    /// Bumped by `setState(jumped: true)` (the compositor retriggered the layer, so its clock jumped back). The
-    /// producer reseeks at its next active fill, also when the jump is smaller than `resyncThresholdFrames` (B394):
-    /// the new segment's first pull lands on the clock, where nudging would repeat frames towards it. A retrigger
-    /// stores it after the clock (release), and the producer reads it (acquire) after it has seen the channel active
+    /// Bumped by `setState(jumped: true)` (the layer's clock jumped: a retrigger, a sync slave's jump to its master, B395,
+    /// back or forward, or the Control channel's Resync audio, B363). The producer reseeks at its next active fill, also
+    /// when the jump is smaller than `resyncThresholdFrames` (B394): the new segment's first pull lands on the clock, where
+    /// nudging would repeat frames towards it. `setState` stores it after the clock (release), and the producer reads it (acquire) after it has seen the channel active
     /// and before it takes its clock, so a reseek never starts at the clock from before the jump.
     private let jumpGeneration = Atomic<Int>(0)
 
@@ -144,8 +145,8 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// `loop` is the media range [start, end) in seconds a forward loop plays; the producer then reads across the
     /// wrap (the ring holds the unwrapped timeline) and `wantedPTS` is compared modulo the loop length. Ignored
     /// when shorter than 0.5 s.
-    /// `jumped` says the layer was retriggered this tick (its clock jumped back): the producer reseeks, whatever the
-    /// size of the jump.
+    /// `jumped` says the layer's clock jumped this tick (a retrigger, a sync slave's jump to its master, B395, or the
+    /// Control channel's Resync audio, B363): the producer reseeks, whatever the size of the jump.
     /// The audio side extrapolates the clock from the stamp with the host clock (`wantedPTS(atHostNanos:)`), backwards
     /// before it (the stamp is up to one period ahead of now) and forwards after it. `nanos` is on the clock of
     /// `CACurrentMediaTime()` (both are `mach_absolute_time()` converted), so a target in host seconds × 1e9 is one.
