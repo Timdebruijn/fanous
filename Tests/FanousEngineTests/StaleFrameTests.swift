@@ -27,9 +27,9 @@ struct StaleFrameTests {
 
         /// A 20-frame 25 fps movie on a 25 fps compositor, playing in `mode`; the decode thread is not started yet.
         /// `drawn`: every tick encodes and commits a command buffer (the record written after the encode), else idle ticks.
-        init(mode: PlayMode, frames: Int = 20, drawn: Bool = false, inOut: (Float, Float) = (0, 1)) async throws {
-            let url = try tempDir("fanous-ingest-tests").appending(path: "clip.mov")
-            try await writePatternMovie(to: url, size: (128, 64), fps: 25, frames: frames)
+        init(mode: PlayMode, frames: Int = 20, drawn: Bool = false, inOut: (Float, Float) = (0, 1), movie: URL? = nil) async throws {
+            let url = try movie ?? tempDir("fanous-ingest-tests").appending(path: "clip.mov")
+            if movie == nil { try await writePatternMovie(to: url, size: (128, 64), fps: 25, frames: frames) }
             let context = try MetalContext()
             let source = try await MovieSource.open(url: url, device: context.device, poolSize: StaleFrameTests.capacity)
             let ring = FrameRing(capacity: StaleFrameTests.capacity)
@@ -138,6 +138,20 @@ struct StaleFrameTests {
         let before = rig.stale
         for _ in 0..<100 { await rig.tick() }  // 20 frames at 2 frames a tick: ten turns
         #expect(rig.stale - before <= 15, "\(rig.stale - before) held ticks over ten turns")
+    }
+
+    // B293 review: a frame that fails to decode (B278) is skipped by the thread, so the ring holds its neighbours but not
+    // it; the full-ring drain must not turn that one held tick into a restart at the bad frame on every pass
+    @Test func aLoopWithOneUndecodableFrameHoldsOneTickAtIt() async throws {
+        let movie = try await LayerDecoderErrorTests.movie("one-bad.mov", bad: [7])  // 16 HAP frames at 25 fps
+        let rig = try await Rig(mode: .loopForward, frames: 16, movie: movie)
+        rig.decoder.start(name: "test.decode")
+        rig.decoder.request(frame: 0, direction: 1)
+        defer { rig.decoder.stop() }
+        var held: [Int] = []
+        for _ in 0..<96 { await rig.tick(); if rig.shown != rig.clockFrame { held.append(rig.clockFrame) } }  // six passes
+        #expect(held.count <= 6, "\(held)")  // one tick per pass, as before this change (measured on main: the same six)
+        #expect(held.allSatisfy { $0 == 7 }, "\(held)")
     }
 
     @Test func aTwoFrameLoopThenInPastOutHoldsAtMostTwoTicks() async throws {
