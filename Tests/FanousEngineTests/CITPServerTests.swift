@@ -262,6 +262,38 @@ struct CITPServerTests {
         #expect(client.wait(10, for: Self.reply(.mediaElementInformation(MediaElementInformation(libraryID: .topLevel(9), elements: [])))), "an index past the libraries names nothing")
     }
 
+    /// B368: a console's message header over 1 MiB closes the session before its body is buffered (was 16 MiB); a header of
+    /// exactly 1 MiB waits for its body.
+    @Test(.offPool) func aMessageAboveTheSessionLimitClosesTheSession() throws {
+        let server = CITPServer(
+            name: "test", uuid: "550e8400-e29b-41d4-a716-446655440000",
+            providers: CITPServer.Providers(layers: { [] }, library: Self.library, thumbnail: { _ in nil }, frame: { _ in nil }), logger: testLogger)
+        try server.start()
+        defer { server.stop() }
+        var port: UInt16 = 0
+        for _ in 0..<100 where port == 0 {
+            port = server.status.withLock { $0.port }
+            if port == 0 { usleep(20_000) }
+        }
+        try #require(port > 0)
+        for (size, closes) in [(CITPServer.Session.maxMessageBytes + 1, true), (CITPServer.Session.maxMessageBytes, false)] {
+            let ended = Atomic(false)
+            let connection = NWConnection(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
+            defer { connection.cancel() }
+            @Sendable func receive() {
+                connection.receive(minimumIncompleteLength: 1, maximumLength: 1 << 16) { _, _, done, error in
+                    if done || error != nil { ended.store(true, ordering: .relaxed) } else { receive() }
+                }
+            }
+            connection.start(queue: DispatchQueue(label: "test.citp.limit"))
+            receive()
+            connection.send(content: Data(CITPHeader(requestIndex: 1, messageSize: UInt32(size), contentType: "MSEX").encode()), completion: .idempotent)
+            let deadline = Date().addingTimeInterval(1)
+            while !ended.load(ordering: .relaxed), Date() < deadline { usleep(10_000) }
+            #expect(ended.load(ordering: .relaxed) == closes, "\(size) bytes")
+        }
+    }
+
     /// An MSEX 1.0/1.1 console sends no CInf (B78): after `fallbackDelay` it gets a 1.0 SInf (unsolicited) and 1.0
     /// layer status; a later CInf still sets the version.
     @Test(.offPool) func consoleWithoutClientInformationGetsVersion1_0() throws {

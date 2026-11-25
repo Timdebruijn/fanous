@@ -179,8 +179,15 @@ sends no `hello` within 10 s of the upgrade (B269). Libraries send the pong
 by themselves, but only while the program reads: keep reading the socket,
 also in a script that only sends.
 
-Other close codes: 1002 protocol error or wrong schema, 1007 invalid text,
-1009 message too large (16 MiB), 4401 auth required. Error codes in an
+Other close codes: 1002 protocol error or wrong schema (also a frame over
+the size limit), 1007 invalid text, 1009 message too large, 4401 auth
+required. A frame or message may be 4 KiB before `hello` is accepted, 64 KiB
+for the monitor role and 4 MiB for the operator and programmer roles (an
+output's whole slice list with its masks, as the Outputs screen sends it,
+must stay below that); the engine also closes a connection with 1009 when
+the unfinished messages of all connections, counted beyond 128 KiB each (more
+than a monitor can hold), come to more than 64 MiB and this one's grows.
+Error codes in an
 `ack`: `unknownCommand`, `forbidden` (the role is below the command's),
 `showLocked` (the command changes the configuration and the show is
 locked), `showMode` (refused in show mode), `notReady` (show mode blocked

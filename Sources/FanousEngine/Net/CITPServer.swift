@@ -396,6 +396,10 @@ public final class CITPServer: @unchecked Sendable {
         var version: MSEXVersion?
         var streams: [Stream] = []
         private var buffer: [UInt8] = []
+        /// B368: the largest message a console may send; a larger header closes the session before its body is buffered. The
+        /// largest a console sends is a request listing element numbers (GEIN, GETh: at most 65535 one-byte numbers, about
+        /// 64 KiB); 1 MiB leaves margin for messages this codec does not model (SDMX, FPTC). Was 16 MiB.
+        static let maxMessageBytes = 1 << 20
         /// How long a console has to send CInf before it is taken for MSEX 1.0 (B78).
         static let fallbackDelay = 2.0
         private var fallback: DispatchWorkItem?
@@ -450,7 +454,7 @@ public final class CITPServer: @unchecked Sendable {
                     return
                 }
                 let size = Int(header.messageSize)
-                guard size >= CITPHeader.size, size <= 1 << 24 else {
+                guard size >= CITPHeader.size, size <= Self.maxMessageBytes else {
                     connection.cancel()
                     return
                 }

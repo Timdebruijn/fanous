@@ -108,6 +108,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   and trapped the engine when its preview opened (B339) (PR #476).
 - Preview: the canvas, output and layer previews skip a frame while 4 are still waiting to be encoded, so a stalled preview
   queue no longer piles up pixel buffers allocated on the compositor thread (B302) (PR #482).
+- Network: a WebSocket frame or message may be 4 KiB before `hello`, 64 KiB for the monitor role and 4 MiB for the
+  roles behind a password (was 16 MiB), all connections
+  together hold at most 64 MiB of unfinished messages, and a CITP message may be 1 MiB (was 16 MiB) (B368) (PR #484).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)

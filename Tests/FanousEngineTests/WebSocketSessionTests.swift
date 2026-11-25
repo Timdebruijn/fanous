@@ -76,7 +76,9 @@ struct WebSocketSessionTests {
             }
         }
 
-        static func make(messageLimit: Int = WebSocketSession.maxMessageBytes) async throws -> Pair {
+        static func make(
+            messageLimit: Int = WebSocketSession.maxMessageBytes, budget: WebSocketSession.ReceiveBudget = .init(limit: 1 << 30)
+        ) async throws -> Pair {
             let (store, auth) = testStore()
             let server = StateServer(store: store, auth: auth, caps: ["schema": 1], logger: testLogger)
             let request = try #require(try HTTPRequest.parse(Array("GET /ws HTTP/1.1\r\nHost: x\r\n\r\n".utf8))).request
@@ -96,11 +98,18 @@ struct WebSocketSessionTests {
             client.start(queue: queue)
             try #require(await waitUntil { accepted.withLock { $0?.state == .ready } && client.state == .ready })
             let session = WebSocketSession(
-                connection: try #require(accepted.withLock { $0 }), remoteAddress: "test", handler: handler, messageLimit: messageLimit)
+                connection: try #require(accepted.withLock { $0 }), remoteAddress: "test", handler: handler, messageLimit: messageLimit, budget: budget)
             session.opened()
             let pair = Pair(session: session, queue: queue, listener: listener, client: client)
             pair.receive()
             return pair
+        }
+
+        /// Sends `hello` for `role` and waits for the welcome: the session is past the pre-hello limit (B368). No password
+        /// is set here, so every role is granted.
+        func greet(_ role: String = "monitor") async throws {
+            feed(WebSocketSessionTests.frame(.text, Array(#"{"t":"hello","clientId":"a","schema":1,"role":"\#(role)"}"#.utf8)))
+            try #require(await waitUntil { texts().contains { $0["t"]?.string == "welcome" } })
         }
 
         func stop() {
@@ -190,12 +199,109 @@ struct WebSocketSessionTests {
     /// session gets a 64 KB limit: the rule is the same as at 16 MB, without building 16 MB in a debug build (B353). Off
     /// the pool all the same: on a one-thread pool this test held the thread for about 3.7 s (measured, cause not traced).
     @Test(.offPool) func fragmentsAboveTheMessageLimitAreRefusedWith1009() async throws {
-        #expect(WebSocketSession.maxMessageBytes == 16 * 1024 * 1024)  // the engine's limit; the rule is tested below at 64 KB
+        #expect(WebSocketSession.maxMessageBytes == 4 * 1024 * 1024)  // the engine's limit (B368); the rule is tested below at 64 KB
         let limit = 64 * 1024
         let pair = try await Pair.make(messageLimit: limit)
         defer { pair.stop() }
+        try await pair.greet("operator")  // before hello the limit is 4 KiB, for the monitor 64 KiB (B368)
         let half = [UInt8](repeating: 0x61, count: limit / 2)
         #expect(!pair.feed(Self.frame(.text, fin: false, half), Self.frame(.continuation, fin: false, half), Self.frame(.continuation, [0x61])))
         #expect(await pair.closeCode() == 1009)
+    }
+
+    // MARK: B368: receive limits
+
+    /// Before `hello` (the open monitor role costs nothing) a frame of more than 4 KiB closes the connection (1002, the
+    /// code of every frame over the limit); after it the same frame is a message like any other. On the old code the
+    /// first frame was within the 16 MiB limit.
+    @Test func aLargeFrameBeforeHelloIsRefused() async throws {
+        let big = Self.frame(.text, [UInt8](repeating: 0x61, count: 5 * 1024))
+        let early = try await Pair.make()
+        defer { early.stop() }
+        #expect(!early.feed(big))
+        #expect(await early.closeCode() == 1002)
+        let greeted = try await Pair.make()
+        defer { greeted.stop() }
+        try await greeted.greet()
+        #expect(greeted.feed(big))
+        #expect(!greeted.session.isClosed)
+    }
+
+    /// A fragmented message before `hello` is held to the same 4 KiB.
+    @Test func fragmentsBeforeHelloAreHeldToTheSmallLimit() async throws {
+        let pair = try await Pair.make()
+        defer { pair.stop() }
+        let piece = [UInt8](repeating: 0x61, count: 3 * 1024)
+        #expect(!pair.feed(Self.frame(.text, fin: false, piece), Self.frame(.continuation, fin: false, piece)))
+        #expect(await pair.closeCode() == 1009)
+    }
+
+    /// After `hello` a frame over the message limit is refused as its header arrives (64 KB here; 4 MiB in the engine).
+    @Test(.offPool) func aFrameAboveTheMessageLimitAfterHelloIsRefused() async throws {
+        let limit = 64 * 1024
+        let pair = try await Pair.make(messageLimit: limit)
+        defer { pair.stop() }
+        try await pair.greet("operator")
+        let header = Array(Self.frame(.text, [UInt8](repeating: 0x61, count: limit + 1)).prefix(14))  // 127, 8-byte length, key
+        #expect(!pair.feed(header))
+        #expect(await pair.closeCode() == 1002)
+    }
+
+    /// The receive budget: three sessions each trickle a large message, 300 KiB of it so far (about 172 KiB beyond what a
+    /// session holds without counting), against a 400 KiB budget. The third goes past it and is closed (1009); a small
+    /// command on a fourth still passes; once the first has gone, a new partial message fits again. On the old code nothing
+    /// was counted.
+    @Test(.offPool) func theReceiveBudgetRefusesTheSessionThatGoesPastIt() async throws {
+        let budget = WebSocketSession.ReceiveBudget(limit: 400 * 1024)
+        let partial = Array(Self.frame(.text, [UInt8](repeating: 0x61, count: 1 << 20)).prefix(300 * 1024))
+        let counted = partial.count - WebSocketSession.ReceiveBudget.free
+        var pairs: [Pair] = []
+        defer { for p in pairs { p.stop() } }
+        for _ in 0..<5 {
+            let pair = try await Pair.make(budget: budget)
+            try await pair.greet("programmer")
+            pairs.append(pair)
+        }
+        #expect(pairs[0].feed(partial))
+        #expect(pairs[1].feed(partial))
+        #expect(!pairs[2].feed(partial), "the third partial message went past the budget")
+        #expect(await pairs[2].closeCode() == 1009)
+        #expect(pairs[3].feed(Self.frame(.text, Array(#"{"t":"ping"}"#.utf8))), "a small message passes")
+        #expect(!pairs[3].session.isClosed)
+        pairs[0].stop()
+        #expect(await waitUntil { budget.held.load(ordering: .relaxed) == counted })
+        #expect(pairs[4].feed(partial), "room again after the first session went")
+    }
+
+    /// B368 review: the monitor role needs no password, so its messages are held to 64 KiB and it cannot fill the shared
+    /// receive budget with trickled 4 MiB frames; a role behind a password keeps the 4 MiB. On the previous head a monitor
+    /// could send 4 MiB.
+    @Test func aMonitorMessageAbove64KiBIsRefusedAndAnOperatorsIsNot() async throws {
+        let big = Self.frame(.text, [UInt8](repeating: 0x61, count: 65 * 1024))
+        let monitor = try await Pair.make()
+        defer { monitor.stop() }
+        try await monitor.greet("monitor")
+        #expect(!monitor.feed(big))
+        #expect(await monitor.closeCode() == 1002)
+        let op = try await Pair.make()
+        defer { op.stop() }
+        try await op.greet("operator")
+        #expect(op.feed(big))
+        #expect(!op.session.isClosed)
+    }
+
+    /// Second review of B368: monitors never count against the budget, however many hold as much as they can (a 64 KiB
+    /// open fragment and a partial frame of another), so they cannot close a programmer's large edit. On the previous
+    /// head each holding above 64 KiB counted in full.
+    @Test(.offPool) func monitorsHoldingAllTheyMayCountNothing() async throws {
+        let budget = WebSocketSession.ReceiveBudget(limit: 1)
+        let pair = try await Pair.make(budget: budget)
+        defer { pair.stop() }
+        try await pair.greet("monitor")
+        let piece = [UInt8](repeating: 0x61, count: 32 * 1024)
+        let partial = Array(Self.frame(.continuation, fin: false, [UInt8](repeating: 0x61, count: 32 * 1024)).dropLast(1))
+        #expect(pair.feed(Self.frame(.text, fin: false, piece), Self.frame(.continuation, fin: false, piece), partial))
+        #expect(!pair.session.isClosed)
+        #expect(budget.held.load(ordering: .relaxed) == 0)
     }
 }
