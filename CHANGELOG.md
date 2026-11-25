@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: the owner's four decisions on the 3D pixel-mapping note (`docs/pixelmap-3d.md` §6, row B407): z up with
+  the up axis a project setting, CSV and OPC import both, the height map on its own canvas, order atlas, kinetic,
+  project (PR #NNN)
 - Docs: a design note for the pixel mapper in three dimensions and for pixels on winches (`docs/pixelmap-3d.md`,
   row B407): a point list with x/y/z per LED, three sampling modes, a height map for kinetic groups, and what
   changes on the wire when Fanous sends Art-Net/sACN (PR #481)
