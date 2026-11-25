@@ -14,7 +14,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   rate and continue the previous one; a start or a jump needs even word parity and a second frame to confirm it, so
   one corrupted frame no longer jumps the chase or fires a cue early. A dropout or a restarted sender keeps the last
   detected rate instead of 25 fps for eight frames, and a gap no longer throws the bit timing off for seven frames
-  (PR #N).
+  (PR #463).
 - Playback: a chased or sync-slave layer's first frame is its clock's frame (B404). The hand-off asked the decoder for
   the in point (the out point in a reverse mode), and the swap tick moved the clock to the timecode or the master's
   position, so the cut showed a frame of the in point; a slave with a reverse play mode also filled the ring backwards
