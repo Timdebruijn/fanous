@@ -8,11 +8,13 @@ import Synchronization
 
 /// One decode thread per layer (DESIGN.md §4.2). The compositor asks for a
 /// frame index each tick; the thread fills the ring ahead in play direction
-/// and restarts from the requested index on a seek.
+/// and restarts from the requested index on a seek. It decodes nothing before
+/// the first request (B294): the first frame in the ring is the one the
+/// compositor starts at, in its direction, not frame 0.
 public final class LayerDecoder: @unchecked Sendable {
     public let ring: FrameRing
     public let source: MovieSource
-    private let wanted = Atomic<Int>(0)
+    private let wanted = Atomic<Int>(-1)  // -1: no request yet
     private let direction = Atomic<Int>(1)
     private let running = Atomic<Bool>(true)
     private let wake = DispatchSemaphore(value: 0)
@@ -82,6 +84,10 @@ public final class LayerDecoder: @unchecked Sendable {
         let signpost = Signposts.id(self)
         while running.load(ordering: .relaxed) {
             if audioEnabled.load(ordering: .acquiring), let audioReader, let audioChannel { audioChannel.fill(from: audioReader, producer: audioToken) }
+            guard wanted.load(ordering: .relaxed) >= 0 else {  // nothing asked for yet (B294): the first frame must be the right one
+                _ = wake.wait(timeout: .distantFuture)
+                continue
+            }
             guard let slot = ring.slotForWriting() else {
                 // with audio to feed, keep topping it up while the video ring is full; otherwise sleep until a request changes
                 _ = wake.wait(timeout: audioReader != nil && audioEnabled.load(ordering: .relaxed) ? .now() + .milliseconds(10) : .distantFuture)

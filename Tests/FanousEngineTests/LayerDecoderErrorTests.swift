@@ -98,6 +98,9 @@ import VideoToolbox
         defer { loader.stop() }
         layer.wanted.store(MediaKey(folder: 1, file: 1).packed, ordering: .relaxed)
         loader.wake.signal()
+        // the compositor's hand-off asks for the first frame; a started decoder decodes nothing before that (B294)
+        #expect(await waitUntil { layer.pending.withLock { $0.playback } != nil })
+        layer.pending.withLock { $0.playback }?.decoder?.request(frame: 0, direction: 1)
         #expect(await waitUntil { layer.mediaStatus.withLock { $0.error } != nil })
         let status = layer.mediaStatus.withLock { $0 }
         #expect(status.kind == "movie" && status.error == "HapDecode failed (3)", "\(status)")
