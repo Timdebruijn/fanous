@@ -132,7 +132,8 @@ curl -sk https://127.0.0.1:8443/healthz
 
 Match acks to commands by `id`, not by order: entering show mode runs the
 readiness checks first, and commands sent after a `show.mode` with `on:
-true` run meanwhile, so their acks can come before its ack.
+true` run meanwhile, so their acks can come before its ack (a `show.mode`
+with `on: false` waits for it).
 
 Binary frames: `[u8 kind][u32 stream id][payload]`, every multi-byte
 number big-endian. Kind 1 is an H.264 access unit (`[u8 key frame][u64

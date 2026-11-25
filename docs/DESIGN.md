@@ -4916,8 +4916,9 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   library root change started since the checks began, no leave since the entry
   arrived; a leave from another client or source during an entry wins and the
   entry answers ok without entering). The entering connection's later
-  commands run at once (B287); the 30 s timer, `readiness.run` and the display syncs
-  queue them on a serial readiness queue, off the feed queue, and a run's items
+  commands run at once, except its own `show.mode` false, which waits for the
+  entry (B287); the 30 s timer, `readiness.run` and the display syncs queue
+  their checks on a serial readiness queue, off the feed queue, and a run's items
   are stored only if no later-started run stored first (B187). Desired display modes are applied on entering
   and restored on leaving (B33, `DisplayModeSwitcher`, matching in
   `DisplayModeMatching`; one `.forSession` transaction, re-applied on
