@@ -17,6 +17,7 @@ import {
   midiParameterTarget,
   midiTargetText,
   refusalNote,
+  layerOffsetText,
 } from './show';
 
 const cue = (id: string, number: number, extra: Partial<CueDoc> = {}): CueDoc => ({ id, number, name: `Cue ${number}`, fade: 0, values: [], ...extra });
@@ -192,6 +193,14 @@ describe('parseTrigger', () => {
     expect(parseTrigger('00:01:00;01@29.97df')).toMatchObject({ ok: false });
     expect(parseTrigger('00:10:00:00@29.97df')).toMatchObject({ ok: true });
     expect(parseTrigger('00:01:00:00@29.97ndf')).toMatchObject({ ok: true });
+  });
+});
+
+describe('layerOffsetText', () => {
+  it('lists the layers with an offset of their own by number, with the sign, and nothing for none', () => {
+    expect(layerOffsetText({ '7': -10, '3': 25, '12': 0, '1': 2 })).toBe('layer 1 +2 · layer 3 +25 · layer 7 −10');
+    expect(layerOffsetText({ '2': 0 })).toBe('');
+    expect(layerOffsetText({})).toBe('');
   });
 });
 
