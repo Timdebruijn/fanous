@@ -12,7 +12,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Control channel: "Resync audio" (16–23) re-seeks the layer's audio to its clock and "Clear error" (24–31) clears the
   layer's error and opens a selection that failed again, each once on the tick the band is entered (B363). Both were
-  parsed and handled nowhere (PR #N).
+  parsed and handled nowhere (PR #468).
 - Playback: a chased or sync-slave layer's first frame is its clock's frame (B404). The hand-off asked the decoder for
   the in point (the out point in a reverse mode), and the swap tick moved the clock to the timecode or the master's
   position, so the cut showed a frame of the in point; a slave with a reverse play mode also filled the ring backwards
