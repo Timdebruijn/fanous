@@ -135,7 +135,7 @@
         <span>Trigger</span>
         <input class="input mono left" type="text" autocomplete="off" spellcheck="false" placeholder="hh:mm:ss:ff@25" aria-describedby="editor-hint" value={c.trigger ?? ''} disabled={!editable} title={lock} onchange={(e) => onTrigger(c, e.currentTarget)} />
       </label>
-      <button type="button" class="btn" disabled={!editable || now === null} title={lock ?? (now === null ? 'Timecode is off' : `Set the trigger to ${now}`)} onclick={() => { if (now !== null) void save({ ...c, trigger: now }, () => {}); }}>Now</button>
+      <button type="button" class="btn" disabled={!editable || now === null} title={lock ?? (now === null ? 'No timecode to take: it is off, lost or at a rate triggers do not know' : `Set the trigger to ${now}`)} onclick={() => { if (now !== null) void save({ ...c, trigger: now }, () => {}); }}>Now</button>
       <label class="field">
         <span>Follow (s)</span>
         <input class="input mono" type="number" step="0.1" min="0" placeholder="none" value={c.follow ?? ''} disabled={!editable} title={lock} onchange={(e) => onFollow(c, e.currentTarget)} />

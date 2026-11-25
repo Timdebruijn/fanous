@@ -201,6 +201,7 @@ describe('currentTrigger', () => {
     expect(currentTrigger({ state: 'locked', value: '01:00:12;05', rate: '29.97 DF' })).toBe('01:00:12:05@29.97 DF');
     expect(currentTrigger({ state: 'freewheel', value: '01:00:12:05', rate: '25' })).toBe('01:00:12:05@25');
     expect(currentTrigger({ state: 'off', value: '--:--:--:--', rate: '25' })).toBeNull();
+    expect(currentTrigger({ state: 'lost', value: '01:00:12:05', rate: '25' })).toBeNull();
     expect(currentTrigger({ state: 'locked', value: '01:00:12:05', rate: '' })).toBeNull();
   });
 });
