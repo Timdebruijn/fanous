@@ -276,6 +276,93 @@ extension LayerAudioChannel {
         #expect(abs(channel.wantedPTS(atHostNanos: 2_010_000_000) - 7.01) < 1e-9)
     }
 
+    /// B320 review: the compositor stamps its position with the tick's target, ahead of now, so before the target the
+    /// clock reads up to one tick's lead before that position. The producer takes its clock at the stamp: a segment
+    /// cued at an in point (1 s) starts there, not before it, and the first pull waits silent until the clock reaches
+    /// it (a real target is a tick ahead). `fill(now:)` is what `fill(from:producer:)` calls with the time of the
+    /// call; only the reader is a stand-in.
+    @Test func theProducerNeverTakesItsClockBeforeTheStamp() {
+        let channel = LayerAudioChannel()
+        let now = LayerAudioChannel.hostNanos()
+        channel.setState(wantedPTS: 1, active: true, volume: 1, pan: 0, atHostNanos: now + 1_000_000_000)
+        let source = RampSource()
+        var seeks: [Double] = []
+        channel.fill(now: now, read: { source.read($0, $1) }, seek: { seeks.append($0); source.seek($0) })
+        #expect(seeks.count == 1 && abs(seeks[0] - 1) < 1e-6, "seeked to \(seeks), not before the in point")
+        var out = AudioTests.pull(channel, frames: 480, wanted: 0.99)  // before the target: waits
+        #expect(out.left.allSatisfy { $0 == 0 } && abs(channel.nextFramePTS - 1) < 1e-6, "nothing heard, nothing consumed")
+        out = AudioTests.pull(channel, frames: 480, wanted: 1)  // at the target: from the in point
+        #expect(abs(channel.nextFramePTS - 1.01) < 1e-6)
+        #expect(abs(out.left[479] - 48_479) < 1, "the in point's frames: \(out.left[479])")
+        #expect(channel.statistics.corrections == 0)
+    }
+
+    /// B320 review: the clock at the stamp runs up to one lead (40 ms here, 25 Hz) ahead of the consumer's. Whether
+    /// the producer reseeks is judged on the consumer's clock, so neither threshold shrinks by the lead. Ring 0–250 ms,
+    /// 200 ms played, a lead of 40 ms, `at` is the clock now (consumer).
+    private func reseeks(at consumer: Double, lead: Double = 0.04) -> (seeks: Int, buffered: Int, channel: LayerAudioChannel) {
+        let channel = LayerAudioChannel()
+        let source = RampSource()
+        var seeks = 0
+        channel.setState(wantedPTS: 0, active: true, volume: 1, pan: 0, atHostNanos: 1_000_000_000)
+        channel.fill(now: 1_000_000_000, read: { source.read($0, $1) }, seek: { seeks += 1; source.seek($0) })
+        for k in 0..<20 { AudioTests.pull(channel, frames: 480, wanted: Double(k) * 0.01) }  // head at 0.2 s, tail 0.25 s
+        let now: UInt64 = 2_000_000_000
+        channel.setState(wantedPTS: consumer + lead, active: true, volume: 1, pan: 0, atHostNanos: now + UInt64(lead * 1e9))
+        channel.fill(now: now, read: { source.read($0, $1) }, seek: { seeks += 1; source.seek($0) })
+        return (seeks, channel.bufferedFrames, channel)
+    }
+
+    @Test func aRingWithAudioLeftBeforeTheTargetIsToppedUpNotReseeked() {
+        // 10 ms left on the consumer's clock (0.24 s against the tail's 0.25 s); 30 ms past the tail at the stamp
+        let r = reseeks(at: 0.24)
+        #expect(r.seeks == 1, "only the first seek")
+        #expect(r.buffered == LayerAudioChannel.capacity, "topped up: \(r.buffered)")
+    }
+
+    @Test func aHeadLagUnderTheResyncThresholdIsNudgedNotReseeked() {
+        // the head (0.2 s) 65 ms behind the consumer's clock, 105 ms behind the clock at the stamp
+        let r = reseeks(at: 0.265)
+        #expect(r.seeks == 1, "only the first seek")
+        let out = AudioTests.pull(r.channel, frames: 480, wanted: 0.265)
+        #expect(r.channel.statistics.corrections >= 1 && r.channel.statistics.underruns == 0)
+        #expect(out.left.contains { $0 != 0 }, "heard while it is nudged")
+    }
+
+    /// B406 with B320: an A/V offset above the output latency makes the lead negative (here −150 ms), so the stamp
+    /// (10 ms ahead) is 160 ms ahead of the consumer's clock. The segment starts at the stamp; a fill 10 ms later must
+    /// not take that 150 ms for a jump and reseek to the stamp again (which by then has moved on: silent for ever). The
+    /// consumer waits silent, nothing consumed, and plays once its clock reaches the first stamp.
+    @Test func aNegativeLeadWaitsForTheStampWithoutReseeking() {
+        let mixer = AudioMixer(channels: 1)
+        let channel = mixer.channels[0]
+        let source = RampSource()
+        var seeks: [Double] = []
+        let t = LayerAudioChannel.hostNanos()
+        channel.setState(wantedPTS: 1, active: true, volume: 1, pan: 0, atHostNanos: t + 10_000_000)
+        var left = [Float](repeating: 0, count: 480)
+        var right = [Float](repeating: 0, count: 480)
+        left.withUnsafeMutableBufferPointer { l in  // a callback reading 150 ms before now publishes the lead
+            right.withUnsafeMutableBufferPointer { r in
+                mixer.render(frames: 480, left: l.baseAddress!, right: r.baseAddress!, atHostNanos: LayerAudioChannel.hostNanos() - 150_000_000)
+            }
+        }
+        let lead = channel.outputLeadNanos.load(ordering: .relaxed)
+        #expect(lead <= -150_000_000 && lead > -160_000_000, "\(lead)")
+        var firstHeard: Int?
+        for k in 0..<26 {
+            let now = t + UInt64(k) * 10_000_000
+            // the compositor's tick: the same clock, stamped 10 ms ahead of now each time
+            channel.setState(wantedPTS: 1 + Double(k) * 0.01, active: true, volume: 1, pan: 0, atHostNanos: now + 10_000_000)
+            channel.fill(now: now, read: { source.read($0, $1) }, seek: { seeks.append($0); source.seek($0) })
+            let out = AudioTests.pull(channel, frames: 480, wanted: channel.wantedPTS(atHostNanos: UInt64(Int64(now) + lead)))
+            if firstHeard == nil, out.left.contains(where: { $0 != 0 }) { firstHeard = k }
+        }
+        #expect(seeks.count == 1 && abs(seeks[0] - 1) < 1e-6, "one seek, at the stamp: \(seeks)")
+        #expect(firstHeard.map { (16...17).contains($0) } == true, "heard once the clock reaches the stamp: \(String(describing: firstHeard))")
+        #expect(channel.statistics.corrections == 0)
+    }
+
     @Test func inactiveChannelIsSilentAndConsumesNothing() {
         let source = RampSource()
         let channel = LayerAudioChannel()

@@ -3556,26 +3556,35 @@ groundwork and small engine pieces first):
   `speed == 100 %` and direction is forward; otherwise the ring is muted
   (`[OPEN-15]` varispeed/pitch later). Freeze/scrub mute instantly, dissolve
   crossfades audio with the video.
-- Sync: the layer clock is master. The render callback reads it at the
-  host time its buffer is heard (B406): the buffer's host time from its
-  `AudioTimeStamp` (already past the IO buffer and the safety offset,
-  measured: 12.1 ms after the callback at 512 + 74 frames) plus the output
-  device's latency and its first stream's, read each time the device opens
-  and logged then (`audio output opened`, 15.8 ms on MacBook Pro speakers;
-  0 for a property a device does not have); a stamp without a host time
-  reads the clock at the callback plus that latency (the open log names
-  which of the two the callbacks used). The machine's A/V offset (settings.json
-  `audio.offsetMs`, read at start, §12.1) moves that read earlier by the
-  offset. Each callback publishes how far ahead of now it read (its lead,
-  about 28 ms on MacBook Pro speakers), and the decoder reads its clock as
-  far ahead, so it seeks and judges a reseek where the callback reads,
-  whatever the output's latency (AirPlay, Bluetooth, HDMI) or the offset.
-  Until the first callback after launch or a device change the decoder has
-  no (or the old) lead, so on an output whose lead is above 100 ms the first
-  start reseeks once: a short gap. A start whose target is nearer than the
-  lead loses its first milliseconds rather than coming late; the first
-  callback waits silent only for a target further out. It compares the ring's
-  head pts with the clock; drift beyond ±20 ms is corrected by dropping or
+- Sync: the layer clock is master. The compositor hands the audio the
+  clock's position with the tick's target, the tick's nominal presentation
+  time (B320: stamped with the time of the tick, the audio ran one tick's
+  lead ahead of the picture), and the audio extrapolates it in host time;
+  the decoder never seeks to a clock before that target, so a seek to an in
+  point or a loop's restart starts there. The render callback reads the
+  clock at the host time its buffer is heard (B406): the buffer's host time
+  from its `AudioTimeStamp` (already past the IO buffer and the safety
+  offset, measured: 12.1 ms after the callback at 512 + 74 frames) plus the
+  output device's latency and its first stream's, read each time the device
+  opens and logged then (`audio output opened`, 15.8 ms on MacBook Pro
+  speakers; 0 for a property a device does not have); a stamp without a
+  host time reads the clock at the callback plus that latency (the open log
+  names which of the two the callbacks used). The machine's A/V offset
+  (settings.json `audio.offsetMs`, read at start, §12.1) moves that read
+  earlier by the offset. Each callback publishes how far ahead of now it
+  read (its lead, about 28 ms on MacBook Pro speakers, negative for an
+  offset above the latency), and the decoder reads its clock as far ahead,
+  so it seeks and judges a reseek where the callback reads, whatever the
+  output's latency (AirPlay, Bluetooth, HDMI) or the offset; a segment that
+  starts at the target, ahead of that clock, is allowed to be that much
+  ahead before it counts as a jump, and the callback waits silent until its
+  clock reaches it. Until the first callback after launch or a device
+  change the decoder has no (or the old) lead, so on an output whose lead is
+  above 100 ms the first start reseeks once: a short gap. A start whose
+  target is nearer than the lead loses its first milliseconds rather than
+  coming late; the first callback waits silent only for a target further
+  out. It compares the ring's head pts with the clock; drift beyond ±20 ms
+  is corrected by dropping or
   repeating up to 2 ms per callback (inaudible for programme material) until
   the audio is on the clock or the drift changes sign, not only back inside
   the window (B394: a correction that stopped at the window's edge left 18 to
@@ -3588,10 +3597,12 @@ groundwork and small engine pieces first):
   time and in target time both, either way (its master was retriggered, or
   it locked on: first, or again after freewheeling or a freeze; B395), so
   its audio reseeks like the master's; a slave tick that starts late is no
-  jump (the audio runs in host time; a local master's entry steps in target
-  time), nor is a tick that holds the slave at its last frame under a
-  longer master file; the master's loop wrap leaves under a frame, a reseek
-  only below 50 fps, where the producer reseeks at the wrap anyway;
+  jump (a remote master's entry is extrapolated in host time; a local
+  master's entry steps in target time; a late tick shifts a remote slave's
+  audio clock by its lateness for that tick: nothing below 20 ms, one
+  short correction for a later tick), nor is a tick that holds the slave
+  at its last frame under a longer master file; the master's loop wrap leaves under a frame, a
+  reseek only below 50 fps, where the producer reseeks at the wrap anyway;
   between two callbacks the ring's head runs up to one callback ahead
   of the clock, so a clock a little behind the ring is normal and is never
   inferred to be a jump. From the signal until the decoder has started the new
@@ -4429,8 +4440,11 @@ under another uid.
   from settings.json at start, `audio.set` is not built). Offset (ms, −200…+200) covers the room: positive sends the sound
   later than the picture (a projector that processes the picture), negative
   earlier (a PA with its own delay line). The decoder reads its clock with
-  the same lead as the callback (§10, B406), so neither the ring (250 ms) nor
-  the 100 ms resync threshold limits the offset; the ±200 ms range does.
+  the same lead as the callback, and its reseek test lets a segment started
+  at the target run ahead of that clock by the distance to the target (§10,
+  B406; a positive offset above the latency makes the lead negative), so
+  neither the ring (250 ms) nor the 100 ms resync threshold limits the
+  offset; the ±200 ms range does.
   Measured with a loopback, as B4 says.
 - *Routing (B76):* `layerAudio: {"3": 5}` in the project, keyed by layer like
   `layerCanvas`. The value is the first channel of the layer's output pair,
@@ -5116,7 +5130,7 @@ shipped in v1, B36).
 | NotchLC decode in Metal | `Source` protocol + compute-shader decode stage before the ring; **blocked on licence** (R11) |
 | HAP R | `bc7_rgbaUnorm` in the HAP texture path; ingest encoder flag |
 | NDI in/out, DeckLink in/out | `FanousPluginAPI` (ADR-0016): C ABI, `dlopen`ed from `~/Library/Application Support/Fanous/Plugins/`, sources hand over IOSurfaces into the same frame rings; sinks subscribe to completed canvas textures like Syphon |
-| Pixel mapping to DMX fixtures | Art-Net/sACN *builders* already exist in Core (needed for tests); a GPU sampling pass reads canvas regions into a small buffer per universe on the preview thread |
+| Pixel mapping to DMX fixtures | `ArtDmx.encoded()` is in Core, the sACN builder in the tests; a GPU sampling pass encoded after the canvas pass reads canvas points into a small buffer per universe, which a sender thread sends at DMX cadence. The pass samples a point list with x/y/z per LED, so a volume of LEDs and LEDs on winches (height map, 16-bit DMX) are the same feature: `docs/pixelmap-3d.md` (B407) |
 | Multi-server sync, main/backup failover | the Sync channel and clock packet are designed in §23 (B60, ADR-0021); a hot backup and control from one place build on the same packet plus the WSS project patches, §23.6 / OPEN-27 |
 | 3D projection mapping | the output pass already renders arbitrary meshes through a displacement field; a projected OBJ with a calibrated camera matrix replaces the slice mesh |
 | 3D-model layers (media as texture on a mesh) | the layer pass is one quad in a perspective camera (§4.3); a mesh from Model I/O (USDZ/OBJ) with its own UVs replaces the quad, the fragment shader is unchanged; needs a depth attachment on the canvas pass and a "Geometry" parameter in the reserved Layer channels 52–64 (0 = flat, 1–255 = model from the library); `docs/BACKLOG.md` B9 |

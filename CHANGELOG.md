@@ -16,6 +16,32 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   `audio.offsetMs` (±200 ms, positive plays the sound later) covers a display's own lag. The decoder reads its clock
   with the same lead, so an output with a long latency (AirPlay, Bluetooth) plays (no longer silent), compensated by
   the latency the device reports (PR #458).
+- Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
+  and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
+  no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)
+- Docs: the owner's four decisions on the 3D pixel-mapping note (`docs/pixelmap-3d.md` §6, row B407): z up with
+  the up axis a project setting, CSV and OPC import both, the height map on its own canvas, order atlas, kinetic,
+  project (PR #483)
+- Docs: a design note for the pixel mapper in three dimensions and for pixels on winches (`docs/pixelmap-3d.md`,
+  row B407): a point list with x/y/z per LED, three sampling modes, a height map for kinetic groups, and what
+  changes on the wire when Fanous sends Art-Net/sACN (PR #481)
+- Timecode: changing the Offset, a layer offset or the Freewheel time no longer restarts the timecode input and clears
+  the clock, so a chase no longer freezes and jumps on each nudge; a change of Source, Device, Channel or the switch
+  still restarts it (B289) (PR #460).
+- Audio: a layer's audio clock is stamped with the tick's target, the time its frame is shown, not the time of the
+  tick (B320); its clock ran that lead (about 16.7 ms at 60 Hz) ahead of the picture. The decoder never takes its
+  clock before the target, so a cue to an in point plays nothing from before it (PR #457).
+- Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
+  slot, not the slot itself (B386). After the ring drained,
+  the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
+  the same tick: a wrong label and a replaced texture under the GPU, and a HAP frame, decoded in place into its pool
+  texture, changed pixels. The playback's own held frame now exchanges pictures with the drained slot, pool texture
+  included (the movie's pool has one texture more than the ring for it) (PR #453).
+- Playback: a chased or sync-slave layer's first frame is its clock's frame (B404). The hand-off asked the decoder for
+  the in point (the out point in a reverse mode), and the swap tick moved the clock to the timecode or the master's
+  position, so the cut showed a frame of the in point; a slave with a reverse play mode also filled the ring backwards
+  under a forward master. The hand-off now sets the clock as the swap tick will and asks for that frame and direction
+  (PR #456).
 - Playback: a file's first frame is its start position (B294). The loader asked the decoder for frame 0 at start,
   before the compositor's hand-off asked for the in point and the direction, so a cut to an in point flashed the last
   pre-decoded frame (3 at a ring of 4) and a reverse mode showed frame 0 for about ten frames. The decoder now decodes
