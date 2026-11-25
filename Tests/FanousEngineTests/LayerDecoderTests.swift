@@ -13,6 +13,26 @@ import Testing
 /// The decode thread sleeps on a full ring and is only woken by a changed request or a freed slot; it fills the ring
 /// ahead of the requested frame in play direction (B364).
 @Suite(.serialized, .cleansTempFiles) struct LayerDecoderTests {
+    /// B294: a started decoder decodes nothing until the compositor's first request, and then that frame first: the
+    /// loader used to ask for frame 0 at start, so a file cut in at an in point or in a reverse mode showed frame 0 first.
+    @Test func decodesNothingBeforeTheFirstRequestAndThatFrameFirst() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let url = directory.appending(path: "clip.mov")
+        try await IngestQueueTests.writeSource(to: url, seconds: 2, audio: false)
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let source = try await MovieSource.open(url: url, device: device, poolSize: 4)
+        let ring = FrameRing(capacity: 4)
+        let decoder = LayerDecoder(source: source, ring: ring, logger: testLogger)
+        decoder.start(name: "test.decode")
+        defer { decoder.stop() }
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(ring.isEmpty && decoder.decoded.load(ordering: .relaxed) == 0, "decoded before any request")
+        decoder.request(frame: 7, direction: -1)  // a 20-frame clip
+        await waitUntil { ring.count == 4 }
+        #expect(ring.peek(0)?.frameIndex == 7, "the first frame is the requested one")
+        #expect(ring.peek(1)?.frameIndex == 6, "and the next ones follow in play direction")
+    }
+
     @Test func aFullRingSleepsUntilTheRequestChanges() async throws {
         let directory = try tempDir("fanous-ingest-tests")
         let url = directory.appending(path: "clip.mov")

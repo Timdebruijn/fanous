@@ -208,7 +208,8 @@ public final class LayerPlayback: @unchecked Sendable {
         frameCount = 1
     }
 
-    /// True once something can be drawn: a still, a live texture, or a decoded ring frame.
+    /// True once something can be drawn: a still, a live texture, or a decoded ring frame (the first one is the frame the
+    /// compositor asked for at the hand-off, B294).
     var hasFrame: Bool {
         if still != nil { return true }
         if let live { return live.latestFrame != nil }
@@ -919,8 +920,7 @@ public final class MediaLoader: @unchecked Sendable {
             decoder.failing = { [renderLayer = layers[layer]] error in
                 renderLayer.mediaStatus.withLock { if $0.folder == key.folder, $0.file == key.file, $0.error != error { $0.error = error } }
             }
-            decoder.start(name: "org.fanous.decode.\(layer + 1)")
-            decoder.request(frame: 0, direction: 1)
+            decoder.start(name: "org.fanous.decode.\(layer + 1)")  // decodes from the compositor's first request (B294)
             logger.info("layer \(layer + 1) media \(key)", metadata: ["file": "\(url.lastPathComponent)", "codec": "\(source.info.codecName)", "size": "\(source.info.width)x\(source.info.height)@\(source.info.frameRate)"])
             if source.softwareDecoder { logger.warning("software ProRes decoder: the hardware one refused this frame size (B5)", metadata: ["layer": "\(layer + 1)", "file": "\(url.lastPathComponent)", "size": "\(source.info.width)x\(source.info.height)"]) }
             status.kind = "movie"
