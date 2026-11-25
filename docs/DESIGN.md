@@ -5197,7 +5197,7 @@ FanousSync v1
       u8 group, u8 layer (source, informational)
       u16 mediaKey (packed folder/file), f32 fps
       f64 position (media frames), i8 direction, u8 finished
-      f32 rate (media frames per second as the clock really advances: speed × master speed × fps × direction; 0 when frozen, finished or paused, and while a once mode shows its end frame, B383)
+      f32 rate (media frames per second as the clock really advances: speed × master speed × fps × direction; 0 when frozen, finished or paused, and while a once mode or a bounce shows the end frame it moves towards, B383)
 ```
 
 - **Where it goes:** the subnet broadcast address of the sync interface
@@ -5384,12 +5384,16 @@ differs from the text above:
   do not apply). Freeze-all on the slave machine holds a slave like any other
   layer; the first tick after it relocks.
 - A master in a once mode also sends rate 0 while its clock shows the end
-  frame (the out point; the in point in reverse) and has not finished yet
-  (B383): a slave sees no in or out point and ignores its own (§23.1), so
-  extrapolating `rate × age` from there showed the frame past the out point
-  (from 1.7 ms of age at 25p on 50 Hz) or before the in point for one tick.
-  It holds for an entry younger than one content frame; its audio stops up to
-  one frame before the master's. A loop's wrap with in and out points, and a
+  frame (the out point; the in point in reverse) and has not finished yet,
+  and a bounce while it shows the frame it turns at (B383): a slave sees no
+  in or out point and ignores its own (§23.1), so extrapolating `rate × age`
+  from there showed the frame past the out point (from 1.7 ms of age at 25p
+  on 50 Hz) or before the in point for one tick. It holds for an entry
+  younger than one content frame; its audio stops up to one frame before the
+  master's. When the rate drops to 0 the slave's next locked tick reads its
+  own extrapolation of the tick before as a correction of up to one frame
+  (32–38 ms at 25p on 25 Hz): `offsetMs` shows it for that tick and `jumped`
+  fires once, with the audio already silent at rate 0. A loop's wrap with in and out points, and a
   master stepping more than one frame per tick, can still show the frame past
   the seam for a tick: that needs the in and out points in the packet (B426).
 - `live.sync` carries packet totals (`packetsIn`, `packetsOut`,

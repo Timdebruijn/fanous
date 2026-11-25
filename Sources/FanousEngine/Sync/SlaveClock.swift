@@ -64,16 +64,21 @@ enum SlaveClock {
     /// out by the render callback, a larger one is a jump the producer answers with a reseek.
     static let jumpMillis = Double(LayerAudioChannel.driftToleranceFrames) * 1000 / Double(LayerAudioChannel.sampleRate)
 
-    /// A master in a once mode whose clock shows its end frame (the out point; the in point in reverse) sends rate 0
-    /// (B383): that frame stays until the clock finishes, and a slave extrapolating `rate × age` from it would show the
-    /// frame past the seam, which it cannot see (the packet has no in or out point, and a slave ignores its own, §23.1).
+    /// A master whose clock shows the end frame it moves towards sends rate 0 (B383): the out point of a once mode (the
+    /// in point in reverse) until the clock finishes, and a bounce's turning frame in its direction until it turns. A
+    /// slave extrapolating `rate × age` from there would show the frame past the seam, which it cannot see (the packet
+    /// has no in or out point, and a slave ignores its own, §23.1). The slave's next locked tick then reads its own
+    /// extrapolation of the tick before as a correction of up to one frame: `offsetMs` shows it once and `jumped`
+    /// fires once, with the audio already silent at rate 0.
     /// ponytail: holds for an entry younger than one frame of the content at its rate (a master that ticks at least once
     /// per content frame); a master stepping more than a frame per tick can still show the frame past for a tick, and
     /// a loop's wrap is not covered. Both need the in and out points in the packet (B426, a wire change).
-    static func showsOnceEnd(_ clock: LayerClock, mode: PlayMode, lo: Int, hi: Int) -> Bool {
-        switch mode {
-        case .onceHold, .onceBlack: clock.frame(lo: lo, hi: hi) == hi
-        case .onceHoldReverse, .onceBlackReverse: clock.frame(lo: lo, hi: hi) == lo
+    static func showsEndFrame(_ clock: LayerClock, mode: PlayMode, lo: Int, hi: Int) -> Bool {
+        let frame = clock.frame(lo: lo, hi: hi)
+        return switch mode {
+        case .onceHold, .onceBlack: frame == hi
+        case .onceHoldReverse, .onceBlackReverse: frame == lo
+        case .bounce: clock.direction > 0 ? frame == hi : frame == lo
         default: false
         }
     }
