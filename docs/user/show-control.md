@@ -264,8 +264,9 @@ stateDiagram-v2
 Show timecode usually starts at 01:00:00:00. A layer that chases then
 needs an Offset of one hour (90000 frames at 25 fps), else it shows the
 file one hour in, wrapped; the triggers are written at 01:00:… whatever
-the Offset. Any change to the settings, also the Offset, restarts the
-input: the state drops to Off for a moment and comes back Locked. The
+the Offset. A change of Source, Device, Channel or the switch restarts
+the input: the state drops to Off for a moment and comes back Locked.
+Offset and Freewheel apply at once. The
 settings are the programmer's and are refused while the show is locked,
 so set them before you lock. The per-layer offsets the engine also
 supports have no field on the screen ([REST and WebSocket API](reference/api.md#commands),
