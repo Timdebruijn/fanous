@@ -949,9 +949,11 @@ public final class Engine: @unchecked Sendable {
         let name: String
         let result: Result<CommandResult, CommandError>
         switch command {
-        case .cueGo: name = "cue.go"; result = store.execute(name, role: .operator)
-        case .cueBack: name = "cue.back"; result = store.execute(name, role: .operator)
-        case .cueGoto(let number): name = "cue.goto"; result = store.execute(name, args: ["number": .number(number)], role: .operator)
+        // B286: a GO does not wait for the control queue (welcomes, project changes, the live diff); a cue list changed
+        // before it reached the cue runner's queue while it committed, so the GO, queued there after it, sees it
+        case .cueGo: name = "cue.go"; result = store.executeUnqueued(name, role: .operator)
+        case .cueBack: name = "cue.back"; result = store.executeUnqueued(name, role: .operator)
+        case .cueGoto(let number): name = "cue.goto"; result = store.executeUnqueued(name, args: ["number": .number(number)], role: .operator)
         case .showLock(let on): name = on ? "show.lock" : "show.unlock"; result = store.execute(name, role: .programmer)
         case .showMode(let on): name = "show.mode"; result = store.execute(name, args: ["on": .bool(on)], role: .operator)
         case .timecodeEnable(let on): name = "timecode.enable"; result = store.execute(name, args: ["on": .bool(on)], role: .operator)

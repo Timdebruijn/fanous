@@ -5,6 +5,7 @@
 import Foundation
 import FanousCore
 import Logging
+import Synchronization
 
 /// A command on the `project` document (DESIGN.md §11.2): validated, applied, diffed into a patch;
 /// the inverse patch is recorded for undo. `run` mutates a copy of the project; the store diffs
@@ -31,6 +32,10 @@ public struct CommandSpec: Sendable {
     /// `executeLocked`'s own checks (show lock, and whatever the queue's state is by then), so it must do nothing those
     /// could still refuse.
     public var prepare: (@Sendable (JSONValue) throws -> JSONValue)?
+    /// B286: `executeUnqueued` runs it on the caller's thread without the control queue: for a command that neither reads
+    /// nor changes the project and is refused by nothing but its role (`cue.go`, `cue.back`, `cue.goto`: OSC and MIDI fire
+    /// them, and a GO must not wait behind a welcome or a project change). Needs `mutatesConfig` false.
+    public var unqueued = false
     public var run: @Sendable (inout JSONValue, JSONValue) throws -> JSONValue?
 }
 
@@ -92,6 +97,8 @@ public final class StateStore: @unchecked Sendable {
     private var pendingLive: [JSONPatch.Operation] = []
     private var liveTimer: DispatchSourceTimer?
     private let logger: Logger
+    /// The `unqueued` commands, readable without the queue (B286).
+    private let unqueuedCommands = Mutex<[String: CommandSpec]>([:])
     /// Called on `queue` after every project change (autosave), before the change goes out to clients.
     public var onProjectChanged: (@Sendable (JSONValue) -> Void)?
 
@@ -112,7 +119,11 @@ public final class StateStore: @unchecked Sendable {
 
     // MARK: Registry and snapshots
 
-    public func register(_ spec: CommandSpec) { queue.sync { commands[spec.name] = spec } }
+    public func register(_ spec: CommandSpec) {
+        precondition(!spec.unqueued || !spec.mutatesConfig, "an unqueued command must not change the configuration")
+        queue.sync { commands[spec.name] = spec }
+        unqueuedCommands.withLock { $0[spec.name] = spec.unqueued ? spec : nil }
+    }
     public var commandSpecs: [CommandSpec] { queue.sync { commands.values.sorted { $0.name < $1.name } } }
 
     public var rev: UInt64 { queue.sync { revision } }
@@ -139,6 +150,22 @@ public final class StateStore: @unchecked Sendable {
             return .failure(CommandError("failed", "\(error)"))
         }
         return queue.sync { executeLocked(name, args: prepared, role: role, client: client) }
+    }
+
+    /// OSC and MIDI (B286): an `unqueued` command runs here on the caller's thread, with no project (`run` gets null) and
+    /// rev 0 in its result; any other goes through `execute`. A WebSocket command always goes through `execute`, so its
+    /// ack keeps the revision.
+    public func executeUnqueued(_ name: String, args: JSONValue = [:], role: Role) -> Result<CommandResult, CommandError> {
+        guard let spec = unqueuedCommands.withLock({ $0[name] }) else { return execute(name, args: args, role: role) }
+        guard role >= spec.role else { return .failure(.forbidden) }
+        var none = JSONValue.null
+        do {
+            return .success(CommandResult(rev: 0, value: try spec.run(&none, args)))
+        } catch let error as CommandError {
+            return .failure(error)
+        } catch {
+            return .failure(CommandError("failed", "\(error)"))
+        }
     }
 
     private func executeLocked(_ name: String, args: JSONValue, role: Role, client: ObjectIdentifier? = nil) -> Result<CommandResult, CommandError> {
