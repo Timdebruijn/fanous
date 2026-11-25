@@ -11,7 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Library: a file whose open on a layer, or whose decode as an image mask, stops the engine is listed as unreadable after
-  the second such stop, like a file that stops the probe (B267); a layer selecting it shows that reason (B348) (PR #N).
+  the second such stop, like a file that stops the probe (B267); a layer selecting it shows that reason (B348) (PR #479).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
