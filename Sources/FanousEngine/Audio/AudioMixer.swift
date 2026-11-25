@@ -52,8 +52,11 @@ public final class AudioMixer: @unchecked Sendable {
     private var lastBusy = 0.0  // control queue only (host seconds)
     /// Show mode keeps the device open: no first-sound latency during a show.
     nonisolated(unsafe) public var keepRunning: (@Sendable () -> Bool)?
-    /// The engine opened the output device: its name and the output latency `start` read (B406), for the log.
-    nonisolated(unsafe) public var onOutputLatency: (@Sendable (_ device: String, _ millis: Double) -> Void)?
+    /// The engine opened the output device, one second later: its name, the device and stream latency `start` read
+    /// (B406), and which time the callbacks read the clocks at (`clockSource`), for the log. Control queue.
+    nonisolated(unsafe) public var onOutputLatency: (@Sendable (_ device: String, _ millis: Double, _ clock: String) -> Void)?
+    /// Set by the render callback: 1 = it used the buffer's host time, 2 = the stamp had none (callback time).
+    private let stampKinds = Atomic<UInt8>(0)
     /// A failed start (no device, wrong configuration): the layers play silent until the next attempt.
     nonisolated(unsafe) public var onError: (@Sendable (Error) -> Void)?
     public var isRunning: Bool { runningFlag.load(ordering: .relaxed) }
@@ -140,8 +143,12 @@ public final class AudioMixer: @unchecked Sendable {
         // sample rate or channel count stops AVAudioEngine itself, and nothing restarts it (B279)
         let latency = engine.map { Self.outputLatency(device: $0.outputNode.auAudioUnit.deviceID) } ?? (0, "")
         outputLatencyNanos.store(latency.nanos, ordering: .relaxed)
+        stampKinds.store(0, ordering: .relaxed)
         try engine?.start()
-        onOutputLatency?(latency.name, Double(latency.nanos) / 1e6)
+        control.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self else { return }
+            self.onOutputLatency?(latency.name, Double(latency.nanos) / 1e6, Self.clockSource(self.stampKinds.load(ordering: .relaxed)))
+        }
     }
 
     /// The output latency of `device` after a render buffer's host time: device latency plus the first output stream's
@@ -182,12 +189,25 @@ public final class AudioMixer: @unchecked Sendable {
     }
 
     /// The host time (nanoseconds) at which the layer clocks are read for the buffer stamped `stamp`: when its first
-    /// frame is heard (its host time plus the output latency; now when the stamp carries no host time), less the A/V
-    /// offset (a sound played later is the media of an earlier time). Real-time safe.
+    /// frame is heard (its host time plus the output latency; when the stamp carries no host time, now plus the output
+    /// latency, short by the IO buffer and safety offset), less the A/V offset (a sound played later is the media of an
+    /// earlier time). Real-time safe.
     func heard(_ stamp: AudioTimeStamp) -> UInt64 {
-        let heard = stamp.mFlags.contains(.hostTimeValid)
-            ? AudioConvertHostTimeToNanos(stamp.mHostTime) &+ outputLatencyNanos.load(ordering: .relaxed) : LayerAudioChannel.hostNanos()
+        let hostTime = stamp.mFlags.contains(.hostTimeValid)
+        stampKinds.bitwiseOr(hostTime ? 1 : 2, ordering: .relaxed)
+        let base = hostTime ? AudioConvertHostTimeToNanos(stamp.mHostTime) : LayerAudioChannel.hostNanos()
+        let heard = base &+ outputLatencyNanos.load(ordering: .relaxed)
         return UInt64(bitPattern: Int64(bitPattern: heard) &- offsetNanos.load(ordering: .relaxed))
+    }
+
+    /// What `stampKinds` says, for the log.
+    static func clockSource(_ kinds: UInt8) -> String {
+        switch kinds {
+        case 1: "buffer host time"
+        case 2: "callback time (the stamps carry no host time)"
+        case 3: "buffer host time, callback time for some buffers"
+        default: "no callback yet"
+        }
     }
 
     public func stop() { control.sync { stopLocked() } }

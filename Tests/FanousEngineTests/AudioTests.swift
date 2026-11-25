@@ -913,6 +913,7 @@ extension LayerAudioChannel {
 
     /// B406: the output latency is the device's plus its stream's, in frames at the device rate.
     @Test func mixerSumsTheOutputLatency() {
+        #expect(AudioMixer.outputLatency(device: 0) == (0, ""), "no device: no latency, no name")
         #expect(AudioMixer.latencyNanos(frames: 70 + 690, sampleRate: 48_000) == 15_833_333)
         #expect(AudioMixer.latencyNanos(frames: 0, sampleRate: 48_000) == 0)
         #expect(AudioMixer.latencyNanos(frames: 760, sampleRate: 0) == 0, "a device without a rate counts no latency")
@@ -932,7 +933,7 @@ extension LayerAudioChannel {
         stamp.mFlags = .sampleTimeValid
         let before = LayerAudioChannel.hostNanos()
         let now = mixer.heard(stamp)
-        #expect(now >= before && now <= LayerAudioChannel.hostNanos(), "no host time: now, without the latency")
+        #expect(now >= before + 15_833_333 && now <= LayerAudioChannel.hostNanos() + 15_833_333, "no host time: now plus the latency")
 
         // the A/V offset: positive plays the sound later, so the clock is read that much earlier; both paths
         mixer.offsetMs = 30
@@ -941,7 +942,7 @@ extension LayerAudioChannel {
         stamp.mFlags = .sampleTimeValid
         let early = LayerAudioChannel.hostNanos()
         let offsetNow = mixer.heard(stamp)
-        #expect(offsetNow >= early - 30_000_000 && offsetNow <= LayerAudioChannel.hostNanos() - 30_000_000)
+        #expect(offsetNow >= early + 15_833_333 - 30_000_000 && offsetNow <= LayerAudioChannel.hostNanos() + 15_833_333 - 30_000_000)
         mixer.offsetMs = -12.5
         stamp.mFlags = .hostTimeValid
         #expect(mixer.heard(stamp) == host + 15_833_333 + 12_500_000)
@@ -982,10 +983,12 @@ extension LayerAudioChannel {
                 right.withUnsafeMutableBufferPointer { r in mixer.render(frames: 480, left: l.baseAddress!, right: r.baseAddress!, atHostNanos: host) }
             }
         }
-        render(at: LayerAudioChannel.hostNanos() + 150_000_000)  // a first callback publishes the lead
-        #expect(abs(Double(channel.outputLeadNanos.load(ordering: .relaxed)) - 150e6) < 5e6)
+        render(at: t + 150_000_000)  // a first callback publishes the lead: 150 ms less the time since t
+        let after = LayerAudioChannel.hostNanos()
+        let lead = channel.outputLeadNanos.load(ordering: .relaxed)
+        #expect(lead >= Int64(t + 150_000_000) - Int64(after) && lead <= 150_000_000, "\(lead)")
         channel.fill(now: t, read: { source.read($0, $1) }, seek: { source.seek($0) })
-        #expect(abs(channel.nextFramePTS - 0.15) < 0.005, "seeked where the callback reads: \(channel.nextFramePTS)")
+        #expect(abs(channel.nextFramePTS - Double(lead) / 1e9) < 1e-4, "seeked where the callback reads: \(channel.nextFramePTS)")
         var heard = 0
         for k in 0..<5 {
             render(at: t + 150_000_000 + UInt64(k) * 10_000_000)

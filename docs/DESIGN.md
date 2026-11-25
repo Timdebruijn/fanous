@@ -3563,15 +3563,18 @@ groundwork and small engine pieces first):
   device's latency and its first stream's, read each time the device opens
   and logged then (`audio output opened`, 15.8 ms on MacBook Pro speakers;
   0 for a property a device does not have); a stamp without a host time
-  reads the clock at the callback. The machine's A/V offset (settings.json
+  reads the clock at the callback plus that latency (the open log names
+  which of the two the callbacks used). The machine's A/V offset (settings.json
   `audio.offsetMs`, read at start, §12.1) moves that read earlier by the
   offset. Each callback publishes how far ahead of now it read (its lead,
   about 28 ms on MacBook Pro speakers), and the decoder reads its clock as
   far ahead, so it seeks and judges a reseek where the callback reads,
-  whatever the output's latency (AirPlay, Bluetooth, HDMI) or the offset. A
-  start whose target is nearer than that lead loses its first milliseconds
-  rather than coming late; the first callback waits silent only for a
-  target further out. It compares the ring's
+  whatever the output's latency (AirPlay, Bluetooth, HDMI) or the offset.
+  Until the first callback after launch or a device change the decoder has
+  no (or the old) lead, so on an output whose lead is above 100 ms the first
+  start reseeks once: a short gap. A start whose target is nearer than the
+  lead loses its first milliseconds rather than coming late; the first
+  callback waits silent only for a target further out. It compares the ring's
   head pts with the clock; drift beyond ±20 ms is corrected by dropping or
   repeating up to 2 ms per callback (inaudible for programme material) until
   the audio is on the clock or the drift changes sign, not only back inside

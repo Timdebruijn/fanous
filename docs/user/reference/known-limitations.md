@@ -54,7 +54,7 @@ link here. Back to the [index](../README.md).
 | A thumbnail of a packed 4:2:2 movie (v210, yuvs) may draw at half width. | B149 |
 | A UVC webcam (Logitech C920, Brio) may stay at its driver's default format, for example 640 × 480 on a larger canvas. Capture cards follow their input. | B131 |
 | Blackmagic DeckLink and AJA cards do not appear: they need their own SDK, which is planned for the Pro build. Windows of other apps (folder 0, files 29 to 32) are reserved but not available. | B73 |
-| Audio plays on the Mac's default output device in one stereo mix: no device choice, no output routing per layer. The device's latency is compensated as the device reports it; a projector's own picture delay is not measured: set `audio.offsetMs` in `settings.json` after a clap check. | B4, B76 |
+| Audio plays on the Mac's default output device in one stereo mix: no device choice, no output routing per layer. The device's latency is compensated as the device reports it; a projector's own picture delay is not measured: set `audio.offsetMs` in `settings.json` after a clap check. Because the sound leaves with the picture, the first part of every start or retrigger that fits in the output's latency is not heard: 12 to 28 ms on speakers, 100 ms or more on Bluetooth, seconds if an AirPlay device reports its full latency. | B4, B76 |
 | Audio plays only forward at 100 % speed (layer speed × Master speed); at any other speed, and in Freeze, Scrub and Timecode, the layer is silent. A looping clip whose audio is shorter than its video has a short gap at the loop; the first moment after a long pause can be silent. | B3 |
 
 ## Outputs and mapping

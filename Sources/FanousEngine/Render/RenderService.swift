@@ -148,10 +148,13 @@ public final class RenderService {
             mixer.onError = { logger.warning("audio output unavailable; playing silent", metadata: ["error": "\($0)"]) }
             mixer.offsetMs = MachineSettings.load(from: AppPaths.settingsFile).audio?.offsetMs ?? 0  // RoleAuth logs its problems
             let offset = mixer.offsetMs
-            mixer.onOutputLatency = { device, millis in
+            mixer.onOutputLatency = { device, millis, clock in
                 logger.info(
                     "audio output opened",
-                    metadata: ["device": "\(device)", "deviceLatencyMs": "\((millis * 10).rounded() / 10)", "offsetMs": "\(offset)"])
+                    metadata: [
+                        "device": "\(device)", "deviceLatencyMs": "\((millis * 10).rounded() / 10)", "offsetMs": "\(offset)",
+                        "clock": "\(clock)",
+                    ])
             }
             self.mixer = mixer
             loader.mixer = mixer
