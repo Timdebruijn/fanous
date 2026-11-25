@@ -365,11 +365,12 @@ public final class RenderLayer: @unchecked Sendable {
         retireLater.reserveCapacity(8)  // a tick can retire four (a hand-back, a replaced staged, a cut, a dissolve's end) plus leftovers of a missed flush
     }
 
-    /// Frame index of the playing media for the UI's position display.
-    /// ponytail: unsynchronised read of a compositor-owned value; a stale frame number for one 100 ms tick is harmless.
-    /// The clock's frame (B372): a looping clock stays inside its shown frame's window, so the in and out points
-    /// are not needed for it.
-    public var currentFrame: Int { current.map { $0.clock.frame(lo: 0, hi: $0.frameCount - 1) } ?? 0 }
+    /// Frame index of the playing media for the UI's position display and CITP, as the compositor's last tick left it:
+    /// those threads never touch `current`, which the tick swaps (B356). The clock's frame (B372): a looping clock stays
+    /// inside its shown frame's window, so the in and out points are not needed for it.
+    public var currentFrame: Int { shownFrame.load(ordering: .relaxed) }
+    /// Compositor thread: writes `currentFrame` every tick.
+    let shownFrame = Atomic<Int>(0)
 }
 
 /// Media as a scene addresses it: (folder, file) → a file or a live input.

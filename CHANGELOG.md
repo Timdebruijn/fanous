@@ -93,6 +93,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   they are now encoded off it, one at a time, OSC and MIDI GO, back and goto skip the control queue, and
   `project.snapshot` writes its file off it. The same GO now waits 0.004 ms (OSC, MIDI) or 0.05 ms
   (WebSocket) (PR #480).
+- Feed and CITP: a layer's position is read from a frame number the compositor publishes every tick instead of from the
+  playback the tick swaps, a data race of the B273 class (B356) (PR #473).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)
