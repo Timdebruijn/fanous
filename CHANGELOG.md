@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: the Show screen pictures retaken for the Now button, the next-trigger line and the Start and Layer offset
+  fields of PRs #487–#490: `show.png` (README and guide), `screens-show.png`, `show-timecode.png`, `show-timecode-mtc.png`,
+  `cue-editor.png` and the show frame of `tour.gif`; the alt texts name the new fields and button (PR #N).
 - Docs: design note `docs/timecode-out.md` for the Timecode fixture, the generator clock (a timecode source of its
   own, from a layer's position too), Art-Net timecode out and in (B138 step 1, G26); rows B447 and B448 (PR #492).
 - Docs: the guide's LTC and MTC setup steps name the two timecode routes without a cable, LTC over Dante or AVB as an
