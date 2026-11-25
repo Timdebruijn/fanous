@@ -144,6 +144,8 @@ public final class LibraryIndex: @unchecked Sendable {
         }
     }
     private let pausedFlag = Atomic<Bool>(false)
+    /// The first incomplete scan is logged (B328: nothing is pruned while scans stay incomplete).
+    private let warnedIncomplete = Atomic<Bool>(false)
     /// Replaced (B51): set under `writeLock` after its last write, so no write of it lands after the replacement read the
     /// cache (which would bring back what the replacement pruned).
     private let retired = Atomic<Bool>(false)
@@ -380,6 +382,9 @@ public final class LibraryIndex: @unchecked Sendable {
             s.byKey = byKey
             s.pendingProbes = probes
             s.scanComplete = complete
+        }
+        if !complete, rootExists, !warnedIncomplete.exchange(true, ordering: .relaxed) {
+            logger.warning("a library folder or file could not be read: the cache is not pruned until a scan reads them all", metadata: ["root": "\(root.path)"])
         }
         logger.info("library scanned", metadata: ["root": "\(root.path)", "folders": "\(folders.count)", "files": "\(fileCount)", "invalid": "\(invalidCount)", "toProbe": "\(probes.count)"])
         changed()
