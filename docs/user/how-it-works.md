@@ -133,7 +133,8 @@ machine, not the show. Every file and where it is:
   while show mode is on).
 - **Show mode** runs the **readiness** list first (power, heat, disk,
   universes, outputs, permissions, macOS settings that interrupt a show), then
-  keeps the Mac and the displays awake, pauses the ingest queue, hides the
+  keeps the Mac and the displays awake, pauses the ingest queue and the
+  library's thumbnails, hides the
   cursor on the outputs and switches each display to the mode its output asks
   for. A failed item blocks show mode until it is fixed or a programmer
   acknowledges it (one item, Supported hardware, cannot be acknowledged); an

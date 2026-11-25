@@ -329,6 +329,10 @@ struct LibraryIndexTests {
         #expect(thumbnails.count.load(ordering: .relaxed) == 0)
         #expect(index.snapshot.folders.first?.items.first?.thumbnail == nil)
         #expect(!FileManager.default.fileExists(atPath: cache.appending(path: "library-index.json").path), "nothing cached without its thumbnail")
+        // a rescan in show mode (a copy into the library) keeps it: still resolving, not queued for another read
+        index.rescan()
+        #expect(index.snapshot.folders.first?.items.first?.status == .playable)
+        #expect(index.resolve(MediaKey(folder: 1, file: 1)) != nil)
         index.paused = false
         #expect(await waitUntil(every: .milliseconds(20)) { index.snapshot.folders.first?.items.first?.thumbnail == "thumb.jpg" })
         #expect(thumbnails.count.load(ordering: .relaxed) == 1)

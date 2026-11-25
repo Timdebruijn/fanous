@@ -1369,7 +1369,8 @@ Fanous Library/
   colour primaries, file hash) and thumbnails are cached in
   `~/Library/Application Support/Fanous/cache/` keyed by path + mtime + size.
   In show mode a probe reads the metadata (so the file resolves and plays)
-  but makes no thumbnail and caches nothing; the rescan when show mode ends
+  but makes no thumbnail and caches no entry without its thumbnail (a scan in
+  show mode still takes it as a hit); the rescan when show mode ends
   probes those files again with their thumbnails (B325).
 - **Playable** = ProRes/HAP in `.mov`, stills. Anything else (H.264/HEVC,
   `.mp4`, `.avi`, image sequences) is indexed as "needs transcode" with a
@@ -4606,7 +4607,8 @@ with public APIs:
   engine); the shell adds the same assertions while visible.
 - Output windows at `CGShieldingWindowLevel`, cursor hidden over outputs,
   desired display modes applied (§9.6). Not built (B42): the mirroring check.
-- Ingest paused (always; no setting). Not built (B42): library rescans
+- Ingest paused, and library thumbnails wait until show mode ends (B325;
+  always; no setting). Not built (B42): library rescans
   reduced to manual, log level `warning`, thumbnails at 1 fps, preview
   encoders capped.
 - The status bar's reds follow the show lock, not show mode (§12): dropped

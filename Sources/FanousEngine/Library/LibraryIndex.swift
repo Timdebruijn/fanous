@@ -130,12 +130,17 @@ public final class LibraryIndex: @unchecked Sendable {
     /// How long `stop()` waits for a probe in flight; shortened by a test only.
     var joinTimeout: DispatchTimeInterval = .seconds(10)
     /// Show mode (DESIGN.md §14), set by the engine from `showMode.onChange`: probes make no thumbnail (B325). Turning it
-    /// off rescans when a thumbnail was left out, which probes those files again with theirs.
+    /// off wakes the library thread and rescans when a thumbnail was left out, which probes those files again with theirs.
     public var paused: Bool {
         get { pausedFlag.load(ordering: .sequentiallyConsistent) }
         set {
             pausedFlag.store(newValue, ordering: .sequentiallyConsistent)
-            if !newValue, thumbnailsDeferred.exchange(false, ordering: .sequentiallyConsistent) { scheduleRescan() }
+            guard !newValue else { return }
+            probeWake.signal()
+            if thumbnailsDeferred.exchange(false, ordering: .sequentiallyConsistent) {
+                state.withLock { $0.deferred.removeAll() }
+                scheduleRescan()
+            }
         }
     }
     private let pausedFlag = Atomic<Bool>(false), thumbnailsDeferred = Atomic<Bool>(false)
@@ -153,6 +158,9 @@ public final class LibraryIndex: @unchecked Sendable {
         var pendingProbes: [String] = []
         /// B267: the cache key that was in work when the engine stopped before this start, and how often that happened.
         var stoppedIn: (key: String, stops: Int)?
+        /// B325: what a probe in show mode read, without its thumbnail, by cache key: a scan in show mode takes it as a hit
+        /// (so the file keeps resolving and is not read again); never written to the cache file.
+        var deferred: [String: CacheEntry] = [:]
     }
 
     /// B220: the wording of the probe's reason texts. A cached entry that carries a reason is probed again once when the
@@ -269,7 +277,8 @@ public final class LibraryIndex: @unchecked Sendable {
         // plain code-point order decides who wins a duplicate number ("012_Show" before "12_Dup"): deterministic on every machine
         let folderNames = ((try? fm.contentsOfDirectory(atPath: root.path)) ?? []).filter { !$0.hasPrefix(".") && !$0.hasPrefix("_") }.sorted()
         var seenFolders: Set<Int> = []
-        let cache = state.withLock { $0.cache }
+        let inShow = paused
+        let (cache, deferred) = state.withLock { ($0.cache, inShow ? $0.deferred : [:]) }
         for folderName in folderNames {
             let folderURL = root.appending(path: folderName)
             guard (try? folderURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
@@ -319,7 +328,7 @@ public final class LibraryIndex: @unchecked Sendable {
                 }
                 if item.status == .invalid {
                     invalidCount += 1
-                } else if let cached = cache[Self.cacheKey(item)], cached.reason == nil || cached.reasonsVersion == Self.reasonsVersion || cached.reason == Self.stoppedTwice {
+                } else if let cached = cache[Self.cacheKey(item)] ?? deferred[Self.cacheKey(item)], cached.reason == nil || cached.reasonsVersion == Self.reasonsVersion || cached.reason == Self.stoppedTwice {
                     item.metadata = cached.metadata
                     item.thumbnail = cached.thumbnail
                     item.status = cached.status
@@ -443,7 +452,7 @@ public final class LibraryIndex: @unchecked Sendable {
 
     private func apply(_ entry: CacheEntry, to item: LibraryItem, cached: Bool) {
         state.withLock { s in
-            if cached { s.cache[Self.cacheKey(item)] = entry }
+            if cached { s.cache[Self.cacheKey(item)] = entry } else { s.deferred[Self.cacheKey(item)] = entry }
             for f in s.snapshot.folders.indices {
                 for i in s.snapshot.folders[f].items.indices where s.snapshot.folders[f].items[i].path == item.path {
                     var updated = s.snapshot.folders[f].items[i]
