@@ -64,6 +64,7 @@ public final class ArtNetReceiver: @unchecked Sendable {
                 switch packet {
                 case .dmx(let dmx): store.receive(artnet: dmx, from: source)
                 case .poll: reply(to: connection)
+                case .timeCode: break  // the Art-Net timecode source (docs/timecode-out.md §4) reads it; nothing yet
                 }
             }
             if error != nil { return flows.release(flow) }

@@ -18,7 +18,8 @@ import Testing
 
         var samples: [[UInt8]] {
             switch self {
-            case .artNet: CaptureTests.files("artnet").compactMap { try? Array(Data(contentsOf: $0)) }
+            // the captures hold ArtPoll and ArtDmx only; the hand-built ArtTimeCode reaches the third opcode
+            case .artNet: CaptureTests.files("artnet").compactMap { try? Array(Data(contentsOf: $0)) } + [ArtNetTests.timeCodeFixture]
             case .sacn: CaptureTests.files("sacn").compactMap { try? Array(Data(contentsOf: $0)) }
             case .osc:
                 [
