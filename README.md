@@ -191,8 +191,8 @@ with a "where to start" chart: [docs/user/README.md](docs/user/README.md).
 If you have a grandMA, Eos, ChamSys or Avolites desk and a spare Apple Silicon
 Mac, a test report is the most useful contribution right now: does the GDTF
 import, do thumbnails show up (CITP should reach grandMA2, ChamSys MagicQ,
-Hog 4, Onyx and Titan; the grandMA3 and Eos manuals document none), does a layer follow your
-faders? [Open an issue](https://github.com/Timdebruijn/fanous/issues/new/choose).
+Hog 4, Onyx and Titan; the grandMA3 and Eos manuals document none), does a
+layer follow your faders? [Open an issue](https://github.com/Timdebruijn/fanous/issues/new/choose).
 
 ## Free, and how the project is paid for
 

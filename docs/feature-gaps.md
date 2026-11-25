@@ -34,7 +34,7 @@ repository.
      20 Jan 2026). ETC removed Video Streams entirely in 3.3.0 because the
      licence terms of the underlying technology changed; 3.3.0 to 3.3.4 have
      no stream at all (ETC support articles, §8).
-   - Our CITP/MSEX therefore reaches, as far as documented, only MA2, MagicQ, Hog 4, Onyx and Titan.
+   - Our CITP/MSEX therefore reaches only MA2, MagicQ, Hog 4, Onyx and Titan.
    - NDI is designed as a closed plugin and deferred for its licence
      obligations (§4, B74). Until it lands, an MA3 programmer sees no
      Fanous picture on the desk.
@@ -386,7 +386,7 @@ was re-read):
   - Avolites: <https://manual.avolites.com/docs/networking/using-active-fixtures>
   - Onyx: <https://support.obsidiancontrol.com/Content/Onyx_Manual/Networking/CITP.htm>
   - Eos: <https://support.etcconnect.com/ETC/Consoles/Eos_Family/Software_and_Programming/GDTF>
-  - Eos protocols and video streams (2026-11-25): <https://www.etcconnect.com/WebDocs/Controls/EosFamilyOnlineHelp/en/Content/03_Eos_System_Requirements_and_Setup/Eos_Networking_Overview/Network_Protocols/Control_Protocols.htm>, <https://support.etcconnect.com/ETC/Consoles/Eos_Family/Software_and_Programming/Video_Stream_support_in_Eos_330>, <https://support.etcconnect.com/ETC/Consoles/Eos_Family/Software_and_Programming/Setting_up_and_using_Videos_Streams_with_Eos>, v3.3.5 announcement <https://community.etcconnect.com/control_consoles/eos-family-consoles/f/eos-family/61969/eos-v3-3-5-is-now-released>
+  - Eos protocols and video streams (2026-11-25): <https://www.etcconnect.com/WebDocs/Controls/EosFamilyOnlineHelp/en/Content/03_Eos_System_Requirements_and_Setup/Eos_Networking_Overview/Network_Protocols/Control_Protocols.htm>, <https://support.etcconnect.com/ETC/Consoles/Eos_Family/Software_and_Programming/Video_Stream_support_in_Eos_v3.3.0>, <https://support.etcconnect.com/ETC/Consoles/Eos_Family/Software_and_Programming/Setting_up_and_using_Videos_Streams_with_Eos>, v3.3.5 announcement <https://community.etcconnect.com/control_consoles/eos-family-consoles/f/eos-family/61969/eos-v3-3-5-is-now-released>
 - **Standards**
   - CITP spec (2020-11-27): <https://bitbucket.org/lars_wernlund/citp/downloads/master_2020-11-27.pdf>
   - GDTF/MVR: <https://github.com/mvrdevelopment/spec>
