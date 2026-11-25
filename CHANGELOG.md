@@ -10,7 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- CI: a push to a pull request cancels the queued or running jobs of its earlier heads; main's runs always complete (PR #N).
+- CI: a push to a pull request cancels the queued or running jobs of its earlier heads; main's runs always complete (PR #).
 
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
