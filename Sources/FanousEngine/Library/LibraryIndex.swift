@@ -143,6 +143,10 @@ public final class LibraryIndex: @unchecked Sendable {
         var pendingProbes: [String] = []
         /// B267: the cache key that was in work when the engine stopped before this start, and how often that happened.
         var stoppedIn: (key: String, stops: Int)?
+        /// B348: the cache keys a layer or a mask was decoding when the engine stopped before this start, and how often.
+        var decodeStops: [String: Int] = [:]
+        /// B348: the decode markers this index wrote that are still in work (`stop()` removes them: no blame for our own stop).
+        var decodeMarkers: Set<URL> = []
     }
 
     /// B220: the wording of the probe's reason texts. A cached entry that carries a reason is probed again once when the
@@ -210,6 +214,7 @@ public final class LibraryIndex: @unchecked Sendable {
         probeWake.signal()
         // B267: a probe still running after the wait is cut off by a stop of our own (exit follows), not a crash: no blame
         if probeExited.wait(timeout: .now() + joinTimeout) == .timedOut { try? FileManager.default.removeItem(at: markerFile) }
+        for marker in state.withLock({ $0.decodeMarkers }) { try? FileManager.default.removeItem(at: marker) }  // B348, as above
         probeThread = nil  // its block holds the index: a replaced index (B51) must be freed
         if let stream {
             FSEventStreamStop(stream)
@@ -217,6 +222,27 @@ public final class LibraryIndex: @unchecked Sendable {
             FSEventStreamRelease(stream)
             self.stream = nil
         }
+    }
+
+    /// B348: `body` decodes the library file at `url` outside the library thread (a layer's open, an image mask), with a marker
+    /// written before and removed after, so the next start knows the file was in work when the engine stopped: like a probe
+    /// (B267), the second such stop lists it as unreadable until it changes, and a layer or a mask no longer gets it. A file
+    /// that is not in the library (a scene's own path) is decoded without one.
+    public func decoding<T>(_ url: URL, _ body: () throws -> T) rethrows -> T {
+        guard let item = state.withLock({ s in s.snapshot.folders.lazy.flatMap(\.items).first { $0.path == url.path } }) else { return try body() }
+        let key = Self.cacheKey(item)
+        let marker = decodingDirectory.appending(path: "\(UUID().uuidString).json")
+        let stops = state.withLock { s in
+            s.decodeMarkers.insert(marker)
+            return s.decodeStops[key] ?? 0
+        }
+        try? FileManager.default.createDirectory(at: decodingDirectory, withIntermediateDirectories: true)
+        try? JSONEncoder().encode(ProbeMarker(path: item.path, key: key, stops: stops)).write(to: marker)
+        defer {
+            try? FileManager.default.removeItem(at: marker)
+            _ = state.withLock { $0.decodeMarkers.remove(marker) }
+        }
+        return try body()
     }
 
     /// After a scan or a probe pass, on the thread that made it.
@@ -502,6 +528,8 @@ public final class LibraryIndex: @unchecked Sendable {
 
     private var cacheFile: URL { cacheDirectory.appending(path: "library-index.json") }
     var markerFile: URL { cacheDirectory.appending(path: "library-probing.json") }
+    /// B348: one marker per decode in work outside the library thread (several layers open at once).
+    var decodingDirectory: URL { cacheDirectory.appending(path: "library-decoding") }
 
     private func loadCache(readsStopMarker: Bool) {
         if let data = try? Data(contentsOf: cacheFile), let cache = try? JSONDecoder().decode([String: CacheEntry].self, from: data) {
@@ -510,7 +538,9 @@ public final class LibraryIndex: @unchecked Sendable {
         // B267: a marker means the engine stopped while that file was read (a crash, a kill, a power cut). The second time it
         // is unreadable until it changes (a new size or date is a new cache key); the first time it is read once more. A
         // marker under another root is from a run on another root.
-        guard readsStopMarker, let data = try? Data(contentsOf: markerFile), let marker = try? JSONDecoder().decode(ProbeMarker.self, from: data),
+        guard readsStopMarker else { return }
+        readDecodeMarkers()
+        guard let data = try? Data(contentsOf: markerFile), let marker = try? JSONDecoder().decode(ProbeMarker.self, from: data),
             marker.path.hasPrefix(root.path + "/")
         else { return }
         if marker.stops + 1 >= 2 {
@@ -527,6 +557,32 @@ public final class LibraryIndex: @unchecked Sendable {
             logger.warning("the engine stopped while reading this library file: it is read once more", metadata: ["file": "\(marker.path)"])
             state.withLock { $0.stoppedIn = (marker.key, marker.stops + 1) }
         }
+    }
+
+    /// B348: the decode markers a stop of the engine left (a layer's open, an image mask), counted like the probe's (B267).
+    /// ponytail: a first stop is counted in memory and its marker removed here, so a stop before the file's next decode
+    /// loses the count (the safe side: three stops instead of two); a second decode marker file would keep it.
+    private func readDecodeMarkers() {
+        let files = (try? FileManager.default.contentsOfDirectory(at: decodingDirectory, includingPropertiesForKeys: nil)) ?? []
+        guard !files.isEmpty else { return }
+        var twice = false
+        for file in files {
+            guard let data = try? Data(contentsOf: file), let marker = try? JSONDecoder().decode(ProbeMarker.self, from: data),
+                marker.path.hasPrefix(root.path + "/")
+            else { continue }
+            if marker.stops + 1 >= 2 {
+                logger.warning("the engine stopped twice while a layer or a mask decoded this library file: listed as unreadable until it changes", metadata: ["file": "\(marker.path)"])
+                state.withLock {
+                    $0.cache[marker.key] = CacheEntry(metadata: nil, thumbnail: nil, status: .unreadable, reason: Self.stoppedTwice, reasonsVersion: Self.reasonsVersion)
+                }
+                twice = true
+            } else {
+                logger.warning("the engine stopped while a layer or a mask decoded this library file: it is decoded once more", metadata: ["file": "\(marker.path)"])
+                state.withLock { $0.decodeStops[marker.key] = marker.stops + 1 }
+            }
+        }
+        if twice { saveCache() }  // before the markers go: a stop in between keeps the count
+        for file in files { try? FileManager.default.removeItem(at: file) }
     }
 
     private func saveCache() {

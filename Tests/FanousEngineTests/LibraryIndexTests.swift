@@ -460,6 +460,77 @@ struct LibraryIndexTests {
         #expect(index.still(MediaKey(folder: 1, file: 2)) != nil)
     }
 
+    // MARK: B348: a decode outside the library thread (a layer's open, an image mask) when the engine stopped
+
+    /// What a previous run left when it stopped inside a layer's or a mask's decode of `path`.
+    private func leaveDecodeMarker(_ index: LibraryIndex, path: URL, key: String, stops: Int) throws {
+        try FileManager.default.createDirectory(at: index.decodingDirectory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(LibraryIndex.ProbeMarker(path: path.path, key: key, stops: stops))
+            .write(to: index.decodingDirectory.appending(path: "\(UUID().uuidString).json"))
+    }
+
+    private func decodeMarkers(_ index: LibraryIndex) -> [LibraryIndex.ProbeMarker] {
+        ((try? FileManager.default.contentsOfDirectory(at: index.decodingDirectory, includingPropertiesForKeys: nil)) ?? [])
+            .compactMap { (try? Data(contentsOf: $0)).flatMap { try? JSONDecoder().decode(LibraryIndex.ProbeMarker.self, from: $0) } }
+    }
+
+    /// A library file is recorded while it is decoded and the record is gone after, also when the decode throws; a file that
+    /// is not in the library is decoded without one.
+    @Test func aDecodeIsRecordedWhileItRuns() throws {
+        let (root, cache, first, key) = try twoStills()
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.rescan()
+        let during = index.decoding(first) { decodeMarkers(index) }
+        #expect(during.map(\.path) == [first.path] && during.first?.key == key && during.first?.stops == 0)
+        #expect(decodeMarkers(index).isEmpty, "removed after the decode")
+        struct Failed: Error {}
+        #expect(throws: Failed.self) { try index.decoding(first) { throw Failed() } }
+        #expect(decodeMarkers(index).isEmpty, "removed after a decode that threw")
+        let outside = try tempDir("fanous-outside").appending(path: "scene.png")
+        #expect(index.decoding(outside) { decodeMarkers(index) }.isEmpty)
+    }
+
+    /// Stopped once in a decode: decoded once more, recorded as one stop; stopped twice: unreadable, so a layer gets no file
+    /// for its number and a mask none for its still, and the other still is untouched.
+    @Test func aFileTheEngineStoppedInTwiceWhileDecodingIsUnreadable() throws {
+        let (root, cache, first, key) = try twoStills()
+        var index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        try leaveDecodeMarker(index, path: first, key: key, stops: 0)
+        index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)  // the next start
+        index.rescan()
+        #expect(index.item(MediaKey(folder: 1, file: 1))?.status == .probing, "stopped once: probed and played as before")
+        #expect(decodeMarkers(index).isEmpty, "read at start")
+        #expect(index.decoding(first) { decodeMarkers(index) }.first?.stops == 1, "the retry is recorded as the second try")
+
+        try leaveDecodeMarker(index, path: first, key: key, stops: 1)
+        index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.rescan()
+        #expect(index.resolve(MediaKey(folder: 1, file: 1)) == nil, "a layer's open is refused")
+        let item = index.item(MediaKey(folder: 1, file: 1))
+        #expect(item?.status == .unreadable && item?.reason == LibraryIndex.stoppedTwice)
+        #expect(index.still(MediaKey(folder: 1, file: 1)) == nil, "no mask from it at start")
+        #expect(index.still(MediaKey(folder: 1, file: 2)) != nil)
+        #expect(decodeMarkers(index).isEmpty)
+        // kept in the cache: the start after this one refuses it too
+        let later = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        later.rescan()
+        #expect(later.item(MediaKey(folder: 1, file: 1))?.status == .unreadable)
+    }
+
+    /// A stop of our own while a decode is still in work (a layer's open blocked on a gone volume) blames no one.
+    @Test func aStopRemovesTheDecodeMarkersInWork() async throws {
+        let (root, cache, first, _) = try twoStills()
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        index.start()
+        let release = DispatchSemaphore(value: 0)
+        let decoding = Thread { index.decoding(first) { release.wait() } }
+        decoding.start()
+        defer { release.signal() }
+        #expect(await waitUntil(every: .milliseconds(20)) { decodeMarkers(index).count == 1 })
+        try await offPool { index.stop() }
+        #expect(decodeMarkers(index).isEmpty)
+    }
+
     /// A replacement index (B51, made while the engine runs) does not read the live marker of the index it replaces as a
     /// stop: nothing stopped.
     @Test func aReplacementDoesNotReadTheMarkerAsAStop() async throws {
