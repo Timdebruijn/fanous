@@ -11,7 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Feed and CITP: a layer's position is read from a frame number the compositor publishes every tick instead of from the
-  playback the tick swaps, a data race of the B273 class (B356) (PR #N).
+  playback the tick swaps, a data race of the B273 class (B356) (PR #473).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
