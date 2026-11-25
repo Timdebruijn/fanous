@@ -14,10 +14,25 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   tick (B320); its clock ran that lead (about 16.7 ms at 60 Hz) ahead of the picture. The decoder never takes its
   clock before the target, so a cue to an in point plays nothing from before it. The output path's own latency is
   still not compensated (B406) (PR #457).
+- Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
+  slot, not the slot itself (B386). After the ring drained,
+  the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
+  the same tick: a wrong label and a replaced texture under the GPU, and a HAP frame, decoded in place into its pool
+  texture, changed pixels. The playback's own held frame now exchanges pictures with the drained slot, pool texture
+  included (the movie's pool has one texture more than the ring for it) (PR #453).
+- Playback: a chased or sync-slave layer's first frame is its clock's frame (B404). The hand-off asked the decoder for
+  the in point (the out point in a reverse mode), and the swap tick moved the clock to the timecode or the master's
+  position, so the cut showed a frame of the in point; a slave with a reverse play mode also filled the ring backwards
+  under a forward master. The hand-off now sets the clock as the swap tick will and asks for that frame and direction
+  (PR #456).
 - Playback: a file's first frame is its start position (B294). The loader asked the decoder for frame 0 at start,
   before the compositor's hand-off asked for the in point and the direction, so a cut to an in point flashed the last
   pre-decoded frame (3 at a ring of 4) and a reverse mode showed frame 0 for about ten frames. The decoder now decodes
   nothing before the first request; a chased or slave layer's first request is still the in point (B404) (PR #452).
+- Dependencies: swift-log 1.17.2 (two patches: `MultiplexLogHandler.metadataProvider`'s setter replaces the
+  initializer's provider, raw-identifier module names in `Logger.currentModule`; neither is used here) (PR #454).
+- Dependencies (web): svelte 5.59.1, @sveltejs/vite-plugin-svelte 7.3.2, vitest 5.1.2; `npm run check`, `npm test`
+  and `npm run build` unchanged (PR #455).
 - Playback: a scratch texture answered for a playback that was retired meanwhile goes back to the loader (B402). The
   compositor dropped the answer box's reference on the render thread, which could be the playback's last: its deinit
   and the textures' release then ran there. The playback now adopts the answer and is handed back to the loader, which
