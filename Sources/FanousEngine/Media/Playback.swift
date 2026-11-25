@@ -274,6 +274,8 @@ public final class LayerPlayback: @unchecked Sendable {
         channel.setState(wantedPTS: 0, active: false, volume: 0, pan: 0)
     }
 
+    /// Idempotent for a movie or still (the audio release exchanges a flag, the decoder's stop stores one): a playback the
+    /// compositor hands back after its retire (B402) is in the loader's list twice.
     public func stop() {
         releaseAudio()
         decoder?.stop()
@@ -339,7 +341,8 @@ public final class RenderLayer: @unchecked Sendable {
     /// The playback the compositor wants a scratch texture for (B2); the loader takes it and answers in `pendingScratch`.
     let scratchRequest = Mutex<LayerPlayback?>(nil)
     /// The scratch texture the loader made for a playback; the compositor takes it with `withLockIfAvailable` (never
-    /// blocks) and adopts it when that playback is still its own. A nil answer: Metal refused, the source path stays.
+    /// blocks) and adopts it always; a playback no longer on air goes back to the loader with it (B402). A nil answer:
+    /// Metal refused, the source path stays.
     let pendingScratch = Mutex<(playback: LayerPlayback, answer: ScratchSet?)?>(nil)
     var retireLater: [LayerPlayback] = []
     /// Since start: ticks on which this layer's movie was queued with a frame other than its clock's, one per playback
@@ -348,7 +351,7 @@ public final class RenderLayer: @unchecked Sendable {
 
     public init(index: Int) {
         self.index = index
-        retireLater.reserveCapacity(4)
+        retireLater.reserveCapacity(8)  // a tick can retire four (a hand-back, a replaced staged, a cut, a dissolve's end) plus leftovers of a missed flush
     }
 
     /// Frame index of the playing media for the UI's position display.

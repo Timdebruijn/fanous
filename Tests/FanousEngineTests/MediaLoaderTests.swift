@@ -411,4 +411,52 @@ import Testing
         #expect(playback.scratch != nil && !playback.scratchLevels.isEmpty, "the compositor did not adopt the scratch set")
         #expect(layers[0].pendingScratch.withLock { $0 == nil }, "the answer was not taken")
     }
+
+    /// B402: the playback was retired between its scratch request and the loader's answer (the loader stops its retired
+    /// copy first, then answers), so the answer box held the playback's last reference and the compositor dropped it in
+    /// the tick: its deinit and the textures' release ran on the render thread. Now the compositor adopts the answer and
+    /// hands the playback back to the loader, which releases it on its own thread.
+    @Test func aScratchAnswerForARetiredPlaybackGoesBackToTheLoader() async throws {
+        let (loader, layers) = try Self.loader(layers: 1, opens: nil)
+        let context = try MetalContext()
+        let (compositor, _) = try makeCompositor(context, size: (64, 36))
+        compositor.setLayers(layers)
+        let current = LayerPlayback(key: MediaKey(folder: 1, file: 2), still: DecodedFrame(poolIndex: 0))
+        // the asking playback is referenced by the request and the retired list only: a cut landed before the loader's pass
+        let probe = Self.askAndRetire(on: layers[0], then: current)
+        loader.start()
+        defer { loader.stop() }
+        #expect(await waitUntil { layers[0].pendingScratch.withLock { $0.map { $0.playback === probe.value && $0.answer != nil } ?? false } })
+        #expect(layers[0].retired.withLock { $0.isEmpty }, "the loader stopped and let go of its retired copy before answering")
+        compositor.tick(target: 3600, drawable: nil)
+        #expect(layers[0].pendingScratch.withLock { $0 == nil })
+        try Self.expectHandedBack(probe, on: layers[0])  // in a call of its own: no strong reference outlives the check
+        #expect(current.scratch == nil)
+        loader.wake.signal()
+        #expect(await waitUntil { probe.value == nil }, "the loader did not release the playback")
+    }
+
+    private static func expectHandedBack(_ probe: Weak<LayerPlayback>, on layer: RenderLayer) throws {
+        let playback = try #require(probe.value, "the playback was released in the tick, on the render thread")
+        #expect(playback.scratch != nil, "the answer's textures belong to the playback, not to the render thread")
+        #expect(
+            layer.retired.withLock { $0.contains { $0 === playback } } || layer.retireLater.contains { $0 === playback },
+            "the retired playback was not handed back to the loader")
+    }
+
+    /// A playback that asked for a scratch set and was retired before the answer: only the layer's boxes hold it, so the
+    /// loader's pass leaves it to the answer box alone. The weak probe says where it goes.
+    private static func askAndRetire(on layer: RenderLayer, then current: LayerPlayback) -> Weak<LayerPlayback> {
+        let retired = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: DecodedFrame(poolIndex: 0))
+        layer.current = retired
+        layer.scratchRequest.withLock { $0 = retired }
+        layer.current = current
+        layer.retired.withLock { $0.append(retired) }
+        return Weak(retired)
+    }
+}
+
+final class Weak<T: AnyObject>: @unchecked Sendable {
+    weak var value: T?
+    init(_ value: T) { self.value = value }
 }

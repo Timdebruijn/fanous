@@ -657,7 +657,11 @@ public final class Compositor: @unchecked Sendable {
         }
         layer.pendingScratch.withLockIfAvailable { box in
             guard let (playback, answer) = box.take() else { return }
-            if playback === layer.current || playback === layer.outgoing || playback === layer.staged { playback.adopt(answer) }
+            playback.adopt(answer)  // the playback owns the textures from here: whoever releases it releases them
+            // B402: retired while the loader answered, and the loader may have let go of its copy already: this box could
+            // hold the last reference, and dropping it here would run the playback's deinit and its textures' release on
+            // this thread. Back to the loader, which stops it once and releases it on its own thread.
+            if !(playback === layer.current || playback === layer.outgoing || playback === layer.staged) { retire(playback, from: layer) }
         }
         let taken: PendingPlayback? = layer.pending.withLockIfAvailable { box in
             guard box.set else { return nil }
