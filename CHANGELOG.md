@@ -14,6 +14,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   made a slave's offset NaN, and that one number made every live message "{}" and every live patch `ops: []`; the
   receiver now refuses fps outside 0.01–10 000, a position beyond ±1e9 frames and a rate beyond ±1e6, and a non-finite
   number in any document encodes as null. The packet layout is unchanged (PR #464).
+- Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
+  slot, not the slot itself (B386). After the ring drained,
+  the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
+  the same tick: a wrong label and a replaced texture under the GPU, and a HAP frame, decoded in place into its pool
+  texture, changed pixels. The playback's own held frame now exchanges pictures with the drained slot, pool texture
+  included (the movie's pool has one texture more than the ring for it) (PR #453).
 - Playback: a chased or sync-slave layer's first frame is its clock's frame (B404). The hand-off asked the decoder for
   the in point (the out point in a reverse mode), and the swap tick moved the clock to the timecode or the master's
   position, so the cut showed a frame of the in point; a slave with a reverse play mode also filled the ring backwards
