@@ -12,6 +12,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Docs: design note `docs/timecode-out.md` for the Timecode fixture, the generator clock (a timecode source of its
   own, from a layer's position too), Art-Net timecode out and in (B138 step 1, G26); rows B447 and B448 (PR #492).
+- Docs: the guide's LTC and MTC setup steps name the two timecode routes without a cable, LTC over Dante or AVB as an
+  audio input and MTC over a network MIDI session (PR #497).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)
