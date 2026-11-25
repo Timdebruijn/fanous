@@ -13,7 +13,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Playback: a scratch texture answered for a playback that was retired meanwhile goes back to the loader (B402). The
   compositor dropped the answer box's reference on the render thread, which could be the playback's last: its deinit
   and the textures' release then ran there. The playback now adopts the answer and is handed back to the loader, which
-  stops it once and releases it on its own thread (PR #451).
+  releases it on its own thread (PR #451).
 - Tests: copies across the engine suites share one helper each (a loader rig, texture bytes, a CPU stopwatch, a
   started ingest queue, command refusals, a decoded RGBA still), and a test that printed allocations without asserting
   them is gone (PR #449).
