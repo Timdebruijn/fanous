@@ -145,7 +145,18 @@ struct LibraryIndexTests {
         let index = LibraryIndex(root: root, cacheDirectory: try tempDir("fanous-library-cache"), logger: testLogger)
         index.start()
         defer { index.stop() }
-        let scans = index.rescans.load(ordering: .relaxed), stamp = index.snapshot.scannedAt
+        // FSEvents can still deliver this test's own setup (the root, the folder, 001_a.mov) after start: their event ids
+        // come after the stream's "since now" (measured: three events about 0.5 s after start, one rescan of the same
+        // files). The baseline is taken once no rescan came for 1.5 s (FSEvents latency 0.5 s plus the 0.5 s throttle).
+        var scans = index.rescans.load(ordering: .relaxed)
+        var quietSince = ContinuousClock.now
+        let settle = ContinuousClock.now + .seconds(15)
+        while ContinuousClock.now - quietSince < .milliseconds(1500), ContinuousClock.now < settle {
+            try await Task.sleep(for: .milliseconds(50))
+            let now = index.rescans.load(ordering: .relaxed)
+            if now != scans { (scans, quietSince) = (now, .now) }
+        }
+        let stamp = index.snapshot.scannedAt
         // a 2 s burst, one write every 50 ms, as an upload or an ingest writes
         for n in 0..<40 {
             try Self.touch(root.appending(path: "_incoming/upload.mov"), bytes: 1024 * (n + 1))
