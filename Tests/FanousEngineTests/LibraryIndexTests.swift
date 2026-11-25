@@ -311,6 +311,30 @@ struct LibraryIndexTests {
         #expect(try JSONDecoder().decode(LibraryIndex.CacheEntry.self, from: written).reason == "Cannot Open")
     }
 
+    /// B325: in show mode a new file is read (it resolves, so a layer can play it) but gets no thumbnail and no cache
+    /// entry; when show mode ends it is probed again and gets its thumbnail.
+    @Test func showModeDefersThumbnailsNotPlayback() async throws {
+        let root = try tempDir("fanous-library")
+        try Self.png(root.appending(path: "001_Show/001_new.png"))
+        let cache = try tempDir("fanous-library-cache")
+        let index = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
+        final class Thumbnails: Sendable { let count = Atomic<Int>(0) }
+        let thumbnails = Thumbnails()
+        index.thumbnailer = { _, _, _ in thumbnails.count.wrappingAdd(1, ordering: .relaxed); return "thumb.jpg" }
+        index.paused = true
+        index.start()
+        defer { index.stop() }
+        #expect(await waitUntil(every: .milliseconds(20)) { index.resolve(MediaKey(folder: 1, file: 1)) != nil }, "probed in show mode")
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(thumbnails.count.load(ordering: .relaxed) == 0)
+        #expect(index.snapshot.folders.first?.items.first?.thumbnail == nil)
+        #expect(!FileManager.default.fileExists(atPath: cache.appending(path: "library-index.json").path), "nothing cached without its thumbnail")
+        index.paused = false
+        #expect(await waitUntil(every: .milliseconds(20)) { index.snapshot.folders.first?.items.first?.thumbnail == "thumb.jpg" })
+        #expect(thumbnails.count.load(ordering: .relaxed) == 1)
+        #expect(index.resolve(MediaKey(folder: 1, file: 1)) != nil)
+    }
+
     // MARK: B267: a file in work when the engine stopped
 
     /// Two stills; the cache key of the first, as a scan reads it.

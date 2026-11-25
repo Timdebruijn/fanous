@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Library: in show mode a new file is probed without a thumbnail, so it plays but runs no thumbnail compositor and
+  decode on the shared GPU queue (B325); the rescan when show mode ends makes the thumbnails. A bulk copy into the
+  library during a show made one per file (PR #N).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in

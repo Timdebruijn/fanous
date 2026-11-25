@@ -129,6 +129,16 @@ public final class LibraryIndex: @unchecked Sendable {
     private let warms = Atomic<Bool>(false)  // set on the engine's thread, read on the scan and probe threads
     /// How long `stop()` waits for a probe in flight; shortened by a test only.
     var joinTimeout: DispatchTimeInterval = .seconds(10)
+    /// Show mode (DESIGN.md §14), set by the engine from `showMode.onChange`: probes make no thumbnail (B325). Turning it
+    /// off rescans when a thumbnail was left out, which probes those files again with theirs.
+    public var paused: Bool {
+        get { pausedFlag.load(ordering: .sequentiallyConsistent) }
+        set {
+            pausedFlag.store(newValue, ordering: .sequentiallyConsistent)
+            if !newValue, thumbnailsDeferred.exchange(false, ordering: .sequentiallyConsistent) { scheduleRescan() }
+        }
+    }
+    private let pausedFlag = Atomic<Bool>(false), thumbnailsDeferred = Atomic<Bool>(false)
     private var stream: FSEventStreamRef?
     private let eventQueue = DispatchQueue(label: "org.fanous.library.fsevents", qos: .utility)
     private var rescanPending = false
@@ -233,6 +243,7 @@ public final class LibraryIndex: @unchecked Sendable {
         next.thumbnailer = thumbnailer
         next.onChange = onChange
         next.warmsDecoders = warmsDecoders
+        next.paused = paused
         next.start()
         return next
     }
@@ -415,15 +426,24 @@ public final class LibraryIndex: @unchecked Sendable {
             entry.reason = "unknown type"
         }
         if entry.reason != nil { entry.reasonsVersion = Self.reasonsVersion }
+        // B325: in show mode a file is read, so it plays, but gets no thumbnail (a compositor and a decode on the shared GPU
+        // queue). Not cached without it: the rescan when show mode ends probes it again, with its thumbnail.
+        var cached = true
         if entry.status == .playable || entry.status == .needsTranscode, let metadata = entry.metadata, let thumbnailer {
-            entry.thumbnail = thumbnailer(item.kind == .sequence ? ((try? SequenceIngest.frames(in: url))?[0] ?? url) : url, metadata, item.kind)
+            if paused {
+                cached = false
+                thumbnailsDeferred.store(true, ordering: .sequentiallyConsistent)
+            } else {
+                entry.thumbnail = thumbnailer(item.kind == .sequence ? ((try? SequenceIngest.frames(in: url))?[0] ?? url) : url, metadata, item.kind)
+            }
         }
-        apply(entry, to: item)
+        apply(entry, to: item, cached: cached)
+        if !cached, !paused, running.load(ordering: .relaxed) { scheduleRescan() }  // show mode ended during this probe
     }
 
-    private func apply(_ entry: CacheEntry, to item: LibraryItem) {
+    private func apply(_ entry: CacheEntry, to item: LibraryItem, cached: Bool) {
         state.withLock { s in
-            s.cache[Self.cacheKey(item)] = entry
+            if cached { s.cache[Self.cacheKey(item)] = entry }
             for f in s.snapshot.folders.indices {
                 for i in s.snapshot.folders[f].items.indices where s.snapshot.folders[f].items[i].path == item.path {
                     var updated = s.snapshot.folders[f].items[i]
@@ -440,7 +460,7 @@ public final class LibraryIndex: @unchecked Sendable {
         }
         // a probe that outlived stop() (the join timed out): the cache file and the hook belong to the next index (B51)
         guard running.load(ordering: .relaxed) else { return }
-        saveCache()
+        if cached { saveCache() }
         changed()
     }
 

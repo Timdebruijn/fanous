@@ -252,7 +252,9 @@ second time it is listed as unreadable and not read again until it changes,
 so a file that crashes the engine while it is read cannot keep it from starting (a still used as an image mask that
 is listed so is treated as a missing mask). After an update that rewords the reasons, every file that is not playable
 (needs transcode, unreadable) is probed again once and shows "probing…" until then; playable files and files listed
-as stopping the engine twice are not touched.
+as stopping the engine twice are not touched. In show mode a new file is still read, so a layer can play it, but its
+thumbnail waits until show mode ends (making one decodes on the graphics card the show uses); its tile shows none until
+then.
 
 ## Audio
 

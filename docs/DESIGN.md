@@ -1368,6 +1368,9 @@ Fanous Library/
   (B140: FSEvents resolves symlinks only in a path that exists). Metadata (codec, size, fps, duration, alpha, audio channels,
   colour primaries, file hash) and thumbnails are cached in
   `~/Library/Application Support/Fanous/cache/` keyed by path + mtime + size.
+  In show mode a probe reads the metadata (so the file resolves and plays)
+  but makes no thumbnail and caches nothing; the rescan when show mode ends
+  probes those files again with their thumbnails (B325).
 - **Playable** = ProRes/HAP in `.mov`, stills. Anything else (H.264/HEVC,
   `.mp4`, `.avi`, image sequences) is indexed as "needs transcode" with a
   one-click ingest action. Long-GOP codecs are deliberately not playable:
