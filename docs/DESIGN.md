@@ -3563,7 +3563,9 @@ groundwork and small engine pieces first):
   device's latency and its first stream's, read each time the device opens
   and logged then (`audio output opened`, 15.8 ms on MacBook Pro speakers;
   0 for a property a device does not have); a stamp without a host time
-  reads the clock at the callback. It compares the ring's
+  reads the clock at the callback. The machine's A/V offset (settings.json
+  `audio.offsetMs`, read at start, §12.1) moves that read earlier by the
+  offset. It compares the ring's
   head pts with the clock; drift beyond ±20 ms is corrected by dropping or
   repeating up to 2 ms per callback (inaudible for programme material) until
   the audio is on the clock or the drift changes sign, not only back inside
@@ -4413,7 +4415,9 @@ under another uid.
   the capture items, it blocks show mode until acknowledged.
 - *Latency (B4):* the mixer schedules by the device's reported latency
   (device and stream latency, safety offset, buffer), so sound leaves with the
-  picture. Offset (ms, −200…+200) covers the room: positive sends the sound
+  picture (built, B406: the buffer's host time already holds the safety offset
+  and the buffer, the device and stream latency are added; the offset is read
+  from settings.json at start, `audio.set` is not built). Offset (ms, −200…+200) covers the room: positive sends the sound
   later than the picture (a projector that processes the picture), negative
   earlier (a PA with its own delay line). A negative offset reads ahead in the
   layer's PCM ring (250 ms), so it cannot exceed what the ring holds ahead of

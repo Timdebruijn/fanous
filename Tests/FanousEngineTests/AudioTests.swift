@@ -940,6 +940,22 @@ extension LayerAudioChannel {
         let now = mixer.heard(stamp)
         #expect(now >= before && now <= LayerAudioChannel.hostNanos(), "no host time: now, without the latency")
 
+        // the A/V offset: positive plays the sound later, so the clock is read that much earlier; both paths
+        mixer.offsetMs = 30
+        stamp.mFlags = .hostTimeValid
+        #expect(mixer.heard(stamp) == AudioMixer.nanos(ticks: stamp.mHostTime, timebase) + 15_833_333 - 30_000_000)
+        stamp.mFlags = .sampleTimeValid
+        let early = LayerAudioChannel.hostNanos()
+        let offsetNow = mixer.heard(stamp)
+        #expect(offsetNow >= early - 30_000_000 && offsetNow <= LayerAudioChannel.hostNanos() - 30_000_000)
+        mixer.offsetMs = -12.5
+        stamp.mFlags = .hostTimeValid
+        #expect(mixer.heard(stamp) == AudioMixer.nanos(ticks: stamp.mHostTime, timebase) + 15_833_333 + 12_500_000)
+        mixer.offsetMs = 500
+        #expect(mixer.offsetMs == 200, "clamped to ±200 ms")
+        mixer.offsetMs = .nan
+        #expect(mixer.offsetMs == 0)
+
         // the pulls read the clock at the render's host time: on the clock there (1 s at host 1 s), 10 ms play from 1 s
         let channel = mixer.channels[0]
         let source = RampSource()
@@ -954,5 +970,19 @@ extension LayerAudioChannel {
         }
         #expect(abs(channel.nextFramePTS - 1.01) < 1e-6, "\(channel.nextFramePTS)")
         #expect(channel.statistics.corrections == 0 && channel.statistics.underruns == 0)
+    }
+
+    /// B406: settings.json `audio.offsetMs`, field by field like `sync`: out of range or not a number keeps 0 and is
+    /// reported; a broken `audio` takes no other field with it.
+    @Test func theAVOffsetComesFromTheSettingsFile() throws {
+        func decode(_ json: String) throws -> MachineSettings { try JSONDecoder().decode(MachineSettings.self, from: Data(json.utf8)) }
+        #expect(try decode(#"{"audio": {"offsetMs": 45.5}}"#).audio?.offsetMs == 45.5)
+        #expect(try decode(#"{}"#).audio == nil)
+        let far = try decode(#"{"audio": {"offsetMs": 300}}"#)
+        #expect(far.audio?.offsetMs == 0 && far.problems.count == 1 && far.problems[0].hasPrefix("audio.offsetMs"), "\(far.problems)")
+        let text = try decode(#"{"audio": {"offsetMs": "late"}}"#)
+        #expect(text.audio?.offsetMs == 0 && text.problems.count == 1)
+        let broken = try decode(#"{"audio": 7, "sync": {"port": 9000}}"#)
+        #expect(broken.audio == nil && broken.sync?.port == 9000 && broken.problems.count == 1)
     }
 }

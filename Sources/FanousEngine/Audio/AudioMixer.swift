@@ -26,6 +26,15 @@ public final class AudioMixer: @unchecked Sendable {
     }()
     /// The output device's latency after the buffer's host time (B406), in nanoseconds; set by `start`, 0 until then.
     let outputLatencyNanos = Atomic<UInt64>(0)
+    /// `offsetMs` in nanoseconds: positive plays the sound later.
+    private let offsetNanos = Atomic<Int64>(0)
+
+    /// The machine's A/V offset (settings.json `audio.offsetMs`, ±200 ms): positive plays the sound later than the
+    /// picture (a projector or LED processor that delays the picture), negative earlier (a PA with its own delay).
+    public var offsetMs: Double {
+        get { Double(offsetNanos.load(ordering: .relaxed)) / 1e6 }
+        set { offsetNanos.store(Int64((min(200, max(-200, newValue.isFinite ? newValue : 0)) * 1e6).rounded()), ordering: .relaxed) }
+    }
 
     /// Plays to the system default output (device selection: B4).
     public init(channels: Int) {
@@ -185,11 +194,13 @@ public final class AudioMixer: @unchecked Sendable {
         return ticks / denom * numer + ticks % denom * numer / denom
     }
 
-    /// The host time (nanoseconds) the first frame of the buffer stamped `stamp` is heard at: its host time plus the
-    /// output latency; now when the stamp carries no host time. Real-time safe.
+    /// The host time (nanoseconds) at which the layer clocks are read for the buffer stamped `stamp`: when its first
+    /// frame is heard (its host time plus the output latency; now when the stamp carries no host time), less the A/V
+    /// offset (a sound played later is the media of an earlier time). Real-time safe.
     func heard(_ stamp: AudioTimeStamp) -> UInt64 {
-        guard stamp.mFlags.contains(.hostTimeValid) else { return LayerAudioChannel.hostNanos() }
-        return Self.nanos(ticks: stamp.mHostTime, timebase) + outputLatencyNanos.load(ordering: .relaxed)
+        let heard = stamp.mFlags.contains(.hostTimeValid)
+            ? Self.nanos(ticks: stamp.mHostTime, timebase) &+ outputLatencyNanos.load(ordering: .relaxed) : LayerAudioChannel.hostNanos()
+        return UInt64(bitPattern: Int64(bitPattern: heard) &- offsetNanos.load(ordering: .relaxed))
     }
 
     public func stop() { control.sync { stopLocked() } }
@@ -211,5 +222,32 @@ public final class AudioMixer: @unchecked Sendable {
             let channel = channels[i]
             channel.pull(into: left, right: right, frames: frames, wantedPTS: channel.wantedPTS(atHostNanos: now))
         }
+    }
+}
+
+/// `settings.json` › `audio` (DESIGN.md §12.1, Audio tab): the A/V offset, read at start. The device choice (B4) is
+/// not built.
+public struct AudioOutputSettings: Codable, Sendable, Equatable {
+    /// −200…+200 ms; positive plays the sound later than the picture.
+    public var offsetMs = 0.0
+
+    /// Fields that could not be read and kept their default; never written back.
+    public private(set) var problems: [String] = []
+
+    enum CodingKeys: String, CodingKey { case offsetMs }
+
+    public init() {}
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        do {
+            let value = try c.decodeIfPresent(Double.self, forKey: .offsetMs) ?? offsetMs
+            if (-200...200).contains(value) { offsetMs = value } else { problems.append("offsetMs: \(value) is outside -200...200") }
+        } catch { problems.append("offsetMs: \(error)") }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(offsetMs, forKey: .offsetMs)
     }
 }
