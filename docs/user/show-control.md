@@ -127,8 +127,9 @@ file, mapping preset) switch when the fade starts. A cue fired during a
 fade starts from where the fade is. Under **Console and Fanous, latest
 change wins** a running fade holds against the console until it ends.
 After that the cue only holds its values: a console fader, a UI slider or
-a MIDI control that moves one of them keeps it until a cue changes that
-parameter again.
+a MIDI control that moves one of them keeps it until a cue that holds that
+parameter fires again (GO, Back, Go to, a follow or a timecode trigger).
+Releasing a UI or MIDI value gives the parameter back to the cue.
 
 ## Triggers and follows
 

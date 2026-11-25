@@ -94,7 +94,7 @@ public struct CueEngine: Sendable {
     private var last: [Key: UInt16] = [:]
     /// What the last `tick` changed (B288): the values a fire or a resume set and the fade steps that moved a value. Only
     /// these are stamped into the resolvers, so a console, UI, OSC or MIDI value set since keeps its parameter until a cue
-    /// changes it again.
+    /// that holds that parameter fires again (GO, Back, Go to, a follow or a timecode trigger) or a fade step moves it.
     public private(set) var changed: [CueValue] = []
     /// Counts what changes `targets` or the current cue (a fire, a list edit, a resume), so a reader builds them only then.
     public private(set) var revision = 0

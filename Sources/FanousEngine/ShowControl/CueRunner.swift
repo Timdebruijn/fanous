@@ -81,7 +81,7 @@ public final class CueRunner: @unchecked Sendable {
     private func tick() {
         let (outputs, changed) = engine.withLock { e in (e.tick(at: CACurrentMediaTime()), e.changed) }
         // B288: a tick that changes nothing (a timecode frame, a GO's held values) restamps nothing
-        if outputs != sent || !changed.isEmpty {
+        if !changed.isEmpty || outputs != sent {
             dmx.setCue(outputs, changed: changed)
             sent = outputs
         }

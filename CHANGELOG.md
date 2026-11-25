@@ -11,9 +11,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Cues: a held cue value is stamped when a fire or a fade step changes it, not on every tick (B288). Every timecode
-  frame and every GO restamped all held values, so under latest change wins a console fader, and under every setting but
-  Console only a UI slider or MIDI control, lost a parameter a cue had set at the next frame or GO. It now keeps it until
-  a cue changes that parameter (PR #462).
+  frame and every GO restamped all held values, so under latest change wins a console fader (under highest value wins
+  on folder, file and modes), and under every setting but Console only a UI slider or MIDI control, lost a parameter a
+  cue had set at the next frame or GO. It now keeps it until a cue that holds that parameter fires again; releasing a
+  UI or MIDI value gives the parameter back to the cue (PR #462).
 - Playback: a chased or sync-slave layer's first frame is its clock's frame (B404). The hand-off asked the decoder for
   the in point (the out point in a reverse mode), and the swap tick moved the clock to the timecode or the master's
   position, so the cut showed a frame of the in point; a slave with a reverse play mode also filled the ring backwards

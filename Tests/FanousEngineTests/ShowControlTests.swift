@@ -151,39 +151,64 @@ struct ShowControlTests {
     /// B288: a held cue value is stamped when a fire changes it, not on every tick. Timecode frames tick the runner at
     /// 25 Hz and a GO ticks it too; before, each tick restamped every held value, so a console (ltp) or a UI fader (htp,
     /// internal: they share the one internal slot per parameter) lost a parameter a cue had set at the next frame or GO.
-    @Test(arguments: [SourcePolicy.ltp, .htp])
-    func aFaderKeepsAParameterACueSetUntilACueChangesIt(policy: SourcePolicy) async throws {
+    /// A cue that holds the parameter takes it back when it fires; removing that cue releases it.
+    @Test(arguments: [SourcePolicy.ltp, .htp, .internal])
+    func aFaderKeepsAParameterACueSetUntilACueHoldingItFires(policy: SourcePolicy) async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         store.setPolicy(policy)
         let runner = CueRunner(dmx: store)
         defer { runner.stop() }
         let layer = { @Sendable in store.snapshots.withLatest { $0.layers[0] } }
-        let cueRaw: UInt16 = 30000, faderRaw: UInt16 = 50000  // the fader above the cue, so htp lets it through too
+        let intensity = { (raw: UInt16) in Float(raw) / 65535 }  // the snapshot carries intensity as 0...1
+        let cueRaw: UInt16 = 30000, faderRaw: UInt16 = 50000
         func value(_ parameter: LayerParameter, _ raw: UInt16) -> CueValue { CueValue(fixture: .layer(1), parameter: .layer(parameter), raw: raw) }
-        runner.replace(list: CueList(cues: [
+        let list = CueList(cues: [
             Cue(number: 1, fadeTime: 0, values: [value(.intensity, cueRaw)]),
             Cue(number: 2, fadeTime: 0, values: [value(.file, 7)]),
             Cue(number: 3, fadeTime: 0, values: [value(.intensity, cueRaw)]),
-        ]))
+        ])
+        runner.replace(list: list)
         runner.go()
-        #expect(await waitUntil { abs(layer().intensity - Float(cueRaw) / 65535) < 0.001 })
+        #expect(await waitUntil { abs(layer().intensity - intensity(cueRaw)) < 0.001 })
         if policy == .ltp {
             // the console, after the cue: ltp gives it the latest change
             var data = [UInt8](repeating: 0, count: 512)
             (data[0], data[1]) = (UInt8(faderRaw >> 8), UInt8(faderRaw & 0xFF))
             try await offPool { store.queue.sync { store.receive(artnet: ArtDmx(portAddress: 0, data: data), from: "desk", at: DMXStore.now) } }
         } else {
+            // no console: htp resolves the internal slot alone, and the UI value replaces the cue's in it
             store.setUI(.layer(1), .layer(.intensity), raw: faderRaw)
         }
-        let fader = Float(faderRaw) / 65535
-        #expect(await waitUntil { abs(layer().intensity - fader) < 0.001 })
+        #expect(await waitUntil { abs(layer().intensity - intensity(faderRaw)) < 0.001 })
         for frame in 0..<100 { runner.timecode(Timecode(frameCount: frame, rate: .fps25)) }
-        runner.go()  // cue 2 does not touch intensity
+        runner.go()  // cue 2 does not hold intensity
         #expect(await waitUntil { layer().file == 7 })  // the cue queue is serial: the 100 frames ran before
         try await offPool { store.queue.sync {} }
-        #expect(abs(layer().intensity - fader) < 0.001, "\(policy): the fader kept intensity across 100 ticks and a GO, \(layer().intensity)")
-        runner.go()  // cue 3 changes intensity: the cue takes it back
-        #expect(await waitUntil { abs(layer().intensity - Float(cueRaw) / 65535) < 0.001 }, "\(policy): \(layer().intensity)")
+        #expect(abs(layer().intensity - intensity(faderRaw)) < 0.001, "\(policy): the fader kept intensity across 100 ticks and a GO, \(layer().intensity)")
+        runner.go()  // cue 3 holds intensity: the cue takes it back
+        #expect(await waitUntil { abs(layer().intensity - intensity(cueRaw)) < 0.001 }, "\(policy): \(layer().intensity)")
+        // cue 3 removed: its value is released, to the console under ltp; the UI value it replaced is gone
+        runner.replace(list: CueList(cues: Array(list.cues.prefix(2))))
+        let released = policy == .ltp ? faderRaw : ChannelMap.spec(.layer(.intensity)).defaultRaw
+        #expect(await waitUntil { abs(layer().intensity - intensity(released)) < 0.001 }, "\(policy): \(layer().intensity)")
+    }
+
+    /// B288: Release of a UI value that replaced a held cue value gives the parameter back to the cue, under internal
+    /// with the cue's value. Without it the slot stayed empty and the layer went to its default (intensity 0: black).
+    @Test func releasingAUIValueGivesTheParameterBackToTheCue() async throws {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
+        store.setPolicy(.internal)
+        let runner = CueRunner(dmx: store)
+        defer { runner.stop() }
+        let intensity = { @Sendable in store.snapshots.withLatest { $0.layers[0].intensity } }
+        runner.replace(list: CueList(cues: [Cue(number: 1, fadeTime: 0, values: [CueValue(fixture: .layer(1), parameter: .layer(.intensity), raw: 30000)])]))
+        runner.go()
+        #expect(await waitUntil { abs(intensity() - Float(30000) / 65535) < 0.001 })
+        store.setUI(.layer(1), .layer(.intensity), raw: 50000)
+        #expect(await waitUntil { abs(intensity() - Float(50000) / 65535) < 0.001 })
+        store.releaseUI(.layer(1))
+        try await offPool { store.queue.sync {} }
+        #expect(abs(intensity() - Float(30000) / 65535) < 0.001, "the cue's value back: \(intensity())")
     }
 
     @Test func timecodeClockExtrapolatesFreewheelsAndLoses() {

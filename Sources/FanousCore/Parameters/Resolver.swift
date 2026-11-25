@@ -98,6 +98,9 @@ public struct FixtureResolver: Sendable {
 
     public func resolved(_ id: ParameterID) -> ResolvedValue { resolved(index: ChannelMap.index(of: id)) }
 
+    /// Whether an internal source holds `id`, whatever the policy.
+    public func hasInternal(_ id: ParameterID) -> Bool { internalRaw[ChannelMap.index(of: id)] != nil }
+
     /// Values internal sources have set, whether or not the policy lets them through (the UI greys them out).
     public func internalValues() -> [(parameter: ParameterID, raw: UInt16, source: ValueSource)] {
         specs.indices.compactMap { i in internalRaw[i].map { (specs[i].id, $0, internalSource[i]) } }
