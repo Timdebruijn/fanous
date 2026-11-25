@@ -184,6 +184,10 @@ the chase if you only need triggers.
 
 <img src="images/show-timecode.png" width="1060" alt="The Timecode panel: the on/off switch, the readout with its state and frames seen, and the fields Source, Device, Channel, Offset and Freewheel">
 
+While timecode runs (Locked or Freewheel) and a cue's trigger lies ahead,
+the panel reads `next trigger: cue 3 · Intro in 8 s` (`1:35` above a
+minute), counted up from the time showing, whatever the source.
+
 Setting up LTC:
 
 1. Press **Authorize microphone** under Permissions on the Inputs screen,
@@ -201,8 +205,6 @@ Setting up LTC:
    non-drop, 30) is detected by itself.
 4. Done when the state pill reads **Locked** in green, the readout counts,
    and the source line reads `LTC · device · 25 fps`.
-   While a trigger lies ahead the panel also reads `next trigger: cue 3 ·
-   Intro in 8 s`, counted from the time showing.
 
 Setting up MTC:
 

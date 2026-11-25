@@ -107,18 +107,26 @@ export function triggerSeconds(trigger: string): number | null {
   return frames / (rateFps(rate.engine) ?? rate.frames);
 }
 
-/** The cue the running timecode reaches next (the lowest trigger past the time showing, compared in seconds as the
- * engine fires them) and the seconds until it; null while timecode is off or no trigger lies ahead. */
+/** The cue the running timecode reaches next (the lowest trigger past the time showing, compared in seconds with the
+ * engine's tolerance, as `CueEngine.timecode` fires them) and the seconds until it; null while timecode is off or
+ * lost (the engine fires nothing without frames, and a lost readout stands), or no trigger lies ahead. Freewheel
+ * counts on: the signal usually comes back. */
 export function nextTrigger(cues: readonly CueDoc[], live: Pick<LiveDoc['timecode'], 'state' | 'frames' | 'rate'>): { cue: CueDoc; seconds: number } | null {
   const fps = rateFps(live.rate);
-  if (live.state === 'off' || fps === null) return null;
+  if ((live.state !== 'locked' && live.state !== 'freewheel') || fps === null) return null;
   const now = live.frames / fps;
   let best: { cue: CueDoc; seconds: number } | null = null;
   for (const cue of cues) {
     const at = cue.trigger ? triggerSeconds(cue.trigger) : null;
-    if (at !== null && at > now && (best === null || at - now < best.seconds)) best = { cue, seconds: at - now };
+    if (at !== null && at > now + 1e-6 && (best === null || at - now < best.seconds)) best = { cue, seconds: at - now };
   }
   return best;
+}
+
+/** "8 s" up to a minute, then "1:35": a countdown, rounded up. */
+export function countdownText(seconds: number): string {
+  const whole = Math.max(0, Math.ceil(seconds));
+  return whole < 60 ? `${whole} s` : `${Math.floor(whole / 60)}:${pad2(whole % 60)}`;
 }
 
 export const TRIGGER_HINT = 'hh:mm:ss:ff@rate, for example 00:01:30:00@25 (rates: 24, 25, 29.97df, 29.97ndf, 30)';

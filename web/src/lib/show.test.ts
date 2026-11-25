@@ -17,6 +17,7 @@ import {
   midiParameterTarget,
   midiTargetText,
   refusalNote,
+  countdownText,
   nextTrigger,
   triggerSeconds,
 } from './show';
@@ -212,7 +213,24 @@ describe('next trigger', () => {
     expect(nextTrigger(cues, live)).toEqual({ cue: cues[2], seconds: 5 });
     expect(nextTrigger(cues, { ...live, frames: 2500 })).toEqual({ cue: cues[0], seconds: 20 });
     expect(nextTrigger(cues, { ...live, frames: 3000 })).toBeNull();
+    expect(nextTrigger(cues, { ...live, state: 'freewheel' })).toEqual({ cue: cues[2], seconds: 5 });
     expect(nextTrigger(cues, { ...live, state: 'off' })).toBeNull();
+    expect(nextTrigger(cues, { ...live, state: 'lost' })).toBeNull();
+  });
+  it('counts a trigger at the time showing as fired, at the same and at another rate, and runs at drop frame', () => {
+    expect(nextTrigger([cue('c1', 1, { trigger: '00:01:40:00@25' })], { state: 'locked', frames: 2500, rate: '25' })).toBeNull();
+    expect(nextTrigger([cue('c1', 1, { trigger: '00:01:30:00@30' })], { state: 'locked', frames: 2250, rate: '25' })).toBeNull();
+    // 00:01:00;02 at drop frame is frame 1800: the trigger a frame later lies one frame ahead
+    const df = nextTrigger([cue('c1', 1, { trigger: '00:01:00:03@29.97 DF' })], { state: 'locked', frames: 1800, rate: '29.97 DF' });
+    expect(df?.cue.id).toBe('c1');
+    expect(df?.seconds).toBeCloseTo(1001 / 30000, 9);
+  });
+  it('writes a countdown in seconds up to a minute, then m:ss, rounded up', () => {
+    expect(countdownText(0.2)).toBe('1 s');
+    expect(countdownText(59.01)).toBe('60 s');
+    expect(countdownText(60)).toBe('1:00');
+    expect(countdownText(95.5)).toBe('1:36');
+    expect(countdownText(-1)).toBe('0 s');
   });
 });
 
