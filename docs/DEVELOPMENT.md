@@ -9,7 +9,8 @@ Building, protocols, endpoints and internals. The user guide is in
 [`user/reference/api.md`](user/reference/api.md) and
 [`user/reference/osc.md`](user/reference/osc.md). Design: [`DESIGN.md`](DESIGN.md),
 the decisions in [`adr/`](adr/README.md), the mapping proposal
-[`mapping-ux.md`](mapping-ux.md), the competitor matrix
+[`mapping-ux.md`](mapping-ux.md), the 3D pixel-mapping note
+[`pixelmap-3d.md`](pixelmap-3d.md), the competitor matrix
 [`feature-gaps.md`](feature-gaps.md) and the chip table [`hardware.md`](hardware.md).
 
 
