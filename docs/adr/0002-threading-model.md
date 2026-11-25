@@ -132,3 +132,18 @@ kernel cannot take at once is dropped and counted, never waited for. A blocking
 `sendto` on the CITP queue kept `Engine.stop()` in `citp.stop()` for good, so
 SIGTERM did not exit. Network.framework sends are asynchronous already; their
 completion handlers must not block the queue they run on.
+
+## Amendment 2026-11-25 (B286): a GO does not wait for Control
+
+Control stays the one serial queue for the project model and the commands that
+change it. Work that grows with the project and changes nothing leaves it: a
+welcome or snapshot copies the documents there and is redacted and encoded on
+the connection's queue (68 ms for a 1.6 MB welcome of a large show, optimised
+build, on a loaded Mac), and `project.snapshot` writes its version file on the
+caller's thread (the versions' lock orders the writes). `cue.go`, `cue.back`
+and `cue.goto` from OSC and MIDI run on the engine's command queue without
+Control: they read no project, and the cue runner's own serial queue keeps them
+after a list change that was acknowledged before them. A GO sent while 20
+clients joined waited 1.4 s on Control before; now 0.004 ms from OSC or MIDI
+and 0.05 ms from a WebSocket (its `execute` still takes Control, behind the
+welcomes' copies only).
