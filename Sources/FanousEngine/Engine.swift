@@ -1229,22 +1229,27 @@ public final class Engine: @unchecked Sendable {
     }
 
     /// The running LTC input lost its device or its rate changed (B280): a new input, on the settings queue, while
-    /// `input` is still the one in use (a later `timecode.set` may have replaced it meanwhile).
+    /// `input` is still the one in use and running (a later `timecode.set` or `stop()` may have ended it meanwhile).
     private func reopenLTC(_ input: LTCInput) {
         store?.queue.async { [weak self] in
-            guard let self, self.ltc === input else { return }
+            guard let self, self.ltc === input, !input.isStopped else { return }
             self.applyTimecodeSettings(self.lastTimecodeSettings, reopen: true)
         }
     }
 
-    /// A named LTC device that was missing when the input opened (it fell back to the default input) came back
-    /// (B280): called with every fresh audio device list; the check runs on the settings queue, where the settings are.
+    /// CoreAudio's device list changed (B280; the listener, so with or without a web client): an LTC input that failed
+    /// for want of a device opens again now that one is there (a denied permission answers at once, no prompt), and a
+    /// named device that was missing when the input opened (it fell back to the default input) is taken now that it
+    /// is back. One attempt per change of the list; the check runs on the settings queue, where the settings are.
     private func reopenLTCIfDeviceReturned(_ devices: [LTCInput.Device]) {
         store?.queue.async { [weak self] in
-            guard let self, let input = self.ltc, input.lastError == nil, let wanted = self.lastTimecodeSettings.device,
-                input.deviceName != wanted, devices.contains(where: { $0.name == wanted })
-            else { return }
-            self.applyTimecodeSettings(self.lastTimecodeSettings, reopen: true)
+            guard let self, let input = self.ltc, !input.isStopped, !devices.isEmpty else { return }
+            let returned = { () -> Bool in
+                guard input.lastError == nil else { return true }
+                guard !input.deviceName.isEmpty, let wanted = self.lastTimecodeSettings.device else { return false }
+                return input.deviceName != wanted && devices.contains { $0.name == wanted }
+            }()
+            if returned { self.applyTimecodeSettings(self.lastTimecodeSettings, reopen: true) }
         }
     }
 
@@ -1267,10 +1272,7 @@ public final class Engine: @unchecked Sendable {
         switch opens(settings).0 {
         case .off: break
         case .ltc:
-            let input = LTCInput(clock: timecodeClock, channel: settings.channel, logger: logger)
-            input.onConfigurationChange = { [weak self, weak input] in
-                if let input { self?.reopenLTC(input) }
-            }
+            let input = LTCInput(clock: timecodeClock, channel: settings.channel, logger: logger) { [weak self] input in self?.reopenLTC(input) }
             ltc = input
             Task { _ = await input.start(device: settings.device) }
         case .mtc:
@@ -1864,6 +1866,8 @@ public final class Engine: @unchecked Sendable {
             statuses.append(
                 AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, nil) { [weak self] _, _ in
                     self?.audioDevicesChanged.store(true, ordering: .relaxed)
+                    // the list is read off the HAL's thread (B133: it can take a second); B280's reopen follows it
+                    DispatchQueue.global(qos: .utility).async { [weak self] in self?.reopenLTCIfDeviceReturned(LTCInput.inputDevices()) }
                 })
         }
         audioListening.store(statuses.allSatisfy { $0 == noErr }, ordering: .relaxed)
@@ -1884,10 +1888,8 @@ public final class Engine: @unchecked Sendable {
                 }
                 if first { listenForAudioDevices() }
                 let midi = timed("midi", MTCInput.sources)
-                let fresh = audioDevicesChanged.exchange(false, ordering: .relaxed) || !audioListening.load(ordering: .relaxed)
-                let audio = fresh ? timed("audio", LTCInput.inputDevices) : facts.audioInputs
+                let audio = audioDevicesChanged.exchange(false, ordering: .relaxed) || !audioListening.load(ordering: .relaxed) ? timed("audio", LTCInput.inputDevices) : facts.audioInputs
                 if audio.isEmpty { audioDevicesChanged.store(true, ordering: .relaxed) }  // an empty answer (a HAL error, or no device yet) is asked again
-                if fresh, !audio.isEmpty { reopenLTCIfDeviceReturned(audio) }
                 let addresses = timed("addresses") { SystemInfo.ipv4Addresses }
                 let interfaces = timed("interfaces") { SystemInfo.ipv4Interfaces }
                 let metadata: Logger.Metadata = seconds.mapValues { "\(String(format: "%.2f", $0)) s" }
