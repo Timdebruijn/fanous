@@ -589,7 +589,7 @@
           <div class="field" role="group" aria-label="Region"><span>Region x · y · w · h (px)</span>
             <span class="row4">
               {#each ['x', 'y', 'w', 'h'] as k (k)}
-                <input class="input mono" type="number" aria-label="Region {k}" value={output.region ? output.region[k as 'x'] : (k === 'w' ? size.w : k === 'h' ? size.h : 0)} disabled={locked} onchange={(e) => { const r = output.region ?? { x: 0, y: 0, w: size.w, h: size.h }; set('/region', { ...r, [k]: Number(e.currentTarget.value) }); }} />
+                <input class="input mono" type="number" aria-label="Region {k}" max={k === 'w' || k === 'h' ? 16384 : undefined} value={output.region ? output.region[k as 'x'] : (k === 'w' ? size.w : k === 'h' ? size.h : 0)} disabled={locked} onchange={(e) => { const r = output.region ?? { x: 0, y: 0, w: size.w, h: size.h }; set('/region', { ...r, [k]: Number(e.currentTarget.value) }); }} />
               {/each}
               <button type="button" class="btn btn-ghost" disabled={locked || !output.region} onclick={() => set('/region', null)}>Full display</button>
             </span>

@@ -10,8 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Outputs: `output.set` refuses a region wider or higher than 16384 px, and the preview size is computed without integer
-  overflow; a region height of 2^59 was accepted and trapped the engine when its preview opened (B339) (PR #476).
+- Outputs: an output's region is clamped to 16384 px wide and high (a larger value sent by `output.set` is stored as
+  16384, not refused), and the preview size is computed without integer overflow; a region height of 2^59 was accepted
+  and trapped the engine when its preview opened (B339) (PR #476).
 - Docs: the owner's four decisions on the 3D pixel-mapping note (`docs/pixelmap-3d.md` §6, row B407): z up with
   the up axis a project setting, CSV and OPC import both, the height map on its own canvas, order atlas, kinetic,
   project (PR #483)

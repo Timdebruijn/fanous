@@ -191,19 +191,31 @@ struct ProjectValueRangeTests {
     }
 
     /// B339: `output.set` refused only a region side <= 0, so a height of 2^59 was accepted and the engine trapped in the
-    /// preview's size arithmetic when a client opened that output's preview. Accepted on the old code (no trap here: this
-    /// test never opens a preview).
-    @Test func aRegionSideBeyondTheLargestTextureIsRefused() throws {
+    /// preview's size arithmetic when a client opened that output's preview. A side is now clamped to 16384, like the
+    /// output's other values; on the old code it was stored as sent (no trap here: this test never opens a preview).
+    @Test func aRegionSideBeyondTheLargestTextureIsClamped() throws {
         let (store, _) = testStore(outputs: 0)
         try addOutputs(store, 1)
-        let message = "region width and height must be at most 16384 px"
-        for (w, h) in [(1920, 1 << 59), (1 << 59, 1080), (16385, 1080)] {
-            let result = store.execute("output.set", args: ["id": 1, "path": "/region", "value": ["x": 0, "y": 0, "w": .number(Double(w)), "h": .number(Double(h))]], role: .programmer)
-            #expect(result == .failure(.invalidArgs(message)), "\(w)×\(h)")
+        for (w, h, expected) in [(1920, 1 << 59, (1920, 16384)), (1 << 59, 1080, (16384, 1080)), (16385, 1080, (16384, 1080)), (16384, 16384, (16384, 16384))] {
+            _ = try store.execute("output.set", args: ["id": 1, "path": "/region", "value": ["x": 0, "y": 0, "w": .number(Double(w)), "h": .number(Double(h))]], role: .programmer).get()
+            let region = try #require(ProjectDocument.outputs(from: store.project).first?.region)
+            #expect((region.w, region.h) == expected, "\(w)×\(h)")
         }
-        _ = try store.execute("output.set", args: ["id": 1, "path": "/region", "value": ["x": 0, "y": 0, "w": 16384, "h": 16384]], role: .programmer).get()
         #expect(store.execute("output.set", args: ["id": 1, "path": "/region", "value": ["x": 0, "y": 0, "w": 0, "h": 1080]], role: .programmer)
             == .failure(.invalidArgs("region needs a positive size")))
+    }
+
+    /// Review of B339: an output stored with a larger side (typed before the bound, or edited by hand) still takes another
+    /// edit, which clamps its region; the first version refused every edit of that output with the region message.
+    @Test func anOutputStoredWithAHugeRegionTakesOtherEdits() throws {
+        var project = testProject(layers: 1, outputs: 0)
+        var output = OutputConfig(id: 1)
+        output.region = PixelRect(x: 0, y: 0, w: 1920, h: 1 << 40)
+        try project.set(try JSONValue(encoding: [output]), at: "/outputs")
+        let (store, _) = testStore(project: project)
+        _ = try store.execute("output.set", args: ["id": 1, "path": "/name", "value": "Wall"], role: .programmer).get()
+        let stored = try #require(ProjectDocument.outputs(from: store.project).first)
+        #expect(stored.name == "Wall" && stored.region?.h == 16384)
     }
 
     /// Every value above in one project file: it loads, and the loaded document is the file's as a JSON tree (what the
