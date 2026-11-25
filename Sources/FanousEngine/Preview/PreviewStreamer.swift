@@ -78,12 +78,14 @@ public final class PreviewStreamer: @unchecked Sendable {
     public let skipped = Atomic<Int>(0)
     /// B302: preview frames tapped whose encode on the preview queue has not finished, counted from the tap, so a frame
     /// still on the GPU counts. At `maxInFlight` the tap skips (`skipped`), so a stalled queue (a JPEG encode that hangs,
-    /// B99; a saturated GPU; starved utility QoS) holds that many pixel buffers, not one per preview frame allocated on the
-    /// compositor thread. The pool refuses more than `poolLimit` in use besides (VideoToolbox holds the frames it encodes).
+    /// B99; starved utility QoS) holds that many pixel buffers, not one per preview frame allocated on the compositor
+    /// thread; a GPU several ticks behind delays the completions and reaches the cap too. The pool refuses more than
+    /// `poolLimit` in use besides (VideoToolbox holds the frames it encodes).
     private let inFlight = Atomic<Int>(0)
-    /// The compositor keeps up to 3 command buffers in flight (its three canvas textures), each may carry a tapped frame,
-    /// plus one being encoded: only a real stall reaches 4. Measured by the coordinator: a cap of 2 skipped about 1.4 frames
-    /// a second in normal use (an H.264 640 and a JPEG 320 preview open, 61 fps canvas).
+    /// The display paths keep at most 3 frames in flight (DESIGN.md §4.6), each may carry a tapped frame, plus one being
+    /// encoded; headless ticking can run 8 deep (the compositor's ring), so a GPU several ticks behind also reaches the cap
+    /// and skips. Measured by the coordinator: a cap of 2 skipped about 1.4 frames a second in normal use (an H.264 640 and
+    /// a JPEG 320 preview open, 61 fps headless canvas), a cap of 4 none.
     static let maxInFlight = 4
     private let poolLimit = BGRAPixelPool.threshold(8)
     /// Tests: `inFlight`.
