@@ -192,11 +192,14 @@ public final class AudioMixer: @unchecked Sendable {
     /// frame is heard (its host time plus the output latency; when the stamp carries no host time, now plus the output
     /// latency, short by the IO buffer and safety offset), less the A/V offset (a sound played later is the media of an
     /// earlier time). Real-time safe.
+    /// A host time more than 5 s from now (a bogus stamp: 0 would make the lead minus the uptime) counts as none.
     func heard(_ stamp: AudioTimeStamp) -> UInt64 {
-        let hostTime = stamp.mFlags.contains(.hostTimeValid)
+        let now = LayerAudioChannel.hostNanos()
+        let host = AudioConvertHostTimeToNanos(stamp.mHostTime)
+        let distance = Int64(bitPattern: host &- now)
+        let hostTime = stamp.mFlags.contains(.hostTimeValid) && distance > -5_000_000_000 && distance < 5_000_000_000
         stampKinds.bitwiseOr(hostTime ? 1 : 2, ordering: .relaxed)
-        let base = hostTime ? AudioConvertHostTimeToNanos(stamp.mHostTime) : LayerAudioChannel.hostNanos()
-        let heard = base &+ outputLatencyNanos.load(ordering: .relaxed)
+        let heard = (hostTime ? host : now) &+ outputLatencyNanos.load(ordering: .relaxed)
         return UInt64(bitPattern: Int64(bitPattern: heard) &- offsetNanos.load(ordering: .relaxed))
     }
 
@@ -230,7 +233,7 @@ public final class AudioMixer: @unchecked Sendable {
         for i in 0..<channels.count {
             let channel = channels[i]
             channel.outputLeadNanos.store(lead, ordering: .relaxed)
-            channel.pull(into: left, right: right, frames: frames, wantedPTS: channel.wantedPTS(atHostNanos: now))
+            channel.pull(into: left, right: right, frames: frames, wantedPTS: channel.wantedPTS(atHostNanos: now), atHostNanos: now)
         }
     }
 }

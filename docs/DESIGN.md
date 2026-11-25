@@ -3560,8 +3560,10 @@ groundwork and small engine pieces first):
   clock's position with the tick's target, the tick's nominal presentation
   time (B320: stamped with the time of the tick, the audio ran one tick's
   lead ahead of the picture), and the audio extrapolates it in host time;
-  the decoder never seeks to a clock before that target, so a seek to an in
-  point or a loop's restart starts there. The render callback reads the
+  the decoder never seeks to a clock before the target of the last start
+  (a retrigger, the channel turning active, a hand-over to the next file),
+  so a seek to an in point starts there; later seeks go to the callback's
+  clock. The render callback reads the
   clock at the host time its buffer is heard (B406): the buffer's host time
   from its `AudioTimeStamp` (already past the IO buffer and the safety
   offset, measured: 12.1 ms after the callback at 512 + 74 frames) plus the
@@ -3578,12 +3580,17 @@ groundwork and small engine pieces first):
   output's latency (AirPlay, Bluetooth, HDMI) or the offset; a segment that
   starts at the target, ahead of that clock, is allowed to be that much
   ahead before it counts as a jump, and the callback waits silent until its
-  clock reaches it. Until the first callback after launch or a device
-  change the decoder has no (or the old) lead, so on an output whose lead is
-  above 100 ms the first start reseeks once: a short gap. A start whose
-  target is nearer than the lead loses its first milliseconds rather than
-  coming late; the first callback waits silent only for a target further
-  out. It compares the ring's head pts with the clock; drift beyond ±20 ms
+  clock reaches it. With a positive offset the callback reads behind the
+  picture, so after a retrigger it plays the old segment on, straight,
+  until its clock reaches the retrigger's target, where the picture
+  changes, and only then drains; a cut to another file still goes silent
+  for about the offset less 11 ms (B472). Until the first callback after
+  launch or a device change the decoder has no (or the old) lead, so on an
+  output whose lead is above 100 ms plus the tick's lead (positive leads
+  only) the first start reseeks once: a short gap. A start whose target is
+  nearer than the lead loses the difference (about 11 ms on MacBook Pro
+  speakers at 60 Hz) rather than coming late; the first callback waits
+  silent only for a target further out. It compares the ring's head pts with the clock; drift beyond ±20 ms
   is corrected by dropping or
   repeating up to 2 ms per callback (inaudible for programme material) until
   the audio is on the clock or the drift changes sign, not only back inside

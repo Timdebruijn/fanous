@@ -15,7 +15,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   28 ms on MacBook Pro speakers. The latency is logged when the device opens (`audio output opened`). settings.json
   `audio.offsetMs` (±200 ms, positive plays the sound later) covers a display's own lag. The decoder reads its clock
   with the same lead, so an output with a long latency (AirPlay, Bluetooth) plays (no longer silent), compensated by
-  the latency the device reports (PR #458).
+  the latency the device reports. With a positive offset a retrigger plays the old clip on until the picture changes
+  (PR #458).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)
