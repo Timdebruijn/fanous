@@ -60,7 +60,10 @@ channels 52 to 64 are reserved. Outputs 9 and up have no Output fixture.
   the picture, so a Grand Master or DBO takes them down too: keep the
   intensities up to focus.
 - **Retrigger** (Layer channel 50 at 8 to 15) fires once when the channel
-  enters the band; return it to 0 before the next one.
+  enters the band; return it to 0 before the next one. The other two bands
+  of channel 50 work the same way: **Resync audio** (16 to 23) seeks the
+  layer's sound to its play position again, and **Clear error** (24 to 31)
+  clears the layer's error and opens a file that failed to open again.
 - **Mapping preset and fade** (Output channels 6 and 7): Fanous reads the
   fade at the moment the preset channel changes, so put the fade in an
   earlier cue or give it a fade time of 0

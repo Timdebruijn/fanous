@@ -332,7 +332,10 @@ public final class RenderLayer: @unchecked Sendable {
     var staged: LayerPlayback?
     var dissolveStart = 0.0
     var dissolveDuration = 0.0
-    var retriggerLatched = false
+    /// Compositor thread: the Control value of the last tick (its actions run on the tick a band is entered).
+    var controlLatched = LayerControl.idle
+    /// Set by the compositor on Control "Clear error" (B363); the loader takes it.
+    let clearErrorRequested = Atomic<Bool>(false)
     /// Packed MediaKey the compositor wants; the loader compares it with what it loaded last.
     let wanted = Atomic<UInt32>(0)
     /// Set by the loader; the compositor takes it with `withLockIfAvailable` (never blocks).
@@ -654,6 +657,16 @@ public final class MediaLoader: @unchecked Sendable {
                 if let asking {
                     let answer = LayerPlayback.makeScratchSet(device: device, width: asking.width, height: asking.height)
                     layer.pendingScratch.withLock { $0 = (asking, answer) }
+                }
+                if layer.clearErrorRequested.exchange(false, ordering: .relaxed) {
+                    // B363: Clear error empties the status's error; a selection that failed is opened again (B299: a
+                    // failed open is otherwise retried only when the selection changes). Not while an open is in flight.
+                    notCome[i] = nil
+                    let failed = layer.mediaStatus.withLock { status in
+                        defer { status.error = nil }
+                        return status.error != nil
+                    }
+                    if failed, opening[i] == nil { loaded[i] = .max }  // never a packed key: opened again below
                 }
                 let want = layer.wanted.load(ordering: .relaxed)
                 guard want != loaded[i] else { continue }
