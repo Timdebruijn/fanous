@@ -353,6 +353,16 @@ export function ltcInput(
   return { device: name, channel: device ? Math.max(0, Math.min(tc.channel, device.channels - 1)) : tc.channel };
 }
 
+/** "layer 3 +25 · layer 7 −10": the layers with a chase offset of their own, by number; "" when none has one. A key
+ * that is not a layer number is listed as written (an older build or a hand edit; the engine resolves it). */
+export function layerOffsetText(offsets: Record<string, number>): string {
+  return Object.entries(offsets)
+    .filter(([, frames]) => frames !== 0)
+    .sort(([a], [b]) => (Number(a) || 0) - (Number(b) || 0) || a.localeCompare(b))
+    .map(([layer, frames]) => `layer ${layer} ${frames > 0 ? '+' : '−'}${Math.abs(frames)}`)
+    .join(' · ');
+}
+
 /** "−12.3 dBFS" for the LTC level; `none` when LTC is not open. */
 export function levelText(level: number | null | undefined, none = 'no level'): string {
   return level == null ? none : `${level.toFixed(1).replace('-', '−')} dBFS`;

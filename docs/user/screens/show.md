@@ -60,8 +60,9 @@ right column with OSC and MIDI moves under the left one.
 | **Channel** (LTC) | The input channel, 1 is the first |
 | **Offset (frames)** | − and + around a field; subtracted from the incoming time for the whole project. The line under it gives the same offset in seconds at the current rate ("+25 frames = +1.00 s at 25 fps", or "assuming 25 fps until a source locks") |
 | **Start (hh:mm:ss:ff)** | The Offset as a timecode at the current rate (`;` before the frames at drop frame, either separator is accepted); type the time the show timecode starts at and the Offset follows; a minus sign is allowed; greyed until a rate is known |
+| **Layer offset (frames)** | A layer select and a field: that layer's own offset, added to the Offset for it alone; 0 is none. The line under it lists the layers that have one ("layer 3 +25 · layer 7 −10") or reads "no layer has an offset of its own" |
 | **Freewheel (s)** | How long a dropped signal is bridged, 0.1 or more; 2 by default |
-| Footnote | "Offset is subtracted from the incoming time; Start is the same value as a timecode. Channel 1 is the first input channel of the device." and, for LTC, that it needs the microphone permission (Inputs screen) |
+| Footnote | "Offset is subtracted from the incoming time, a layer offset on top of it for that layer; Start is the same value as a timecode. Channel 1 is the first input channel of the device." and, for LTC, that it needs the microphone permission (Inputs screen) |
 
 A wrong Channel or Freewheel entry snaps back without a message. The
 settings are the programmer's; the switch is the operator's.

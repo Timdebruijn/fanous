@@ -23,6 +23,7 @@ import {
   triggerSeconds,
   timecodeFrames,
   timecodeText,
+  layerOffsetText,
 } from './show';
 
 const cue = (id: string, number: number, extra: Partial<CueDoc> = {}): CueDoc => ({ id, number, name: `Cue ${number}`, fade: 0, values: [], ...extra });
@@ -273,6 +274,14 @@ describe('timecode text and frames (the Start field)', () => {
     expect(timecodeFrames('junk', '25')).toBeNull();
     expect(timecodeFrames('01:00:00:00', '50')).toBeNull();
     expect(timecodeText(25, '')).toBe('');
+  });
+});
+
+describe('layerOffsetText', () => {
+  it('lists the layers with an offset of their own by number, with the sign, and nothing for none', () => {
+    expect(layerOffsetText({ '7': -10, '3': 25, '12': 0, '1': 2 })).toBe('layer 1 +2 · layer 3 +25 · layer 7 −10');
+    expect(layerOffsetText({ '2': 0 })).toBe('');
+    expect(layerOffsetText({})).toBe('');
   });
 });
 

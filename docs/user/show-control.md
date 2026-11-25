@@ -271,6 +271,7 @@ stateDiagram-v2
 | **Source**, **Device**, **Channel** | Off, LTC (audio input, with its channel) or MTC (MIDI source) |
 | **Offset (frames)** | Subtracted from the incoming time for every layer that chases, one value for the project; the line under it shows it in seconds at the current rate. Not applied to cue triggers |
 | **Start (hh:mm:ss:ff)** | The Offset as a timecode at the current rate: type the time the show timecode starts at and the Offset follows; a minus sign is allowed |
+| **Layer offset (frames)** | Pick a layer; its own offset is added to the Offset for that layer only, the line under it lists the layers that have one. 0 is none |
 | **Freewheel (s)** | How long a dropped signal is bridged before Lost; 2 to start, 0.1 at least |
 | **Timecode on/off** | The operator's switch; off, the engine treats the source as Off |
 
@@ -281,9 +282,7 @@ written at 01:00:… whatever the Offset. A change of Source, Device,
 Channel or the switch restarts the input: the state drops to Off for a
 moment and comes back Locked. Offset and Freewheel apply at once. The
 settings are the programmer's and are refused while the show is locked,
-so set them before you lock. The per-layer offsets the engine also
-supports have no field on the screen ([REST and WebSocket API](reference/api.md#commands),
-`timecode.set`).
+so set them before you lock.
 
 ## Before the show
 

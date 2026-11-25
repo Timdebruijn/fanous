@@ -4,7 +4,8 @@
 <script lang="ts">
   import LevelMeter from './LevelMeter.svelte';
   import type { JSONValue } from '../lib/protocol';
-  import { countdownText, formatNumber, lockTitle, nextTrigger, offsetText, timecodeBadge, timecodeFrames, timecodeOn, timecodeSource, timecodeText } from '../lib/show';
+  import { layerNumbers } from '../lib/layers';
+  import { countdownText, formatNumber, layerOffsetText, lockTitle, nextTrigger, offsetText, timecodeBadge, timecodeFrames, timecodeOn, timecodeSource, timecodeText } from '../lib/show';
   import { app, can, cmd, programmerLock } from '../lib/state.svelte';
   import { plural, typedNumber } from '../lib/system';
 
@@ -24,6 +25,13 @@
   const devices = $derived(tc.source === 'ltc' ? (app.live.audio?.inputs ?? []).map((i) => i.name) : tc.source === 'mtc' ? app.live.osc.midiSources : []);
   const deviceMissing = $derived(!!tc.device && !devices.includes(tc.device));
   const noDevice = $derived(tc.source === 'mtc' ? 'All sources' : 'Default input');
+
+  // The layer whose own offset the Layer offset field shows; the field reads the project (`/layerOffsets/<n>`).
+  let offsetLayer = $state(1);
+  const layers = $derived(layerNumbers(app.project.layerCount));
+  /** the selection, kept inside the layers that exist (the count can shrink) */
+  const layer = $derived(Math.max(1, Math.min(offsetLayer, layers.length)));
+  const layerOffset = $derived(tc.layerOffsets[String(layer)] ?? 0);
 
   // Draft that follows the project until edited, so quick repeated taps on the stepper add up before the engine answers.
   let offset = $derived(tc.offset);
@@ -138,6 +146,28 @@
         }}
       />
     </label>
+    <div class="field" role="group" aria-labelledby="tc-layer-offset">
+      <span id="tc-layer-offset">Layer offset (frames)</span>
+      <div class="stepper" title={editTitle}>
+        <select class="select layer" aria-label="Layer" value={layer} disabled={!editable || layers.length === 0} onchange={(e) => (offsetLayer = Number(e.currentTarget.value))}>
+          {#each layers as n (n)}<option value={n}>Layer {n}</option>{/each}
+        </select>
+        <input
+          type="number"
+          step="1"
+          aria-labelledby="tc-layer-offset"
+          value={layerOffset}
+          disabled={!editable || layers.length === 0}
+          onchange={(e) => {
+            const el = e.currentTarget;
+            const n = typedNumber(el);
+            if (n === null) el.value = String(layerOffset);
+            else void set(`/layerOffsets/${layer}`, Math.round(n), () => (el.value = String(layerOffset)));
+          }}
+        />
+      </div>
+      <span class="caption" aria-live="polite">{layerOffsetText(tc.layerOffsets) || 'no layer has an offset of its own'}</span>
+    </div>
     <label class="field">
       <span>Freewheel (s)</span>
       <input
@@ -158,7 +188,7 @@
     </label>
   </div>
   <p class="caption">
-    Offset is subtracted from the incoming time; Start is the same value as a timecode. Channel 1 is the first input channel of the device.
+    Offset is subtracted from the incoming time, a layer offset on top of it for that layer; Start is the same value as a timecode. Channel 1 is the first input channel of the device.
     {#if tc.source === 'ltc'}LTC needs the microphone permission: the engine asks once, or authorize it on the <a href="#/inputs">Inputs screen</a>.{/if}
   </p>
 </section>
@@ -175,6 +205,8 @@
   .fields .input { width: 110px; }
   .fields .input.start { width: 130px; }
   .stepper input { width: 90px; }
+  /* inside the stepper's frame: no frame of its own */
+  .fields .select.layer { min-width: 0; width: 120px; border: 0; border-radius: 0; background: transparent; }
   .switch { position: relative; }
   p { margin: 0; }
 </style>
