@@ -73,7 +73,7 @@ Observations:
 
 A **pixel map** is a project object (`pixelMaps[]`, one per rig) holding:
 
-- `points[]`: `x y z` in metres (proposed stage frame: x right, y depth
+- `points[]`: `x y z` in metres (stage frame, decided in §6.1: x right, y depth
   towards the audience, z up, origin at the stage centre line on the floor;
   the up axis is a project setting, default z, see §6.1), `universe`,
   `address`, `footprint` (`rgb`, `rgbw`, `rgb16`, `w`), optional `group` (a
@@ -94,7 +94,7 @@ Three ways in, all producing the same point list:
    field names and units are documented in the user guide; a file from ELM
    or a spreadsheet maps onto it with a header rename.
 3. **OPC layout JSON**: `point` per LED, addresses assigned in file order
-   from one start address. Read only; Fanous writes CSV.
+   from one start address. Import only; Fanous exports CSV.
 
 Fixture types (DESIGN §6.1) are untouched: the LEDs are not fixtures the
 console patches into Fanous, they are what Fanous patches out. ADR-0008
