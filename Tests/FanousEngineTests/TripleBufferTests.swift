@@ -407,7 +407,7 @@ final class Box { var value = 0 }
         let values = [CueValue(fixture: .layer(2), parameter: .layer(.intensity), raw: 65535), CueValue(fixture: .layer(2), parameter: .layer(.file), raw: 7)]
         var cues = CueEngine(list: CueList(cues: [Cue(number: 1, values: values)]))
         cues.go(at: 0)
-        store.setCue(cues.tick(at: 0))  // the fade is over: the runner pushes nothing more
+        store.setCue(cues.tick(at: 0), changed: cues.changed)  // the fade is over: the runner pushes nothing more
         store.queue.sync {}
         #expect(store.snapshots.withLatest { $0.layers[1] } == LayerParameters())
         store.setPatch(store.currentPatch, fixtures: ProjectDocument.fixtures(layerCount: 2, outputs: []))
@@ -415,7 +415,7 @@ final class Box { var value = 0 }
         let added = store.snapshots.withLatest { $0.layers[1] }
         #expect(added.intensity == 1 && added.file == 7, "\(added)")
         // released before the layer is added: nothing to take
-        store.setCue([CueValue]())
+        store.setCue([], changed: [])
         store.setPatch(store.currentPatch, fixtures: ProjectDocument.fixtures(layerCount: 1, outputs: []))
         store.setPatch(store.currentPatch, fixtures: ProjectDocument.fixtures(layerCount: 2, outputs: []))
         store.queue.sync {}
@@ -430,7 +430,7 @@ final class Box { var value = 0 }
         store.setPolicy(.ltp)
         var cues = CueEngine(list: CueList(cues: [Cue(number: 5, values: [CueValue(fixture: .layer(2), parameter: .layer(.file), raw: 7)])]))
         cues.go(at: 0)
-        store.setCue(cues.tick(at: 0))
+        store.setCue(cues.tick(at: 0), changed: cues.changed)
         store.queue.sync {}
         let now = DMXStore.now
         var bytes = [UInt8](repeating: 0, count: 68)

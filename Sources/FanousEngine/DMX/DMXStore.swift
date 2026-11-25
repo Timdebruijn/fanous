@@ -57,8 +57,8 @@ public final class DMXStore: @unchecked Sendable {
     /// The project's source policy: on every fixture, and on the fixtures a later `setPatch` adds.
     private var policy = SourcePolicy.dmx
     /// The cue list's last output and when it came: a resolver made later (a layer added, an undo) takes it at once, as
-    /// the cue engine pushes values only while a fade runs. Stamped with that time, as the resolvers that existed got
-    /// it, so a console fed to the new resolver now wins under latest wins.
+    /// the cue engine pushes values only when one changes. Stamped with that time, never earlier than their stamps in the
+    /// resolvers that existed, so a console fed to the new resolver now wins under latest wins.
     private var cue: (outputs: [CueValue], at: TimeInterval) = ([], 0)
     /// A source on a universe, as "DMX receiving" names it: sACN by source name, Art-Net by sender address.
     struct Announced: Hashable {
@@ -297,6 +297,7 @@ public final class DMXStore: @unchecked Sendable {
             if masked >= Self.uiExpiry {
                 resolvers[fixture]?.clearInternal(source: .ui)
                 resolvers[fixture]?.clearInternal(source: .midi)
+                restoreCue(fixture)
                 uiClock[fixture] = nil
                 changed = true
                 logger.warning("UI and MIDI values released: they masked the console for 10 minutes", metadata: ["fixture": "\(fixture)"])
@@ -435,15 +436,36 @@ public final class DMXStore: @unchecked Sendable {
 
     // MARK: Cross-thread
 
-    /// Cue list output (DESIGN.md §15.2): every value the cue engine asserts, as the cue source.
-    public func setCue(_ outputs: [CueValue]) {
+    /// Cue list output (DESIGN.md §15.2): every value the cue engine asserts, as the cue source. Only `changed` (what a
+    /// fire or a fade step set) is stamped (B288): a console, UI, OSC or MIDI value set after a cue value keeps its
+    /// parameter under ltp, htp and internal until the cue engine changes that value again.
+    public func setCue(_ outputs: [CueValue], changed: [CueValue]) {
         queue.async { [self] in
             let now = Self.now
+            // values the list no longer asserts (removed cue) are released; a fade step keeps the same (sorted) keys
+            let sameKeys = outputs.count == cue.outputs.count
+                && zip(outputs, cue.outputs).allSatisfy { $0.fixture == $1.fixture && $0.parameter == $1.parameter }
+            if !sameKeys {
+                var asserted: [FixtureRef: Set<ParameterID>] = [:]
+                for output in outputs { asserted[output.fixture, default: []].insert(output.parameter) }
+                for old in cue.outputs where asserted[old.fixture]?.contains(old.parameter) != true {
+                    resolvers[old.fixture]?.clearInternal(old.parameter, source: .cue)
+                }
+            }
             cue = (outputs, now)
-            // values the list no longer asserts (removed cue) are released
-            for key in resolvers.keys { resolvers[key]?.clearInternal(source: .cue) }
-            for output in outputs { resolvers[output.fixture]?.setInternal(output.parameter, raw: output.raw, source: .cue, at: now) }
+            for output in changed { resolvers[output.fixture]?.setInternal(output.parameter, raw: output.raw, source: .cue, at: now) }
             publish(receivedAt: 0)
+        }
+    }
+
+    /// A released UI or MIDI value gives the parameter back to the cue value it replaced in the one internal slot (B288),
+    /// with the cue value's own stamp: under ltp a console that moved after the cue wins and one that moved before does
+    /// not, as before the touch; under internal or without a console the cue's value. Back as the cue source, a later
+    /// removal of the cue releases it.
+    private func restoreCue(_ fixture: FixtureRef) {
+        guard let resolver = resolvers[fixture] else { return }
+        for output in cue.outputs where output.fixture == fixture && !resolver.hasInternal(output.parameter) {
+            resolvers[fixture]?.setInternal(output.parameter, raw: output.raw, source: .cue, at: resolver.cueStamp(output.parameter))
         }
     }
 
@@ -461,7 +483,10 @@ public final class DMXStore: @unchecked Sendable {
     public func releaseMIDI(_ targets: [(FixtureRef, ParameterID)]) {
         guard !targets.isEmpty else { return }
         queue.async { [self] in
-            for (fixture, parameter) in targets { resolvers[fixture]?.clearInternal(parameter, source: .midi) }
+            for (fixture, parameter) in targets {
+                resolvers[fixture]?.clearInternal(parameter, source: .midi)
+                restoreCue(fixture)
+            }
             publish(receivedAt: 0)
         }
     }
@@ -487,6 +512,7 @@ public final class DMXStore: @unchecked Sendable {
             for key in resolvers.keys where fixture == nil || key == fixture {
                 resolvers[key]?.clearInternal(source: .ui)
                 resolvers[key]?.clearInternal(source: .midi)
+                restoreCue(key)
                 uiClock[key] = nil
             }
             publish(receivedAt: 0)

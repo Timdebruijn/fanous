@@ -246,4 +246,33 @@ import Testing
         _ = after.tick(at: 100)
         #expect(after.current?.number == 3, "a follow fired after the resume")
     }
+
+    /// B288: `changed` holds what a fire set, also a value already held, and every fade step that moved a value; a held
+    /// value that did not move is not in it, so the runner stamps nothing on a tick that changes nothing.
+    @Test func changedHoldsFiresAndFadeStepsOnly() {
+        let file = CueValue(fixture: .layer(1), parameter: .layer(.file), raw: 7)
+        func intensity(_ raw: UInt16) -> CueValue { CueValue(fixture: .layer(1), parameter: .layer(.intensity), raw: raw) }
+        var engine = CueEngine(list: CueList(cues: [
+            Cue(number: 1, fadeTime: 0, values: [file]),
+            Cue(number: 2, fadeTime: 1, values: [intensity(65535)]),
+            Cue(number: 3, fadeTime: 0, values: [file]),
+        ]))
+        engine.go(at: 0)
+        _ = engine.tick(at: 0)
+        #expect(engine.changed == [file])
+        _ = engine.tick(at: 0.1)
+        #expect(engine.changed.isEmpty, "held, not moved")
+        engine.go(at: 1)
+        for step in 0...50 {
+            let outputs = engine.tick(at: 1 + Double(step) * 0.02)
+            let raw = outputs.first { $0.parameter == .layer(.intensity) }?.raw ?? 0
+            #expect(engine.changed == [intensity(raw)], "step \(step): the fade step, never the held file")
+        }
+        #expect(!engine.isFading)
+        _ = engine.tick(at: 2.1)
+        #expect(engine.changed.isEmpty, "the fade is over")
+        engine.go(at: 3)
+        _ = engine.tick(at: 3)
+        #expect(engine.changed == [file], "a fire changes its values even when they are the ones held")
+    }
 }

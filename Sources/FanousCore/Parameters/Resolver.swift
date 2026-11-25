@@ -34,6 +34,8 @@ public struct FixtureResolver: Sendable {
     private var internalRaw: [UInt16?]
     private var internalSource: [ValueSource]
     private var internalChangedAt: [TimeInterval]
+    /// When the cue source last set each parameter, kept when another internal source replaces it (B288).
+    private var cueChangedAt: [TimeInterval]
 
     public init(mode: FixtureMode, policy: SourcePolicy = .dmx) {
         self.mode = mode
@@ -44,6 +46,7 @@ public struct FixtureResolver: Sendable {
         internalRaw = Array(repeating: nil, count: specs.count)
         internalSource = Array(repeating: .none, count: specs.count)
         internalChangedAt = Array(repeating: 0, count: specs.count)
+        cueChangedAt = Array(repeating: 0, count: specs.count)
     }
 
     /// New DMX frame (raw values in spec order, from `ChannelMap.rawValues`).
@@ -78,6 +81,7 @@ public struct FixtureResolver: Sendable {
         internalRaw[i] = specs[i].clamped(raw)
         internalSource[i] = source
         internalChangedAt[i] = time
+        if source == .cue { cueChangedAt[i] = time }
     }
 
     /// One parameter, only when `source` set it.
@@ -97,6 +101,12 @@ public struct FixtureResolver: Sendable {
     }
 
     public func resolved(_ id: ParameterID) -> ResolvedValue { resolved(index: ChannelMap.index(of: id)) }
+
+    /// Whether an internal source holds `id`, whatever the policy.
+    public func hasInternal(_ id: ParameterID) -> Bool { internalRaw[ChannelMap.index(of: id)] != nil }
+
+    /// When the cue source last set `id` (0: never), also after another internal source replaced it.
+    public func cueStamp(_ id: ParameterID) -> TimeInterval { cueChangedAt[ChannelMap.index(of: id)] }
 
     /// Values internal sources have set, whether or not the policy lets them through (the UI greys them out).
     public func internalValues() -> [(parameter: ParameterID, raw: UInt16, source: ValueSource)] {

@@ -102,6 +102,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Show control: a GO from the browser no longer waits behind the readiness checks of a `show.mode` sent just before it
   on the same connection (B287). The checks ran on the connection's queue, up to about 12 s; an entering `show.mode`
   now runs on a queue of its own and its ack still comes after the checks, so the GO's ack can come first (PR #466).
+- Cues: a held cue value is stamped when a fire or a fade step changes it, not on every tick (B288). Every timecode
+  frame and every GO restamped all held values, so under latest change wins a console fader (under highest value wins
+  on folder, file and modes), and under every setting but Console only a UI slider or MIDI control, lost a parameter a
+  cue had set at the next frame or GO. It now keeps it until a cue that holds that parameter fires again; releasing a
+  UI or MIDI value gives the parameter back to the cue (PR #462).
 - Docs: a design note for the pixel mapper in three dimensions and for pixels on winches (`docs/pixelmap-3d.md`,
   row B407): a point list with x/y/z per LED, three sampling modes, a height map for kinetic groups, and what
   changes on the wire when Fanous sends Art-Net/sACN (PR #481)
