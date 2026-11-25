@@ -14,6 +14,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   before the compositor's hand-off asked for the in point and the direction, so a cut to an in point flashed the last
   pre-decoded frame (3 at a ring of 4) and a reverse mode showed frame 0 for about ten frames. The decoder now decodes
   nothing before the first request; a chased or slave layer's first request is still the in point (B404) (PR #452).
+- Dependencies: swift-log 1.17.2 (two patches: `MultiplexLogHandler.metadataProvider`'s setter replaces the
+  initializer's provider, raw-identifier module names in `Logger.currentModule`; neither is used here) (PR #454).
 - Playback: a scratch texture answered for a playback that was retired meanwhile goes back to the loader (B402). The
   compositor dropped the answer box's reference on the render thread, which could be the playback's last: its deinit
   and the textures' release then ran there. The playback now adopts the answer and is handed back to the loader, which
