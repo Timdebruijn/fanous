@@ -101,7 +101,7 @@ A three-cue show, Layer 1 playing folder 1 file 1 and Layer 2 taking over:
 Press GO three times. Cue 2 needs Layer 1's intensity explicitly, because
 cue 3 would otherwise leave Layer 1 where cue 1 put it.
 
-<img src="images/cue-editor.png" width="1060" alt="The cue editor for cue 3: number, name, fade, trigger and follow, then its values per fixture and parameter">
+<img src="images/cue-editor.png" width="1060" alt="The cue editor for cue 3: number, name, fade, trigger with its Now button and follow, then its values per fixture and parameter">
 
 ```mermaid
 flowchart TD
@@ -187,7 +187,7 @@ video play at the timecode position ("chase"), with Play mode **Timecode**
 Offset)` at the file's own rate, looped between its In and Out points. Skip
 the chase if you only need triggers.
 
-<img src="images/show-timecode.png" width="1060" alt="The Timecode panel: the on/off switch, the readout with its state and frames seen, and the fields Source, Device, Channel, Offset and Freewheel">
+<img src="images/show-timecode.png" width="1060" alt="The Timecode panel: the on/off switch, the readout with its state and frames seen, and the fields Source, Device, Channel, Offset, Start, Layer offset and Freewheel">
 
 While timecode runs (Locked or Freewheel) and a cue's trigger lies ahead,
 the panel reads `next trigger: cue 3 · Intro in 8 s` (`1:35` above a

@@ -47,7 +47,7 @@ right column with OSC and MIDI moves under the left one.
 
 ## Timecode
 
-<img src="../images/show-timecode.png" width="1060" alt="The Timecode panel: the on/off switch, the readout with its state and frames seen, and the fields Source, Device, Channel, Offset and Freewheel">
+<img src="../images/show-timecode.png" width="1060" alt="The Timecode panel: the on/off switch, the readout with its state and frames seen, and the fields Source, Device, Channel, Offset, Start, Layer offset and Freewheel">
 
 | Control | Does |
 |---|---|
@@ -84,7 +84,7 @@ Empty: "No cues yet. Add one, then give it values and a fade."
 
 ## Cue editor
 
-<img src="../images/cue-editor.png" width="1060" alt="The cue editor for cue 3: number, name, fade, trigger and follow, then its values per fixture and parameter">
+<img src="../images/cue-editor.png" width="1060" alt="The cue editor for cue 3: number, name, fade, trigger with its Now button and follow, then its values per fixture and parameter">
 
 | Control | Does |
 |---|---|
