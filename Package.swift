@@ -8,11 +8,6 @@ import PackageDescription
 let package = Package(
     name: "Fanous",
     platforms: [.macOS(.v15)],
-    products: [
-        .executable(name: "fanousd", targets: ["fanousd"]),
-        .executable(name: "FanousShell", targets: ["FanousShell"]),
-        .executable(name: "fanous-bench", targets: ["fanous-bench"]),
-    ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-log.git", exact: "1.17.0"),
     ],

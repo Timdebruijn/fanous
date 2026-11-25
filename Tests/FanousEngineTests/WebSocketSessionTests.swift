@@ -110,9 +110,12 @@ struct WebSocketSessionTests {
         }
     }
 
-    /// A masked client frame (RFC 6455 §5.3), built by `WebSocketFrame`'s own client encoder.
+    /// A masked client frame (RFC 6455 §5.3): the server's unmasked encoding with the mask bit and a key added.
     static func frame(_ opcode: WebSocketFrame.Opcode, fin: Bool = true, _ payload: [UInt8]) -> [UInt8] {
-        WebSocketFrame(fin: fin, opcode: opcode, payload: payload).encode(key: (0x37, 0xFA, 0x21, 0x3D))
+        var out = WebSocketFrame(fin: fin, opcode: opcode, payload: payload).serialized()
+        out[1] |= 0x80
+        out.replaceSubrange((out.count - payload.count)..., with: [0x37, 0xFA, 0x21, 0x3D] + WebSocketFrame.mask(payload, key: (0x37, 0xFA, 0x21, 0x3D)))
+        return out
     }
 
     static let hello = Array(#"{"t":"hello","clientId":"a","schema":1}"#.utf8)

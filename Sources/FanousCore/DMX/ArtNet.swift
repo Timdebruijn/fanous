@@ -15,21 +15,17 @@ public enum ArtNet {
         case poll = 0x2000
         case pollReply = 0x2100
         case dmx = 0x5000
-        case nzs = 0x5100
-        case sync = 0x5200
     }
 
     public enum Packet: Equatable, Sendable {
         case poll(ArtPoll)
-        case pollReply
         case dmx(ArtDmx)
-        case sync
-        case other(opCode: UInt16)
     }
 
     public enum ParseError: Error, Equatable { case tooShort, badHeader, badVersion, badLength }
 
-    public static func parse(_ bytes: [UInt8]) throws -> Packet {
+    /// nil for every OpCode but ArtPoll and ArtDmx: the engine acts on nothing else.
+    public static func parse(_ bytes: [UInt8]) throws -> Packet? {
         guard bytes.count >= 10 else { throw ParseError.tooShort }
         guard Array(bytes[0..<8]) == header else { throw ParseError.badHeader }
         let opCode = UInt16(bytes[8]) | UInt16(bytes[9]) << 8
@@ -45,14 +41,8 @@ public enum ArtNet {
             guard bytes.count >= 14 else { throw ParseError.tooShort }
             try checkVersion(bytes)
             return .poll(ArtPoll(flags: bytes[12], diagPriority: bytes[13]))
-        case .pollReply:
-            return .pollReply
-        case .sync:
-            guard bytes.count >= 14 else { throw ParseError.tooShort }
-            try checkVersion(bytes)
-            return .sync
         default:
-            return .other(opCode: opCode)
+            return nil
         }
     }
 
@@ -147,8 +137,7 @@ public struct ArtPollReply: Equatable, Sendable {
 
     /// One reply per group of four ports sharing Net and Sub-Net.
     public static func replies(
-        universes: [UniverseID], ipAddress: [UInt8], shortName: String, longName: String, nodeReport: String,
-        mac: [UInt8] = [0, 0, 0, 0, 0, 0]
+        universes: [UniverseID], ipAddress: [UInt8], shortName: String, longName: String, nodeReport: String
     ) -> [ArtPollReply] {
         let addresses = universes.filter { $0.transport == .artnet }.map(\.number).sorted()
         var groups: [(net: UInt8, subnet: UInt8, universes: [UInt8])] = []
@@ -166,7 +155,7 @@ public struct ArtPollReply: Equatable, Sendable {
         return groups.enumerated().map { index, group in
             ArtPollReply(
                 ipAddress: ipAddress, net: group.net, subnet: group.subnet, shortName: shortName, longName: longName,
-                nodeReport: nodeReport, ports: group.universes.map { Port(universe: $0, receiving: true) }, mac: mac,
+                nodeReport: nodeReport, ports: group.universes.map { Port(universe: $0, receiving: true) },
                 bindIndex: UInt8(index + 1))
         }
     }

@@ -83,18 +83,17 @@ public struct FixtureResolver: Sendable {
     /// One parameter, only when `source` set it.
     public mutating func clearInternal(_ id: ParameterID, source: ValueSource) {
         let i = ChannelMap.index(of: id)
-        guard internalSource[i] == source else { return }
-        if internalRaw[i] != nil { internalCount -= 1 }
-        internalRaw[i] = nil
-        internalSource[i] = .none
+        if internalSource[i] == source { clear(i) }
     }
 
     public mutating func clearInternal(source: ValueSource) {
-        for i in internalRaw.indices where internalSource[i] == source {
-            if internalRaw[i] != nil { internalCount -= 1 }
-            internalRaw[i] = nil
-            internalSource[i] = .none
-        }
+        for i in internalRaw.indices where internalSource[i] == source { clear(i) }
+    }
+
+    private mutating func clear(_ i: Int) {
+        if internalRaw[i] != nil { internalCount -= 1 }
+        internalRaw[i] = nil
+        internalSource[i] = .none
     }
 
     public func resolved(_ id: ParameterID) -> ResolvedValue { resolved(index: ChannelMap.index(of: id)) }

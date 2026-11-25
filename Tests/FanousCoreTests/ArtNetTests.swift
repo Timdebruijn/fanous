@@ -38,12 +38,12 @@ import Testing
         var old = Self.dmxFixture
         old[11] = 13
         #expect(throws: ArtNet.ParseError.badVersion) { try ArtNet.parse(old) }
-        #expect(try ArtNet.parse(Array("Art-Net\0".utf8) + [0x00, 0x99]) == .other(opCode: 0x9900))
+        #expect(try ArtNet.parse(Array("Art-Net\0".utf8) + [0x00, 0x99]) == nil)
     }
 
-    @Test func parsesPollAndSync() throws {
+    @Test func parsesPollAndIgnoresSync() throws {
         #expect(try ArtNet.parse(ArtPoll(flags: 2).encoded()) == .poll(ArtPoll(flags: 2, diagPriority: 0)))
-        #expect(try ArtNet.parse(Array("Art-Net\0".utf8) + [0x00, 0x52, 0, 14, 0, 0]) == .sync)
+        #expect(try ArtNet.parse(Array("Art-Net\0".utf8) + [0x00, 0x52, 0, 14, 0, 0]) == nil)
     }
 
     @Test func pollReplyLayout() {

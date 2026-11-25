@@ -57,14 +57,10 @@ public enum SACN {
         return Int(b[i] & 0x0F) << 8 | Int(b[i + 1])
     }
 
-    static func flagsLength(_ length: Int) -> [UInt8] { [0x70 | UInt8(length >> 8 & 0x0F), UInt8(length & 0xFF)] }
     static func cString(_ b: [UInt8], _ start: Int, _ length: Int) -> String {
         let field = b[start..<start + length]
         let end = field.firstIndex(of: 0) ?? field.endIndex
         return String(decoding: field[field.startIndex..<end], as: UTF8.self)
-    }
-    static func root(cid: [UInt8], vector: UInt32, bodyLength: Int) -> [UInt8] {
-        [0, 0x10, 0, 0] + acnIdentifier + flagsLength(22 + bodyLength) + vector.bigEndianBytes + cid
     }
 }
 
@@ -98,11 +94,4 @@ public struct SACNData: Equatable, Sendable {
     public var isPreview: Bool { options & 0x80 != 0 }
     public var isTerminated: Bool { options & 0x40 != 0 }
     public var universeID: UniverseID { UniverseID(.sacn, Int(universe)) }
-
-    public func encoded() -> [UInt8] {
-        let dmp = SACN.flagsLength(10 + 1 + slots.count) + [0x02, 0xA1, 0, 0, 0, 1] + UInt16(1 + slots.count).bigEndianBytes + [startCode] + slots
-        let framing = SACN.flagsLength(77 + dmp.count) + SACN.framingVectorData.bigEndianBytes + [UInt8].fixed(sourceName, 64)
-            + [priority] + syncAddress.bigEndianBytes + [sequence, options] + universe.bigEndianBytes
-        return SACN.root(cid: cid, vector: SACN.rootVectorData, bodyLength: framing.count + dmp.count) + framing + dmp
-    }
 }

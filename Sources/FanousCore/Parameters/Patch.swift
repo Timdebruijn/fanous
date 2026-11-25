@@ -107,17 +107,6 @@ public struct Patch: Codable, Sendable, Equatable {
 
     public var universes: [UniverseID] { Array(Set(entries.map(\.universe))).sorted() }
 
-    /// Pairs of entries that share a universe and overlap in channels.
-    public func collisions() -> [(PatchEntry, PatchEntry)] {
-        var result: [(PatchEntry, PatchEntry)] = []
-        for (i, a) in entries.enumerated() {
-            for b in entries[(i + 1)...] where a.universe == b.universe && a.channels.overlaps(b.channels) {
-                result.append((a, b))
-            }
-        }
-        return result
-    }
-
     /// 8 layers per Art-Net universe starting at 0.0.0, master and outputs on the universe after the layers. A project
     /// starts with `outputs: 0`: `output.add` patches each Output fixture next to the Master. At most 64 layers, the most
     /// `layers.setCount` gives (a hand-edited layer count is any Int, B266).

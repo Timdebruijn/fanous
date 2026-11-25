@@ -250,3 +250,13 @@ private let upgradeHead =
         }
     }
 }
+
+// A client-to-server frame (RFC 6455 §5.3): the server's unmasked encoding with the mask bit and `key` added.
+extension WebSocketFrame {
+    func encode(key: (UInt8, UInt8, UInt8, UInt8)) -> [UInt8] {
+        var out = serialized()
+        out[1] |= 0x80
+        out.replaceSubrange((out.count - payload.count)..., with: [key.0, key.1, key.2, key.3] + Self.mask(payload, key: key))
+        return out
+    }
+}
