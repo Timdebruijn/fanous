@@ -803,11 +803,11 @@ public final class Compositor: @unchecked Sendable {
             {
                 loop = (Double(inFrame) / playback.frameRate, Double(outFrame + 1) / playback.frameRate)
             }
-            // stamped with the target: the frame at this position is shown then, not now (B320)
+            // stamped with the target, the tick's nominal presentation time, not now (B320)
             channel.setState(
                 wantedPTS: playback.clock.position / max(1, playback.frameRate), active: active,
                 volume: p.audioVolume * weight, pan: p.audioPan, loop: loop,
-                jumped: (retrigger && master == nil) || slaveJumped, atHostNanos: UInt64(ctx.target * 1e9))
+                jumped: (retrigger && master == nil) || slaveJumped, atHostNanos: UInt64(max(0, ctx.target * 1e9)))
         }
         guard let frameIndex else { return }  // once-then-black has finished
         let intensity = p.intensity * weight

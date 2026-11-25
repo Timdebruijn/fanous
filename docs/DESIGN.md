@@ -3557,13 +3557,15 @@ groundwork and small engine pieces first):
   (`[OPEN-15]` varispeed/pitch later). Freeze/scrub mute instantly, dissolve
   crossfades audio with the video.
 - Sync: the layer clock is master. The compositor hands the audio the
-  clock's position with the tick's target, the host time that frame is
-  shown at (B320: stamped with the time of the tick, the audio ran one
-  tick's lead ahead of the picture), and the audio extrapolates it in host
-  time. The render callback reads that clock at its own start, not at the
-  time its buffer is heard: the output path's latency is not compensated
-  (B406). It compares the ring's
-  head pts with the clock; drift beyond ±20 ms is corrected by dropping or
+  clock's position with the tick's target, the tick's nominal presentation
+  time (B320: stamped with the time of the tick, the audio ran one tick's
+  lead ahead of the picture), and the audio extrapolates it in host time;
+  the decoder never takes its clock before that target, so a seek to an in
+  point or a loop's restart starts there and the first callback waits
+  silent for it. The render callback reads that clock at its own start,
+  not at the time its buffer is heard: the output path's latency is not
+  compensated (B406). It compares the ring's head pts with the clock;
+  drift beyond ±20 ms is corrected by dropping or
   repeating up to 2 ms per callback (inaudible for programme material) until
   the audio is on the clock or the drift changes sign, not only back inside
   the window (B394: a correction that stopped at the window's edge left 18 to
@@ -3577,9 +3579,11 @@ groundwork and small engine pieces first):
   it locked on: first, or again after freewheeling or a freeze; B395), so
   its audio reseeks like the master's; a slave tick that starts late is no
   jump (a remote master's entry is extrapolated in host time; a local
-  master's entry steps in target time), nor is a tick that holds the slave
-  at its last frame under a longer master file; the master's loop wrap leaves under a frame, a reseek
-  only below 50 fps, where the producer reseeks at the wrap anyway;
+  master's entry steps in target time; a late tick shifts a remote slave's
+  audio clock by its lateness for that tick, which the ±20 ms window
+  absorbs), nor is a tick that holds the slave at its last frame under a
+  longer master file; the master's loop wrap leaves under a frame, a
+  reseek only below 50 fps, where the producer reseeks at the wrap anyway;
   between two callbacks the ring's head runs up to one callback ahead
   of the clock, so a clock a little behind the ring is normal and is never
   inferred to be a jump. From the signal until the decoder has started the new

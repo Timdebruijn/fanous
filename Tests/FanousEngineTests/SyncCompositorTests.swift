@@ -178,30 +178,31 @@ struct SyncCompositorTests {
         #expect(channel.statistics.corrections == 0)
     }
 
-    /// B320: the compositor computes the layer clock for the tick's target (the vsync its frame is shown at) and must
-    /// stamp the audio channel's clock with that target, not with the time of the tick: stamped with now, the audio
-    /// heard now was the media at the target, the tick's lead (a canvas period or more) ahead of the picture. The
-    /// target is on the clock of `CACurrentMediaTime()`, the channel's host nanoseconds on `CLOCK_UPTIME_RAW`: the same
-    /// `mach_absolute_time()` timebase, checked here too. A virtual target (the rig's) and a realistic one, one period
-    /// ahead of now.
+    /// B320: the compositor computes the layer clock for the tick's target (the tick's nominal presentation time) and
+    /// must stamp the audio channel's clock with that target, not with the time of the tick: stamped with now, the
+    /// audio heard now was the media at the target, the tick's lead (a canvas period or more) ahead of the picture.
+    /// The target is on the clock of `CACurrentMediaTime()`, the channel's host nanoseconds on `CLOCK_UPTIME_RAW`: the
+    /// same `mach_absolute_time()` timebase, checked here too. Two ticks at realistic targets, one period apart, the
+    /// first one period ahead of now.
     @Test func theAudioClockIsStampedWithTheTicksTarget() async throws {
-        #expect(abs(CACurrentMediaTime() - Double(LayerAudioChannel.hostNanos()) / 1e9) < 1e-3, "one timebase")
+        let before = LayerAudioChannel.hostNanos()
+        let media = CACurrentMediaTime()
+        let after = LayerAudioChannel.hostNanos()
+        #expect(Double(before) / 1e9 - 1e-6 <= media && media <= Double(after) / 1e9 + 1e-6, "one timebase")
         let rig = try await Rig([.off])
         let channel = LayerAudioChannel()
         rig.layers[0].current!.decoder!.audioChannel = channel
         let playback = rig.layers[0].current!
-        rig.tick()  // target 3600
-        let virtual = playback.clock.position / playback.frameRate
-        let offVirtual = (channel.wantedPTS(atHostNanos: 3600_000_000_000) - virtual) * 1000
-        #expect(abs(offVirtual) < 1e-3, "at the target: \(offVirtual) ms off")
-
-        let target = CACurrentMediaTime() + 1.0 / 60
-        rig.compositor.tick(target: target, drawable: nil)
-        let now = LayerAudioChannel.hostNanos()
-        let pts = playback.clock.position / playback.frameRate
-        let off = (channel.wantedPTS(atHostNanos: UInt64(target * 1e9)) - pts) * 1000
-        #expect(abs(off) < 1e-3, "at the target: \(off) ms off")
-        #expect(channel.wantedPTS(atHostNanos: now) < pts, "behind the target's position now, by the lead")
+        let first = CACurrentMediaTime() + 1.0 / 60
+        for target in [first, first + 1.0 / 60] {
+            rig.compositor.tick(target: target, drawable: nil)
+            let pts = playback.clock.position / playback.frameRate
+            let stamp = UInt64(target * 1e9)
+            let off = (channel.wantedPTS(atHostNanos: stamp) - pts) * 1000
+            #expect(abs(off) < 1e-3, "at the target: \(off) ms off")
+            let earlier = channel.wantedPTS(atHostNanos: stamp - 10_000_000) - (pts - 0.01)
+            #expect(abs(earlier) < 1e-6, "10 ms before the target, 10 ms before its position: \(earlier * 1000) ms off")
+        }
     }
 
     @Test func aMasterLandsInTheSlotAndALocalSlaveFollowsInTheSameTick() async throws {

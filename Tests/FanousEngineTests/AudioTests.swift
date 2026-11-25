@@ -276,6 +276,25 @@ extension LayerAudioChannel {
         #expect(abs(channel.wantedPTS(atHostNanos: 2_010_000_000) - 7.01) < 1e-9)
     }
 
+    /// B320 review: the compositor stamps its position with the tick's target, ahead of now, so before the target the
+    /// clock reads up to one tick's lead before that position. The producer takes its clock at the stamp: a segment
+    /// cued at an in point (1 s) starts there, not before it, and the first pull waits silent until the clock reaches
+    /// it. The target is 1 s ahead so a stalled test machine cannot pass it; a real one is a tick ahead.
+    @Test func theProducerNeverTakesItsClockBeforeTheStamp() {
+        let channel = LayerAudioChannel()
+        channel.setState(wantedPTS: 1, active: true, volume: 1, pan: 0, atHostNanos: LayerAudioChannel.hostNanos() + 1_000_000_000)
+        let source = RampSource()
+        var seeks: [Double] = []
+        channel.fill(wanted: channel.producerWantedPTS, read: { source.read($0, $1) }, seek: { seeks.append($0); source.seek($0) })
+        #expect(seeks.count == 1 && abs(seeks[0] - 1) < 1e-6, "seeked to \(seeks), not before the in point")
+        var out = AudioTests.pull(channel, frames: 480, wanted: 0.99)  // before the target: waits
+        #expect(out.left.allSatisfy { $0 == 0 } && abs(channel.nextFramePTS - 1) < 1e-6, "nothing heard, nothing consumed")
+        out = AudioTests.pull(channel, frames: 480, wanted: 1)  // at the target: from the in point
+        #expect(abs(channel.nextFramePTS - 1.01) < 1e-6)
+        #expect(abs(out.left[479] - 48_479) < 1, "the in point's frames: \(out.left[479])")
+        #expect(channel.statistics.corrections == 0)
+    }
+
     @Test func inactiveChannelIsSilentAndConsumesNothing() {
         let source = RampSource()
         let channel = LayerAudioChannel()
