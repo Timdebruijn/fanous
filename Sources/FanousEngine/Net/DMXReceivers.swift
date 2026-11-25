@@ -73,7 +73,7 @@ public final class ArtNetReceiver: @unchecked Sendable {
     }
 
     private func reply(to connection: NWConnection) {
-        let ip = SystemInfo.ipv4Addresses.first.flatMap(Self.ipBytes) ?? [127, 0, 0, 1]
+        let ip = SystemInfo.ipv4Addresses.first.flatMap { IPv4Address($0).map { Array($0.rawValue) } } ?? [127, 0, 0, 1]
         let replies = ArtPollReply.replies(
             universes: store.universes, ipAddress: ip, shortName: nodeName, longName: "\(Attribution.projectName) Media Server",
             nodeReport: "#0001 [0000] \(Attribution.projectName) \(FanousVersion.string)")
@@ -83,11 +83,6 @@ public final class ArtNetReceiver: @unchecked Sendable {
     static func host(of endpoint: NWEndpoint) -> String {
         if case .hostPort(let host, _) = endpoint { return "\(host)".split(separator: "%").first.map(String.init) ?? "\(host)" }
         return "\(endpoint)"
-    }
-
-    static func ipBytes(_ text: String) -> [UInt8]? {
-        let parts = text.split(separator: ".").compactMap { UInt8($0) }
-        return parts.count == 4 ? parts : nil
     }
 }
 

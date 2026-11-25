@@ -82,12 +82,11 @@ import Testing
         let dir = try tempDir("upload")
         let server = try Self.server(limits: limits, logger: logger) { _ in nil }
         let files = Mutex(0)
-        server.uploadSink = { _ in
+        server.upload = ({ _ in
             if sinkDelay > 0 { Thread.sleep(forTimeInterval: sinkDelay) }  // on the connection's queue, as a slow disk would be
             let file = dir.appending(path: "upload-\(files.withLock { $0 += 1; return $0 }).bin")
             return FileManager.default.createFile(atPath: file.path, contents: nil) ? file : nil
-        }
-        server.uploadRoute = { _, file in .text(202, "stored \((try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int ?? -1)") }
+        }, { _, file in .text(202, "stored \((try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int ?? -1)") })
         return (server, dir)
     }
 

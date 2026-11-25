@@ -63,8 +63,7 @@ public struct FileLogHandler: LogHandler {
     }
 
     public func log(event: LogEvent) {
-        let merged = self.metadata.merging(event.metadata ?? [:]) { $1 }
-        let suffix = merged.isEmpty ? "" : " " + merged.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " ")
+        let suffix = metadata.suffix(with: event.metadata)
         let stamp = Date.ISO8601FormatStyle(includingFractionalSeconds: true).format(Date())
         sink.write("\(stamp) \(event.level) [\(label)] \(event.message)\(suffix)\n")
     }
@@ -86,5 +85,13 @@ public enum EngineLogging {
         var file = FileLogHandler(label: label, sink: sink)
         file.logLevel = level
         return MultiplexLogHandler([stderr, unified, file])
+    }
+}
+
+extension Logger.Metadata {
+    /// This metadata with the event's over it, as a line's " key=value …" suffix sorted by its text; "" when there is none.
+    func suffix(with event: Logger.Metadata?) -> String {
+        let merged = merging(event ?? [:]) { $1 }
+        return merged.isEmpty ? "" : " " + merged.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " ")
     }
 }

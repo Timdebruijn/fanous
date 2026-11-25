@@ -59,3 +59,10 @@ machine the key is a user-readable file, as with every file-based TLS server
 keychain in signed builds. The `kSecImportToMemoryOnly` PKCS#12 route
 (macOS 15+) would do the same with ~250 more lines (a PKCS#12 writer) and was
 not needed.
+
+## Amendment 2026-11-25: no login-keychain cleanup
+
+`fanousd reset-tls` removes the data-protection key and the files in `tls/`
+only. The search for login-keychain leftovers (keys and certificates) is
+gone: only the Phase 2 development builds before the amendment above wrote
+there, none was released, and no build since reads such an item.

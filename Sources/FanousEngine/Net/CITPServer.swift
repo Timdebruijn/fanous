@@ -75,8 +75,7 @@ public final class CITPServer: @unchecked Sendable {
     var perAddress = 8
     /// The longest a session may hold half a message, or wait for its console to take what was sent to it (B269).
     var stallLimit = 30.0
-    private var refused = 0
-    private var lastRefusalLog = -Double.infinity
+    private var refusals = RefusalLog()
     private var lastStallCheck = 0.0
     /// Layer status at 4 Hz; the stall check runs with it.
     static let statusInterval = 0.25
@@ -223,16 +222,8 @@ public final class CITPServer: @unchecked Sendable {
     /// Closes a connection from an address at `perAddress`; one log line a minute at most, with the count since the last.
     private func refuse(_ connection: NWConnection, from host: String) {
         connection.cancel()
-        refused += 1
         status.withLock { $0.refused += 1 }
-        let now = ProcessInfo.processInfo.systemUptime
-        guard now - lastRefusalLog >= 60 else { return }
-        // `peer` is the address refused as the line is written; `refused` counts every address since the last line
-        logger.warning(
-            "CITP connection refused: too many open from one address (one line a minute, refused counts every address)",
-            metadata: ["peer": "\(host)", "limit": "\(perAddress)", "refused": "\(refused)"])
-        lastRefusalLog = now
-        refused = 0
+        if let refused = refusals.add() { RefusalLog.warn(logger, "CITP", peer: host, limit: perAddress, refused: refused) }
     }
 
     /// Ends a session that held half a message, or had sends the console did not take, for `stallLimit`: a console that

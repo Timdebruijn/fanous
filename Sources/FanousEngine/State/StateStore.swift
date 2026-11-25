@@ -90,7 +90,6 @@ public final class StateStore: @unchecked Sendable {
     private var clients: [ObjectIdentifier: Client] = [:]
     private var pendingLive: [JSONPatch.Operation] = []
     private var liveTimer: DispatchSourceTimer?
-    private let encoder: JSONEncoder
     private let logger: Logger
     /// Called on `queue` after every project change (autosave), before the change goes out to clients.
     public var onProjectChanged: (@Sendable (JSONValue) -> Void)?
@@ -98,8 +97,6 @@ public final class StateStore: @unchecked Sendable {
     public init(project: JSONValue, logger: Logger) {
         projectDocument = project
         self.logger = logger
-        encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         register(CommandSpec(name: "undo", role: .programmer, undoable: false, summary: "Undo the last undoable command (global history).") { _, _ in nil })
         register(CommandSpec(name: "redo", role: .programmer, undoable: false, summary: "Redo the last undone command.") { _, _ in nil })
         register(CommandSpec(name: "show.lock", role: .programmer, mutatesConfig: false, undoable: false, summary: "Lock the show: configuration commands are refused.") { project, _ in
@@ -360,11 +357,9 @@ public final class StateStore: @unchecked Sendable {
     }
 
     private func patchMessage(doc: String, patch: JSONPatch) -> String {
-        let ops = (try? JSONDecoder().decode(JSONValue.self, from: encoder.encode(patch.operations))) ?? []
+        let ops = (try? JSONDecoder().decode(JSONValue.self, from: JSONValue.wireEncoder.encode(patch.operations))) ?? []
         return encode(["t": "patch", "rev": .number(Double(revision)), "doc": .string(doc), "ops": ops])
     }
 
-    func encode(_ value: JSONValue) -> String {
-        String(decoding: (try? encoder.encode(value)) ?? Data("{}".utf8), as: UTF8.self)
-    }
+    func encode(_ value: JSONValue) -> String { JSONValue.encodeCompact(value) }
 }
