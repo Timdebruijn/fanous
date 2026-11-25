@@ -10,7 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Preview: the canvas, output and layer previews skip a frame while 2 are still waiting to be encoded, so a stalled preview
+- Preview: the canvas, output and layer previews skip a frame while 4 are still waiting to be encoded, so a stalled preview
   queue no longer piles up pixel buffers allocated on the compositor thread (B302) (PR #482).
 - Docs: the owner's four decisions on the 3D pixel-mapping note (`docs/pixelmap-3d.md` §6, row B407): z up with
   the up axis a project setting, CSV and OPC import both, the height map on its own canvas, order atlas, kinetic,

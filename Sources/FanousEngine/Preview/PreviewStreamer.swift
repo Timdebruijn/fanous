@@ -76,11 +76,15 @@ public final class PreviewStreamer: @unchecked Sendable {
     public let framesIn = Atomic<Int>(0)
     public let framesOut = Atomic<Int>(0)
     public let skipped = Atomic<Int>(0)
-    /// B302: preview frames tapped whose encode on the preview queue has not finished. At 2 the tap skips (`skipped`), so a
-    /// stalled queue (a JPEG encode that hangs, B99; a saturated GPU; starved utility QoS) holds 2 pixel buffers, not one per
-    /// preview frame allocated on the compositor thread. The pool refuses more than `poolLimit` in use besides (VideoToolbox
-    /// holds the frames it encodes).
+    /// B302: preview frames tapped whose encode on the preview queue has not finished, counted from the tap, so a frame
+    /// still on the GPU counts. At `maxInFlight` the tap skips (`skipped`), so a stalled queue (a JPEG encode that hangs,
+    /// B99; a saturated GPU; starved utility QoS) holds that many pixel buffers, not one per preview frame allocated on the
+    /// compositor thread. The pool refuses more than `poolLimit` in use besides (VideoToolbox holds the frames it encodes).
     private let inFlight = Atomic<Int>(0)
+    /// The compositor keeps up to 3 command buffers in flight (its three canvas textures), each may carry a tapped frame,
+    /// plus one being encoded: only a real stall reaches 4. Measured by the coordinator: a cap of 2 skipped about 1.4 frames
+    /// a second in normal use (an H.264 640 and a JPEG 320 preview open, 61 fps canvas).
+    static let maxInFlight = 4
     private let poolLimit = BGRAPixelPool.threshold(8)
     /// Tests: `inFlight`.
     var framesInFlight: Int { inFlight.load(ordering: .relaxed) }
@@ -190,7 +194,7 @@ public final class PreviewStreamer: @unchecked Sendable {
     public func tap(canvas: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double, canvases: ((Int) -> MTLTexture?)? = nil, live: OutputSet? = nil) {
         tickCounter &+= 1
         guard wantsFrames, tickCounter % (wantsH264 ? everyNth : jpegEveryNth) == 0, let pool, let textureCache else { return }
-        guard inFlight.load(ordering: .relaxed) < 2,
+        guard inFlight.load(ordering: .relaxed) < Self.maxInFlight,
             let (pixelBuffer, cvTexture) = BGRAPixelPool.buffer(from: pool, cache: textureCache, width: width, height: height, limit: poolLimit),
             let texture = CVMetalTextureGetTexture(cvTexture)
         else {

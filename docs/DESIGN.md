@@ -4061,9 +4061,10 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   pooled BGRA pixel buffer on the compositor's command buffer every N-th tick,
   VideoToolbox H.264 Baseline (1 s GOP, 1.5 Mbit/s, 640×360@30) on a utility
   queue, JPEG at 5 fps for clients without WebCodecs; one encoder shared by
-  all subscribers. With 2 tapped frames not yet encoded the tap skips the
-  frame (counted in `skipped`), and the pool hands out at most 8 buffers, so a
-  stalled preview queue holds 2 buffers, not one per frame (B302). Per-layer live thumbnails were deferred (B29, built 2026-10-28, §11.3).
+  all subscribers. With 4 tapped frames not yet encoded (up to 3 command
+  buffers in flight plus one encode) the tap skips the frame (counted in
+  `skipped`), and the pool hands out at most 8 buffers, so a stalled preview
+  queue holds 4 buffers, not one per frame (B302). Per-layer live thumbnails were deferred (B29, built 2026-10-28, §11.3).
 - UI: Svelte 5 runes, hash router, one deep `$state` tree patched in place,
   `protocol.d.ts` generated from the command registry; status bar, Layers,
   Media and Patch/DMX screens follow the approved design canvas; system fonts

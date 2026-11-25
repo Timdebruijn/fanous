@@ -47,9 +47,9 @@ struct PreviewStreamerTests {
         #expect(streamer.framesIn.load(ordering: .relaxed) == 1 + 4)
     }
 
-    /// B302: with the preview queue stalled, the tap hands at most 2 pixel buffers to it and skips the other frames
-    /// (`skipped`); once the queue runs again, frames go through. On the old code every preview frame took a new buffer.
-    @Test func aStalledPreviewQueueHoldsAtMostTwoFrames() async throws {
+    /// B302: with the preview queue stalled, the tap hands at most 4 pixel buffers to it (`maxInFlight`) and skips the other
+    /// frames (`skipped`); once the queue runs again, frames go through. On the old code every preview frame took a new buffer.
+    @Test func aStalledPreviewQueueHoldsAtMostFourFrames() async throws {
         let context = try MetalContext()
         let (compositor, parameters) = try makeCompositor(context, size: (320, 180))
         let streamer = try PreviewStreamer(context: context, width: 320, height: 180, fps: 60, canvasFPS: 60, parameters: parameters, logger: testLogger)
@@ -58,14 +58,14 @@ struct PreviewStreamerTests {
         let gate = DispatchSemaphore(value: 0)
         streamer.queue.async { gate.wait() }  // the stall
         for i in 0..<10 { compositor.tick(target: 1 + Double(i) / 60, drawable: nil) }
-        #expect(streamer.framesIn.load(ordering: .relaxed) == 2)
-        #expect(streamer.skipped.load(ordering: .relaxed) == 8)
+        #expect(streamer.framesIn.load(ordering: .relaxed) == 4)
+        #expect(streamer.skipped.load(ordering: .relaxed) == 6)
         gate.signal()
         var ticks = 10
         let resumed = await waitUntil {
             compositor.tick(target: 1 + Double(ticks) / 60, drawable: nil)
             ticks += 1
-            return streamer.framesIn.load(ordering: .relaxed) > 2
+            return streamer.framesIn.load(ordering: .relaxed) > 4
         }
         #expect(resumed, "no frame after the queue ran again")
     }
