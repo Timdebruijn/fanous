@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Sync: a slave no longer shows the frame past a once clip's out point (before its in point in reverse) for a tick at
+  the end (B383). The slave extrapolated the master's last moving tick by rate × age without knowing the out point; a
+  master in a once mode now sends rate 0 while its clock shows the end frame. The packet layout is unchanged; a loop's
+  wrap is B426 (PR #N).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in

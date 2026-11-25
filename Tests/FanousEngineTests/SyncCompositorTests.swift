@@ -39,6 +39,8 @@ struct SyncCompositorTests {
         var speed: Float = 1
         /// Layer 1's in and out point.
         var inOut: (Float, Float) = (0, 1)
+        /// Layer 1's play mode.
+        var playMode = PlayMode.loopForward
 
         init(_ sync: [LayerSync]) async throws {
             directory = try tempDir("fanous-ingest-tests")
@@ -72,6 +74,7 @@ struct SyncCompositorTests {
             let roles = roles
             let freezeAll = freezeAll
             let inOut = inOut
+            let playMode = playMode
             let masterSpeed = masterSpeed
             let speed = speed
             parameters.write { slot in
@@ -86,6 +89,7 @@ struct SyncCompositorTests {
                     slot.layers[i].sync = role
                     slot.layers[i].inPoint = i == 0 ? inOut.0 : 0
                     slot.layers[i].outPoint = i == 0 ? inOut.1 : 1
+                    if i == 0 { slot.layers[i].playMode = playMode }
                 }
             }
         }
@@ -205,6 +209,25 @@ struct SyncCompositorTests {
         rig.publish()
         rig.tick()
         #expect(rig.sender.slots.read().packet.layers.first?.rate == 0)
+    }
+
+    /// B383: a once master sends rate 0 from the tick its clock shows the out frame, before it finishes, so a remote
+    /// slave does not extrapolate past an out point it cannot see. Out at frame 10 of 20 (0.5 × 19, rounded); 10 fps on
+    /// 60 Hz ticks.
+    @Test func aOnceMasterSendsRate0WhileItShowsItsOutFrame() async throws {
+        let rig = try await Rig([.master(group: 3)])
+        rig.playMode = .onceHold
+        rig.inOut = (0, 0.5)
+        rig.publish()
+        var rates: [(frame: Int, finished: Bool, rate: Float)] = []
+        for _ in 0..<80 {
+            rig.tick()
+            let clock = rig.layers[0].current!.clock
+            rates.append((clock.frame(lo: 0, hi: 10), clock.finished, rig.sender.slots.read().packet.layers.first?.rate ?? -1))
+        }
+        #expect(rates.filter { $0.frame < 10 }.allSatisfy { $0.rate == 10 }, "\(rates)")
+        #expect(rates.contains { $0.frame == 10 && !$0.finished }, "the out frame shows before the clock finishes")
+        #expect(rates.filter { $0.frame == 10 }.allSatisfy { $0.rate == 0 }, "\(rates)")
     }
 
     /// A dissolve on a slave: the new file follows the master, the outgoing one keeps its own clock.

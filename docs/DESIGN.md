@@ -5197,7 +5197,7 @@ FanousSync v1
       u8 group, u8 layer (source, informational)
       u16 mediaKey (packed folder/file), f32 fps
       f64 position (media frames), i8 direction, u8 finished
-      f32 rate (media frames per second as the clock really advances: speed × master speed × fps × direction; 0 when frozen, finished or paused)
+      f32 rate (media frames per second as the clock really advances: speed × master speed × fps × direction; 0 when frozen, finished or paused, and while a once mode shows its end frame, B383)
 ```
 
 - **Where it goes:** the subnet broadcast address of the sync interface
@@ -5383,6 +5383,15 @@ differs from the text above:
   when its master moves at 1× forward, without a loop region (its own in/out
   do not apply). Freeze-all on the slave machine holds a slave like any other
   layer; the first tick after it relocks.
+- A master in a once mode also sends rate 0 while its clock shows the end
+  frame (the out point; the in point in reverse) and has not finished yet
+  (B383): a slave sees no in or out point and ignores its own (§23.1), so
+  extrapolating `rate × age` from there showed the frame past the out point
+  (from 1.7 ms of age at 25p on 50 Hz) or before the in point for one tick.
+  It holds for an entry younger than one content frame; its audio stops up to
+  one frame before the master's. A loop's wrap with in and out points, and a
+  master stepping more than one frame per tick, can still show the frame past
+  the seam for a tick: that needs the in and out points in the packet (B426).
 - `live.sync` carries packet totals (`packetsIn`, `packetsOut`,
   `packetsDropped` since B123, `decodeErrors`) and the machine id instead of `packetsPerSecond`; the UI
   shows the totals. A master's `name` is shown for masters on this machine only.

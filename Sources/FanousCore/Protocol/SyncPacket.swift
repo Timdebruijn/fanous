@@ -17,7 +17,8 @@ public struct SyncPacket: Equatable, Sendable {
         public var position: Double
         public var direction: Int8
         public var finished: Bool
-        /// Media frames per second as the clock really advances; 0 when frozen, finished or paused.
+        /// Media frames per second as the clock really advances; 0 when frozen, finished or paused, and while a once mode
+        /// shows its end frame (B383).
         public var rate: Float
 
         public init(
