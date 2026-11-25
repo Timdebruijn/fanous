@@ -3716,11 +3716,14 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   were sent (one at a time, on that connection's receive queue), each with a
   `sub` or a refusal (`error` with `stream`): the client matches replies to its
   requests by that order.
-- Commands run one at a time on that queue too, in the order sent, except
-  `show.mode` (B287): it runs on a second queue of that connection, as
-  entering runs the readiness checks (up to about 12 s). Its ack still comes after the checks,
-  with their outcome, but a `cue.go` sent behind it runs at once and its ack
-  can come first: the client matches acks by `id`.
+- Commands run one at a time on that queue too, in the order sent, except a
+  `show.mode` entry (B287): it runs on a second queue of that connection, as
+  entering runs the readiness checks (up to about 12 s). Its ack still comes
+  after the checks, with their outcome, but every other command sent behind
+  an entering `show.mode` runs at once and its ack can come first: the order
+  between a `show.mode` entry and the connection's other commands is not kept;
+  the client matches acks by `id`. A leave waits for an entry still on that
+  queue and is done before the connection's next command runs.
 - Patches are RFC 6902 ops on a revision counter; a client that misses a
   revision (gap) re-requests a snapshot. Every change to `project` is a
   **command** on Control: validated, applied, inverse recorded for undo,
@@ -4912,8 +4915,8 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   entry at a time, and decides on the control queue (show mode still off, no
   library root change started since the checks began, no leave since the entry
   arrived; a leave from another client or source during an entry wins and the
-  entry answers ok without entering). The entering client's
-  own later commands still wait, its connection's queue being serial; the 30 s timer, `readiness.run` and the display syncs
+  entry answers ok without entering). The entering connection's later
+  commands run at once (B287); the 30 s timer, `readiness.run` and the display syncs
   queue them on a serial readiness queue, off the feed queue, and a run's items
   are stored only if no later-started run stored first (B187). Desired display modes are applied on entering
   and restored on leaving (B33, `DisplayModeSwitcher`, matching in

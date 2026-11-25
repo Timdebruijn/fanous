@@ -91,8 +91,8 @@ public final class StateServer: @unchecked Sendable {
         private let grantedRole = Mutex<Role?>(nil)
         public let clientId = Mutex<String>("")
         let subscriptions = Mutex<[UInt32: Subscription]>([:])
-        /// B287: this connection's `show.mode` commands run here, in the order sent, off its receive queue: entering runs
-        /// the readiness checks (up to about 12 s).
+        /// B287: this connection's `show.mode` commands run here, in the order sent; an entry off its receive queue, as
+        /// entering runs the readiness checks (up to about 12 s). Nothing here waits on the receive queue.
         private let showModeQueue = DispatchQueue(label: "org.fanous.ws.show-mode", qos: .userInitiated)
 
         init(server: StateServer, cookieRole: Role?) {
@@ -159,8 +159,14 @@ public final class StateServer: @unchecked Sendable {
                         }
                     reply(ack, on: session)
                 }
-                // its ack still waits for the checks, but a GO sent behind it does not: that ack may come first
-                if name == "show.mode" { showModeQueue.async(execute: run) } else { run() }
+                // an entry's ack still waits for the checks, but a GO sent behind it does not: that ack may come first. A
+                // leave waits for an entry still on the queue (inline it could run first and be lost) and is done before
+                // the next command, which may be one show mode refuses
+                if name == "show.mode" {
+                    if args["on"]?.bool == true { showModeQueue.async(execute: run) } else { showModeQueue.sync(execute: run) }
+                } else {
+                    run()
+                }
             case "snapshot":
                 server.store.clearLagging(self)
                 session.send(text: server.store.snapshot(role: role), droppable: false)

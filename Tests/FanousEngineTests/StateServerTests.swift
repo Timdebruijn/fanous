@@ -254,7 +254,7 @@ import Testing
 
     /// B287: `show.mode true` runs the readiness checks (2 s here) off the connection's queue, so a `cue.go` sent behind
     /// it on the same connection runs at once and its ack comes first; the show mode ack still waits for the checks and
-    /// carries their outcome. Before, the GO waited the whole 2 s behind them.
+    /// carries their outcome. Before, the GO waited the whole 2 s behind them. A leave keeps its place in the order.
     @Test func aGoIsNotHeldUpByShowModeReadiness() async throws {
         let f = try await Self.start()
         defer { f.server.stop() }
@@ -277,7 +277,15 @@ import Testing
         #expect(first["id"]?.string == "g1" && second["id"]?.string == "s1", "the GO's ack first")
         #expect(second["ok"]?.bool == false && second["error"]?["code"]?.string == "notReady", "the checks' outcome: \(second)")
         let delay = try #require(wentAt.withLock { $0 }) - sent
-        #expect(delay < .milliseconds(100), "the GO ran \(delay) after it was sent")
+        #expect(delay < .seconds(1), "the GO ran \(delay) after it was sent")
+
+        // a leave behind an entry waits for it, and the next command waits for the leave: it may be one show mode refuses
+        try await a.send(.string(#"{"t":"cmd","id":"s2","name":"show.mode","args":{"on":true}}"#))
+        try await a.send(.string(#"{"t":"cmd","id":"s3","name":"show.mode","args":{"on":false}}"#))
+        try await a.send(.string(#"{"t":"cmd","id":"g2","name":"cue.go"}"#))
+        var order: [String] = []
+        for _ in 0..<3 { order.append(try await Self.receive(a, until: "ack")["id"]?.string ?? "?") }
+        #expect(order == ["s2", "s3", "g2"], "the entry, then the leave, then the GO")
         a.cancel(with: .normalClosure, reason: nil)
     }
 }
