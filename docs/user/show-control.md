@@ -191,10 +191,13 @@ Setting up LTC:
    item **Microphone permission granted** blocks show mode without it while
    the Source is LTC, whatever the switch says
    ([Live inputs](live-inputs.md#permissions)).
-2. Plug the LTC feed into an audio input of the Mac. On the Inputs screen,
-   select that input, pick the channel (1 is the first) and press **Use for
-   timecode**: Source, Device and Channel are set in one step. The same
-   fields are on the Show screen's Timecode panel.
+2. Plug the LTC feed into an audio input of the Mac. A Dante or AVB
+   channel is an input like any other: with Dante Virtual Soundcard the LTC
+   channel the sound desk sends over the network shows up as an input
+   channel, no audio cable needed. On the Inputs screen, select that input,
+   pick the channel (1 is the first) and press **Use for timecode**: Source,
+   Device and Channel are set in one step. The same fields are on the Show
+   screen's Timecode panel.
 3. **Timecode on/off** on. The level meter under the readout shows the LTC
    channel's level in dBFS; "no audio" means the input could not open or
    nothing arrives on that channel. The rate (24, 25, 29.97 drop or
@@ -204,8 +207,11 @@ Setting up LTC:
 
 Setting up MTC:
 
-1. Connect the MIDI source (a USB interface, or a network MIDI session in
-   Audio MIDI Setup). It appears in the MIDI panel's source list.
+1. Connect the MIDI source: a USB interface, or, for a desk or a playback
+   computer that sends MTC over the network, a network MIDI session (Audio
+   MIDI Setup › MIDI Studio › Network: enable a session and connect the
+   sender's), so no MIDI cable is needed. It appears in the MIDI panel's
+   source list.
 2. Source **MTC (MIDI)**, Device **All sources** or that source; the MIDI
    panel marks it with a "timecode" badge. No permission is needed. MTC
    carries its rate (24, 25, 29.97 drop frame or 30; never 29.97 non-drop).
