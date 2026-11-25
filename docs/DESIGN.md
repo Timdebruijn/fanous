@@ -1369,9 +1369,10 @@ Fanous Library/
   colour primaries, file hash) and thumbnails are cached in
   `~/Library/Application Support/Fanous/cache/` keyed by path + mtime + size.
   In show mode a probe reads the metadata (so the file resolves and plays)
-  but makes no thumbnail and caches no entry without its thumbnail (a scan in
-  show mode still takes it as a hit); the rescan when show mode ends
-  probes those files again with their thumbnails (B325).
+  but makes no thumbnail and caches no entry without its thumbnail; a scan
+  takes the read as a hit, so the file keeps resolving (also when show mode
+  is left and entered again), and out of show mode queues it for the probe
+  that makes its thumbnail; the rescan when show mode ends does that (B325).
 - **Playable** = ProRes/HAP in `.mov`, stills. Anything else (H.264/HEVC,
   `.mp4`, `.avi`, image sequences) is indexed as "needs transcode" with a
   one-click ingest action. Long-GOP codecs are deliberately not playable:

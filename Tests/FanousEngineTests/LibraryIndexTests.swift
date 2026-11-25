@@ -339,6 +339,27 @@ struct LibraryIndexTests {
         #expect(index.resolve(MediaKey(folder: 1, file: 1)) != nil)
     }
 
+    /// B325: show mode left and entered again before the rescan that makes the thumbnails ran: the files read in show mode
+    /// keep resolving through every scan; out of show mode they get their thumbnails and still resolve meanwhile.
+    @Test func showModeReenteredBeforeTheRescanKeepsFilesResolving() async throws {
+        let root = try tempDir("fanous-library")
+        for n in 1...20 { try Self.png(root.appending(path: String(format: "001_Show/%03d_x.png", n))) }
+        let index = LibraryIndex(root: root, cacheDirectory: try tempDir("fanous-library-cache"), logger: testLogger)
+        index.thumbnailer = { _, _, _ in "t.jpg" }
+        index.paused = true
+        index.start()
+        defer { index.stop() }
+        #expect(await waitUntil(.seconds(30), every: .milliseconds(20)) { index.snapshot.folders.first?.items.allSatisfy { $0.status == .playable } == true })
+        index.paused = false
+        index.paused = true
+        index.rescan()  // the scan the setter scheduled, or any FSEvent, now in show mode again
+        #expect((1...20).allSatisfy { index.resolve(MediaKey(folder: 1, file: $0)) != nil })
+        index.paused = false
+        index.rescan()
+        #expect((1...20).allSatisfy { index.resolve(MediaKey(folder: 1, file: $0)) != nil }, "resolving while the thumbnail probes are queued")
+        #expect(await waitUntil(.seconds(30), every: .milliseconds(20)) { index.snapshot.folders.first?.items.allSatisfy { $0.thumbnail == "t.jpg" } == true })
+    }
+
     // MARK: B267: a file in work when the engine stopped
 
     /// Two stills; the cache key of the first, as a scan reads it.
