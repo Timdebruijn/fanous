@@ -467,6 +467,13 @@ struct LibraryIndexTests {
         defer { next.stop() }
         #expect(old.cacheWrites.load(ordering: .relaxed) == 1)
         #expect(next.snapshot.folders.first?.items.map(\.status) == [.unreadable, .unreadable], "the replacement's scan hits the cache")
+        // retired: a probe of the old index after the replacement writes nothing, nor does its stop
+        old.paused = false
+        try Self.touch(root.appending(path: "001_Show/003_x.png"))
+        old.rescan()
+        #expect(await probed(old))
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(old.cacheWrites.load(ordering: .relaxed) == 1)
         try await offPool { old.stop() }
         #expect(old.cacheWrites.load(ordering: .relaxed) == 1)
     }
