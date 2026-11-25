@@ -164,8 +164,8 @@ Start the timecode running before the first trigger and let it play
 through. A locate on the playback skips the cues between the old and the
 new position, which is intended: MTC sends a locate as its own message,
 which fires nothing; LTC has none, so a jump while LTC runs skips only at
-5 s or more, and a shorter one fires the cues it passes. Fire a skipped cue
-with Go to. Triggers
+5 s or more, and a shorter one fires the cues it passes; one that lands on
+a still frame fires nothing. Fire a skipped cue with Go to. Triggers
 use the incoming time as it is: the **Offset** on the Timecode panel moves
 the layers that chase timecode, not the triggers, so write the triggers at
 the times the timecode really shows. A follow is set each time the cue
@@ -259,7 +259,7 @@ stateDiagram-v2
 | State | Layers that chase | Triggers | Shown |
 |---|---|---|---|
 | **Locked** (green) | Follow the time | Fire | Readout runs (stands after an MTC locate); status bar `timecode · locked` |
-| **Freewheel** (yellow): the clock keeps counting for a moment after the signal dropped | Keep running at the last rate | Do not fire | Readout keeps counting |
+| **Freewheel** (yellow): the clock keeps counting for a moment after the signal dropped | Keep running at the last rate (after a still frame they stand) | Do not fire | Readout keeps counting (after a still frame it stands) |
 | **Lost** (red): no signal for the Freewheel time | Hold their position | Do not fire | Status bar red while the show is locked |
 | **Off** | Stand still; other layers play as set | Do not fire | Readout dashed |
 
