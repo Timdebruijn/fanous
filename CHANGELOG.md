@@ -11,7 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Dependencies (web): svelte 5.59.1, @sveltejs/vite-plugin-svelte 7.3.2, vitest 5.1.2; `npm run check`, `npm test`
-  and `npm run build` unchanged (PR #NNN).
+  and `npm run build` unchanged (PR #455).
 - Playback: a scratch texture answered for a playback that was retired meanwhile goes back to the loader (B402). The
   compositor dropped the answer box's reference on the render thread, which could be the playback's last: its deinit
   and the textures' release then ran there. The playback now adopts the answer and is handed back to the loader, which
