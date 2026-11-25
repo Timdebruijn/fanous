@@ -66,6 +66,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   look up to 15 ms late (loopback, all cores busy; now at most 3 ms), and a packet arriving behind a newer one from the
   same machine overwrote it. The receiver now reads `SO_TIMESTAMP_MONOTONIC`, drops a tick it has seen or one up to 256
   behind, and its queue and each HTTPS connection queue run at `.userInitiated` (PR #471).
+- Playback: the decode threads run at `.userInteractive`, as ADR-0002 says, not at the control plane's `.userInitiated`
+  (B319); the HAP chunk pool follows its decode thread. No difference was measurable on a 1080p ProRes clip under load
+  (PR #475).
 - Docs: four vendor claims in the feature-gap survey corrected against the vendors' own pages (Eos video streams only from 3.3.5
   and no CITP in ETC's protocol list; Avolites NDI removal is temporary, return unverified; grandMA3: the manual documents
   no CITP, MA publishes no full protocol list), and the README, guide and backlog lines that repeat them (PR #486)

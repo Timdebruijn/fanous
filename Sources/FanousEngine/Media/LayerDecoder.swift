@@ -26,7 +26,7 @@ public final class LayerDecoder: @unchecked Sendable {
     /// Wake-ups sent to the decode thread; diagnostics and tests.
     public let wakeups = Atomic<Int>(0)
     private let logger: Logger
-    private var thread: Thread?
+    private(set) var thread: Thread?
     private var lastProduced = -1
     public let decoded = Atomic<Int>(0)
     /// Audio track of the same movie, filled from this thread between video frames (ADR-0019); set by the loader before
@@ -54,7 +54,9 @@ public final class LayerDecoder: @unchecked Sendable {
     public func start(name: String) {
         let thread = Thread { [self] in loop() }
         thread.name = name
-        thread.qualityOfService = .userInitiated
+        // ADR-0002: decode runs at .userInteractive, above the control plane (B319); the HAP chunk pool's
+        // concurrentPerform runs its iterations at this thread's class (measured: 33 from a .userInteractive caller)
+        thread.qualityOfService = .userInteractive
         thread.start()
         self.thread = thread
     }
