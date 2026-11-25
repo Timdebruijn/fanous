@@ -391,4 +391,24 @@ import Testing
         #expect(got == (1...6).map { MediaKey(folder: 1, file: $0) })
         #expect(opens.most.load(ordering: .relaxed) == bound)
     }
+
+    /// B2: the loader answers a layer's scratch request with a scratch set in `pendingScratch`, and the compositor's next
+    /// tick adopts it for the playback that asked, which is still the layer's.
+    @Test func theLoaderAnswersAScratchRequestAndTheCompositorAdoptsIt() async throws {
+        let (loader, layers) = try Self.loader(layers: 1, opens: nil)
+        let context = try MetalContext()
+        let (compositor, _) = try makeCompositor(context, size: (64, 36))
+        compositor.setLayers(layers)
+        let playback = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: DecodedFrame(poolIndex: 0))
+        layers[0].current = playback
+        loader.start()
+        defer { loader.stop() }
+        layers[0].scratchRequest.withLock { $0 = playback }
+        loader.wake.signal()
+        #expect(await waitUntil { layers[0].pendingScratch.withLock { $0.map { $0.playback === playback && $0.answer != nil } ?? false } })
+        #expect(playback.scratch == nil)
+        compositor.tick(target: 3600, drawable: nil)
+        #expect(playback.scratch != nil && !playback.scratchLevels.isEmpty, "the compositor did not adopt the scratch set")
+        #expect(layers[0].pendingScratch.withLock { $0 == nil }, "the answer was not taken")
+    }
 }

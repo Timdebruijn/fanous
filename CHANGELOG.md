@@ -11,7 +11,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Cleanup: the render, media and audio code loses the scene file's `frameLatency`, the `FANOUS_LINK_MAIN` switch, the
-  write-only compositor logger and display-link counter, and a few duplicated expressions; the layer rotation is built from quaternions (same order, within 3e-7) (PR #446).
+  write-only compositor logger and display-link counter, and a few duplicated expressions; the layer rotation is built
+  from quaternions (same order, within 3e-7) (PR #446).
 - Sync: a slave's audio reseeks when its master is retriggered (B395). The slave's clock followed the jump at
   once, but its audio was nudged towards the new clock 2 ms per callback (a jump of 20 to 100 ms; under 20 ms
   the lead stayed) instead of reseeked like the master's own. A locked tick that moves the clock by more than
