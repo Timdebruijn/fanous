@@ -162,9 +162,12 @@ public final class LayerPlayback: @unchecked Sendable {
     var currentShown = -1
     var previousShown = -1
     var holdFrame: DecodedFrame?
-    /// `holdFrame`'s media frame as it was when it was taken (B371): after a drain its slot is free and the decode thread
-    /// may relabel it while it is still shown (B386), so the stale count compares this. −1 = none.
+    /// `holdFrame`'s media frame as it was when it was taken (B371). −1 = none.
     var holdFrameIndex = -1
+    /// The frame held after a drain (B386): a copy of the slot's textures and labels, owned here, so the slot can be
+    /// refilled by the decode thread while the GPU still reads the held picture. A shown ring slot is never freed, so the
+    /// other held frames are the slots themselves.
+    private let held = DecodedFrame(poolIndex: -1)
     /// The mixer channel this playback's decoder fills (movies with an audio track only).
     public var audioChannel: LayerAudioChannel? { decoder?.audioChannel }
 
@@ -254,6 +257,7 @@ public final class LayerPlayback: @unchecked Sendable {
         }
         guard let best, behind(best.frameIndex) < ring.capacity + 2 else {
             if holdFrame == nil, let best { (holdFrame, holdFrameIndex) = (best, best.frameIndex) }  // never shown (held invisible): better a stale picture than none until the seek lands
+            if let holdFrame, holdFrame !== held { held.copy(from: holdFrame); self.holdFrame = held }  // the slot is freed below (B386)
             freed = true
             ring.drain()  // everything buffered is on the wrong side of a seek
             return holdFrame

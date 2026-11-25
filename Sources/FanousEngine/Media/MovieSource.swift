@@ -70,6 +70,19 @@ public final class DecodedFrame {
         metalTextures = (nil, nil, nil)
         bottomUp = false
     }
+
+    /// Takes over another frame's picture (its labels and references, not the pool slot): the held copy of a drained
+    /// slot (B386).
+    func copy(from other: DecodedFrame) {
+        frameIndex = other.frameIndex
+        kind = other.kind
+        texture0 = other.texture0
+        texture1 = other.texture1
+        texture2 = other.texture2
+        pixelBuffer = other.pixelBuffer
+        metalTextures = other.metalTextures
+        bottomUp = other.bottomUp
+    }
 }
 
 public struct MovieInfo: Sendable {
