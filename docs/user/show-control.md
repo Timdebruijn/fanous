@@ -164,7 +164,10 @@ none.
 
 Start the timecode running before the first trigger and let it play
 through. A locate on the playback skips the cues between the old and the
-new position, which is intended; fire a skipped cue with Go to. Triggers
+new position, which is intended: MTC sends a locate as its own message,
+which fires nothing; LTC has none, so a jump while LTC runs skips only at
+5 s or more, and a shorter one fires the cues it passes. Fire a skipped cue
+with Go to. Triggers
 use the incoming time as it is: the **Offset** on the Timecode panel moves
 the layers that chase timecode, not the triggers, so write the triggers at
 the times the timecode really shows. A follow is set each time the cue
@@ -225,6 +228,12 @@ Setting up MTC:
 4. Done when the pill reads **Locked** and the source line shows the rate.
    A missing source reads in red under the readout.
 
+With **All sources**, the first source that sends MTC drives the clock;
+another takes over only when that one is unplugged or has sent nothing for
+the Freewheel time (half a second at least). A locate (the full-frame
+message a sender sends when it jumps or parks) sets the time and holds it
+there, Locked, until the sender runs again; it fires no trigger.
+
 <img src="images/show-timecode-mtc.png" width="1060" alt="The Timecode panel with Source MTC (MIDI) and Device All sources, the readout dashed with the state Off and 'No source', and the red line 'no MIDI source connected'">
 
 ```mermaid
@@ -261,7 +270,7 @@ stateDiagram-v2
 
 | State | Layers that chase | Triggers | Shown |
 |---|---|---|---|
-| **Locked** (green) | Follow the time | Fire | Readout runs; status bar `timecode · locked` |
+| **Locked** (green) | Follow the time | Fire | Readout runs (stands after an MTC locate); status bar `timecode · locked` |
 | **Freewheel** (yellow): the clock keeps counting for a moment after the signal dropped | Keep running at the last rate | Do not fire | Readout keeps counting |
 | **Lost** (red): no signal for the Freewheel time | Hold their position | Do not fire | Status bar red while the show is locked |
 | **Off** | Stand still; other layers play as set | Do not fire | Readout dashed |

@@ -248,6 +248,15 @@ struct ShowControlTests {
         return nibbles.enumerated().map { piece, nibble in 0x1000_0000 | (0xF1 << 16) | (UInt32(UInt8(piece << 4) | nibble) << 8) }
     }
 
+    /// A full-frame SysEx F0 7F 7F 01 01 hh mm ss ff F7 for `tc` at 25 fps as 64-bit UMPs (start + end).
+    static func fullFrame(_ tc: Timecode) -> [UInt32] {
+        let sysex: [UInt8] = [0x7F, 0x7F, 0x01, 0x01, UInt8(1 << 5) | UInt8(tc.hours), UInt8(tc.minutes), UInt8(tc.seconds), UInt8(tc.frames)]
+        let first = (UInt32(3) << 28) | (UInt32(1) << 20) | (UInt32(6) << 16) | (UInt32(sysex[0]) << 8) | UInt32(sysex[1])
+        let second = (UInt32(sysex[2]) << 24) | (UInt32(sysex[3]) << 16) | (UInt32(sysex[4]) << 8) | UInt32(sysex[5])
+        let third = (UInt32(3) << 28) | (UInt32(3) << 20) | (UInt32(2) << 16) | (UInt32(sysex[6]) << 8) | UInt32(sysex[7])
+        return [first, second, third, 0]
+    }
+
     /// Words as if CoreMIDI delivered them from a connected source, handled on the input's queue before this returns.
     static func feed(_ input: MTCInput, _ words: [UInt32], at hostTime: Double, uid: MIDIUniqueID = 1, name: String = "Pad") {
         input.queue.sync {
@@ -265,18 +274,114 @@ struct ShowControlTests {
         #expect(sample.state == .locked)
         #expect(sample.frameCount == tc.frameCount + 2, "quarter-frame time is two frames behind")
         #expect(clock.current(at: 5.17).state == .locked, "100 ms after the last piece: MTC promises a time every 2 frames (B65)")
-        // full-frame SysEx F0 7F 7F 01 01 hh mm ss ff F7 as a 64-bit UMP (start + end)
-        let sysex: [UInt8] = [0x7F, 0x7F, 0x01, 0x01, UInt8(1 << 5) | 2, 3, 4, 5]
-        let first = (UInt32(3) << 28) | (UInt32(1) << 20) | (UInt32(6) << 16) | (UInt32(sysex[0]) << 8) | UInt32(sysex[1])
-        let second = (UInt32(sysex[2]) << 24) | (UInt32(sysex[3]) << 16) | (UInt32(sysex[4]) << 8) | UInt32(sysex[5])
-        let third = (UInt32(3) << 28) | (UInt32(3) << 20) | (UInt32(2) << 16) | (UInt32(sysex[6]) << 8) | UInt32(sysex[7])
-        Self.feed(input, [first, second, third, 0], at: 6)
+        Self.feed(input, Self.fullFrame(Timecode(hours: 2, minutes: 3, seconds: 4, frames: 5, rate: .fps25)), at: 6)
         let full = clock.current(at: 6)
         #expect(full.timecode == Timecode(hours: 2, minutes: 3, seconds: 4, frames: 5, rate: .fps25), "\(full.timecode)")
     }
 
+    /// B292: a full-frame locate puts the clock at that position, standing still and locked, until quarter frames run
+    /// again. It was taken as running time: the layer played on from the locate and froze 2 s (the freewheel) past it.
+    @Test func mtcFullFrameLocateStandsStill() {
+        let clock = TimecodeClock()
+        clock.freewheelSeconds = 2
+        let input = MTCInput(clock: clock, logger: testLogger)
+        let locate = Timecode(hours: 1, minutes: 0, seconds: 10, frames: 0, rate: .fps25)
+        Self.feed(input, Self.fullFrame(locate), at: 6)
+        for t in [6.0, 6.5, 9.0] {
+            let sample = clock.current(at: t)
+            #expect(sample.state == .locked && sample.frameCount == locate.frameCount, "at \(t): \(sample.state) \(sample.timecode)")
+            #expect(clock.frames(at: t) == Double(locate.frameCount), "the chase stands at the locate at \(t)")
+        }
+        // quarter frames from the locate: running again
+        for (piece, word) in Self.quarterFrames(locate).enumerated() { Self.feed(input, [word], at: 10 + Double(piece) * 0.01) }
+        #expect(clock.current(at: 10.07 + 0.4).frameCount == locate.frameCount + 2 + 10, "runs on from the quarter-frame time")
+    }
+
+    /// B292: SysEx longer than a full frame is dropped as it grows, so a long message never grows the buffer, and the next
+    /// full frame still decodes.
+    @Test func mtcOversizedSysExIsDropped() {
+        var parse = MTCInput.Parse()
+        let start = (UInt32(3) << 28) | (UInt32(1) << 20) | (UInt32(6) << 16) | 0x7F7F
+        let more = (UInt32(3) << 28) | (UInt32(2) << 20) | (UInt32(6) << 16) | 0x0101
+        var longest = 0
+        for word in [start, 0x0101_0203] + Array(repeating: [more, 0x0405_0607], count: 500).joined() {
+            #expect(parse.feed(word) == nil)
+            longest = max(longest, parse.sysex.count)
+        }
+        #expect(longest <= 9 && parse.sysex.capacity < 64, "longest \(longest), capacity \(parse.sysex.capacity)")
+        let end = (UInt32(3) << 28) | (UInt32(3) << 20) | (UInt32(2) << 16) | 0x0809
+        #expect(parse.feed(end) == nil && parse.feed(0) == nil, "the end of the long message is no full frame")
+        let locate = Timecode(hours: 2, minutes: 3, seconds: 4, frames: 5, rate: .fps25)
+        #expect(Self.fullFrame(locate).compactMap { parse.feed($0) }.map(\.timecode) == [locate])
+    }
+
+    /// B292: with every source connected (no device named) one feeds the clock: the first to deliver a time, until it is
+    /// unplugged or has been silent for the freewheel time. Two senders used to feed it in turn.
+    @Test func mtcFromTwoSourcesFeedsTheClockFromOne() {
+        let clock = TimecodeClock()
+        clock.freewheelSeconds = 2
+        let input = MTCInput(clock: clock, logger: testLogger)
+        input.queue.sync { input.listener.setSources([1: "Pad", 2: "Console"]) }
+        let seen = Mutex<[Int]>([])
+        clock.onFrame = { tc, _, _ in seen.withLock { $0.append(tc.frameCount) } }
+        func send(hours: Int, seconds: Int, uid: MIDIUniqueID, at t: Double) {
+            let words = Self.quarterFrames(Timecode(hours: hours, minutes: 0, seconds: seconds, frames: 0, rate: .fps25))
+            input.queue.sync { input.receive(words.map { ($0, t) }, uid: uid) }
+        }
+        send(hours: 1, seconds: 0, uid: 1, at: 10)
+        send(hours: 2, seconds: 0, uid: 2, at: 10.04)
+        send(hours: 1, seconds: 1, uid: 1, at: 10.08)
+        #expect(seen.withLock { $0 } == [90_002, 90_027], "the console is not used while the pad feeds")
+        send(hours: 2, seconds: 2, uid: 2, at: 12.0)  // 1.92 s after the pad's last time
+        #expect(seen.withLock { $0.count } == 2)
+        send(hours: 2, seconds: 3, uid: 2, at: 12.1)  // the pad has been silent for the freewheel time
+        #expect(seen.withLock { $0.last } == 180_077, "the console takes over")
+        input.queue.sync { input.listener.setSources([1: "Pad"]) }  // the console is unplugged
+        send(hours: 1, seconds: 5, uid: 1, at: 12.2)
+        #expect(seen.withLock { $0.last } == 90_127, "the pad takes over at once")
+    }
+
+    /// B292: at the shortest freewheel (0.1 s) the feeding source still holds the clock for half a second, so MIDI jitter
+    /// on its 80 ms updates never hands the clock to a second sender.
+    @Test func mtcFeedingSourceHoldsHalfASecondAtTheShortestFreewheel() {
+        let clock = TimecodeClock()
+        clock.freewheelSeconds = 0.1
+        let input = MTCInput(clock: clock, logger: testLogger)
+        input.queue.sync { input.listener.setSources([1: "Pad", 2: "Console"]) }
+        let seen = Mutex<[Int]>([])
+        clock.onFrame = { tc, _, _ in seen.withLock { $0.append(tc.frameCount) } }
+        func send(hours: Int, uid: MIDIUniqueID, at t: Double) {
+            let words = Self.quarterFrames(Timecode(hours: hours, minutes: 0, seconds: 0, frames: 0, rate: .fps25))
+            input.queue.sync { input.receive(words.map { ($0, t) }, uid: uid) }
+        }
+        send(hours: 1, uid: 1, at: 10)
+        send(hours: 2, uid: 2, at: 10.12)  // the pad's next update is late: 120 ms
+        send(hours: 2, uid: 2, at: 10.49)
+        #expect(seen.withLock { $0 } == [90_002], "the console waits half a second")
+        send(hours: 2, uid: 2, at: 10.51)
+        #expect(seen.withLock { $0.last } == 180_002, "and then takes over")
+    }
+
+    /// B292: a locate fires no cue. The cue runner took the stopped time as running: a locate up to 5 s forward fired the
+    /// cues in between while the sender stood still. The quarter frames after it fire only what they pass.
+    @Test func mtcLocateFiresNoCue() {
+        let clock = TimecodeClock()
+        let input = MTCInput(clock: clock, logger: testLogger)
+        func tc(_ seconds: Int, _ frames: Int = 0) -> Timecode { Timecode(hours: 1, minutes: 0, seconds: seconds, frames: frames, rate: .fps25) }
+        let cues = Mutex(CueEngine(list: CueList(cues: [Cue(number: 1, timecodeTrigger: tc(2)), Cue(number: 2, timecodeTrigger: tc(3, 3))])))
+        clock.onFrame = { timecode, _, running in cues.withLock { $0.timecode(timecode, at: 0, running: running) } }
+        Self.feed(input, Self.quarterFrames(tc(0)), at: 10)  // running at 01:00:00:02
+        Self.feed(input, Self.fullFrame(tc(3)), at: 10.5)  // the sender parks at 01:00:03:00
+        #expect(cues.withLock { $0.current } == nil, "the locate passed cue 1 and fired it")
+        Self.feed(input, Self.quarterFrames(tc(3)), at: 12)  // runs from the locate: 01:00:03:02
+        #expect(cues.withLock { $0.current } == nil)
+        Self.feed(input, Self.quarterFrames(tc(3, 2)), at: 12.08)  // 01:00:03:04 passes cue 2
+        #expect(cues.withLock { $0.current?.number } == 2)
+    }
+
     /// B64: one parse state per source (two senders interleaved still assemble), and the source feeding the clock
-    /// leaving is signal loss (freewheel, then lost), with late words from it dropped.
+    /// leaving is signal loss (freewheel, then lost), with late words from it dropped. Since B292 only the first source to
+    /// deliver feeds the clock.
     @Test func mtcSourcesKeepTheirOwnStateAndLeavingFreewheelsTheClock() {
         let clock = TimecodeClock()
         let input = MTCInput(clock: clock, logger: testLogger)
@@ -284,20 +389,20 @@ struct ShowControlTests {
         let a = Self.quarterFrames(Timecode(hours: 1, minutes: 0, seconds: 0, frames: 0, rate: .fps25))
         let b = Self.quarterFrames(Timecode(hours: 2, minutes: 0, seconds: 0, frames: 0, rate: .fps25))
         let seen = Mutex<[Int]>([])
-        clock.onFrame = { tc, _ in seen.withLock { $0.append(tc.frameCount) } }
+        clock.onFrame = { tc, _, _ in seen.withLock { $0.append(tc.frameCount) } }
         for i in 0..<8 {
             input.queue.sync {
                 input.receive([(a[i], 10)], uid: 1)
                 input.receive([(b[i], 10)], uid: 2)
             }
         }
-        #expect(seen.withLock { $0 } == [90_002, 180_002], "each source assembled its own time")
+        #expect(seen.withLock { $0 } == [90_002], "the pad delivered first and feeds the clock")
         #expect(input.status.withLock { $0.connected } == ["Console", "Pad"])
-        // the console (last to feed) is unplugged; the pad stays
-        input.queue.sync { input.listener.setSources([1: "Pad"]) }
-        #expect(input.status.withLock { $0.connected } == ["Pad"], "the device list drops it at once")
+        // the pad, which feeds, is unplugged; the console stays
+        input.queue.sync { input.listener.setSources([2: "Console"]) }
+        #expect(input.status.withLock { $0.connected } == ["Console"], "the device list drops it at once")
         #expect(clock.current(at: 10.5).state == .freewheel, "an unplugged source is signal loss: freewheel")
-        input.queue.sync { input.receive(b.map { ($0, 11) }, uid: 2) }
+        input.queue.sync { input.receive(a.map { ($0, 11) }, uid: 1) }
         #expect(clock.current(at: 11).state == .freewheel, "words in flight from the gone source are dropped")
         #expect(clock.current(at: 12.5).state == .lost, "lost after the freewheel time (2 s)")
         #expect(clock.frames(at: 12.5) == nil)

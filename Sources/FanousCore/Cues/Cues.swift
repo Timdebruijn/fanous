@@ -168,12 +168,13 @@ public struct CueEngine: Sendable {
         revision &+= 1
     }
 
-    /// Fires every cue whose trigger lies in (previous, current]. A jump backwards re-arms.
-    public mutating func timecode(_ timecode: Timecode, at time: TimeInterval) {
+    /// Fires every cue whose trigger lies in (previous, current]. A jump backwards re-arms. A time that does not run (an
+    /// MTC locate, B292) fires nothing, like a jump: the cues it passes are skipped.
+    public mutating func timecode(_ timecode: Timecode, at time: TimeInterval, running: Bool = true) {
         let seconds = timecode.secondsValue
         defer { lastTimecodeSeconds = seconds }
         // compare in seconds: the trigger may be written at another rate than the incoming clock
-        guard let last = lastTimecodeSeconds, seconds > last, seconds - last < 5 else { return }
+        guard running, let last = lastTimecodeSeconds, seconds > last, seconds - last < 5 else { return }
         let eps = 1e-6
         for (index, cue) in list.cues.enumerated() {
             guard let trigger = cue.timecodeTrigger else { continue }
