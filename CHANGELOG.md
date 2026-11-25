@@ -11,7 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Network: a WebSocket frame or message may be 4 KiB before `hello` and 4 MiB after it (was 16 MiB), all connections
-  together hold at most 64 MiB of unfinished messages, and a CITP message may be 1 MiB (was 16 MiB) (B368) (PR #N).
+  together hold at most 64 MiB of unfinished messages, and a CITP message may be 1 MiB (was 16 MiB) (B368) (PR #484).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
