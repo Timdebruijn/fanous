@@ -367,7 +367,7 @@ extension ProjectVersions {
                 name: "project.snapshot", role: .programmer, mutatesConfig: false, undoable: false,
                 summary: "Save a version of the project now; with a name it never expires, without one it is an automatic version.",
                 argsType: "{ name?: string }",
-                // B286: the write (fsync'd) runs in `prepare`, off the control queue, on the project as it is then; the
+                // B286: the file write runs in `prepare`, off the control queue, on the project as it is then; the
                 // versions' own lock orders it with the automatic ones
                 prepare: { [self, weak store] args in
                     let name = args["name"]?.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
