@@ -126,6 +126,19 @@ import Testing
         #expect(layers[0].mediaStatus.withLock { $0.file } == 2)
     }
 
+    /// B348: a library number with no playable file says why when the engine knows more than "no file" (a file it stopped
+    /// in twice while decoding it), and the plain text otherwise.
+    @Test func aRefusedLibraryFileSaysWhy() async throws {
+        let (loader, layers) = try Self.loader(layers: 2, opens: Opens(), media: [])
+        loader.refusal = { key in key.file == 1 ? "001_poison.mov: \(LibraryIndex.stoppedTwice)" : nil }
+        loader.start()
+        defer { loader.stop() }
+        Self.select(layers[0], 1, loader)
+        Self.select(layers[1], 2, loader)
+        #expect(await waitUntil { layers[0].mediaStatus.withLock { $0.error } == "001_poison.mov: \(LibraryIndex.stoppedTwice)" })
+        #expect(await waitUntil { layers[1].mediaStatus.withLock { $0.error } == "no file 2 in folder 1" })
+    }
+
     /// A given-up open that answers while it is still the layer's last selection plays (a disk that spun up late).
     @Test func aGivenUpOpenStillPlaysWhenItAnswers() async throws {
         let opens = Opens()

@@ -430,6 +430,9 @@ public final class MediaLoader: @unchecked Sendable {
     public var mixer: AudioMixer?
     /// Library lookup for keys the scene's explicit list does not cover (DESIGN.md §7.4).
     public var resolver: (@Sendable (MediaKey) -> URL?)?
+    /// Why a library number `resolver` has no file for is refused, when the engine says more than "no file" (B348: a file
+    /// the engine stopped in twice while decoding it).
+    public var refusal: (@Sendable (MediaKey) -> String?)?
 
     /// A movie's or a still's file as an open thread hands it to the loader thread (B277): no decoder made yet.
     enum OpenedFile: @unchecked Sendable {
@@ -863,7 +866,7 @@ public final class MediaLoader: @unchecked Sendable {
         guard let entry = numbered ?? media[key] ?? resolver?(key).map({ MediaEntry(folder: key.folder, file: key.file, path: $0.path) }) else {
             logger.warning("media not found", metadata: ["layer": "\(layer + 1)", "media": "\(key)"])
             status.kind = "missing"
-            status.error = key.folder != 0 ? "no file \(key.file) in folder \(key.folder)"
+            status.error = key.folder != 0 ? refusal?(key) ?? "no file \(key.file) in folder \(key.folder)"
                 : LiveCatalog.Kind.syphon.files.contains(key.file) ? "no Syphon server numbered \(key.file) (folder 0, 150–169)"
                 : LiveCatalog.Kind.capture.files.contains(key.file) ? "no capture device numbered \(key.file) (folder 0, 1–20)"
                 : LiveCatalog.Kind.screens.files.contains(key.file) ? "no display numbered \(key.file) (folder 0, 21–28)"

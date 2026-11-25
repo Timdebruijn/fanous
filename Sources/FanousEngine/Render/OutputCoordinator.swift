@@ -151,13 +151,14 @@ public final class OutputCoordinator {
     /// is never ordered in is in `CGWindowListCopyWindowInfo(.optionAll)` for its process (a `defer: true` one is not).
     private let presence: NSWindow
 
-    /// `media`: an image mask's file in the library (`OutputCompiler`).
+    /// `media`: an image mask's file in the library, `read` its decode (`OutputCompiler`).
     public init(
-        compositor: Compositor, context: MetalContext, fps: Double, displays: [DisplayInfo], logger: Logger, media: @escaping @Sendable (MaskImage) -> URL? = { _ in nil }
+        compositor: Compositor, context: MetalContext, fps: Double, displays: [DisplayInfo], logger: Logger, media: @escaping @Sendable (MaskImage) -> URL? = { _ in nil },
+        read: (@Sendable (URL) -> CGImage?)? = nil
     ) {
         self.compositor = compositor
         self.context = context
-        self.compiler = OutputCompiler(device: context.device, logger: logger, media: media)
+        self.compiler = OutputCompiler(device: context.device, logger: logger, media: media, read: read)
         self.editOverlay = EditOverlay(device: context.device)
         self.fps = fps
         self.displays = displays

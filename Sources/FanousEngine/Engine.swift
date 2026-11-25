@@ -375,6 +375,14 @@ public final class Engine: @unchecked Sendable {
                     captureNumbers: captureNumbers, screenNumbers: screenNumbers, announceSyphon: options.network)
             }
             service.loader.resolver = { [weak self] key in self?.library?.resolve(key) }
+            service.loader.refusal = { [weak self] key in
+                self?.library?.item(key).flatMap { $0.reason == LibraryIndex.stoppedTwice ? "\($0.name): \(LibraryIndex.stoppedTwice)" : nil }
+            }
+            let open = service.loader.openFile
+            service.loader.openFile = { [weak self] url, audio in  // B348: a file whose open stops the engine is marked unreadable
+                guard let library = self?.library else { return try open(url, audio) }
+                return try library.decoding(url) { try open(url, audio) }
+            }
             service.loader.warmsDecoders = true
             service.audioKeepRunning = { [weak self] in self?.showMode.isOn ?? false }
             service.captureAllowed = { [weak self] in !(self?.showMode.isOn ?? false) }
@@ -572,7 +580,7 @@ public final class Engine: @unchecked Sendable {
             render.compositor.previewWanted = { preview.wantsFrames }
             stateServer.preview = preview
             logger.info("engine start", metadata: ["step": "output shaders"])
-            let compiler = OutputCompiler(device: context.device, media: { [weak self] in self?.maskFile($0) })
+            let compiler = OutputCompiler(device: context.device, media: { [weak self] in self?.maskFile($0) }, read: { [weak self] in self?.maskImage($0) })
             preview.configure = { [weak self, compositor = render.compositor] target, streamer in
                 guard let self else { return false }
                 // layer:<n> (1-based, within the project's layers): that layer alone, drawn after the canvas pass
@@ -617,7 +625,8 @@ public final class Engine: @unchecked Sendable {
             logger.info("engine start", metadata: ["step": "outputs"])
             let coordinator = MainActor.assumeIsolated { () -> OutputCoordinator in
                 let coordinator = OutputCoordinator(
-                    compositor: render.compositor, context: context, fps: fps, displays: DisplayManager.current(), logger: logger, media: { [weak self] in self?.maskFile($0) })
+                    compositor: render.compositor, context: context, fps: fps, displays: DisplayManager.current(), logger: logger, media: { [weak self] in self?.maskFile($0) },
+                    read: { [weak self] in self?.maskImage($0) })
                 displays.withLock { $0 = coordinator.connectedDisplays }
                 coordinator.onStatus = { [weak self, weak coordinator] statuses in
                     self?.outputStatus.withLock { $0 = statuses }
@@ -788,6 +797,13 @@ public final class Engine: @unchecked Sendable {
     /// An image mask's file: the library's still with that number, also while it is probed again after a save; nil when
     /// there is none or it is not a still, and the mask covers nothing.
     private func maskFile(_ image: MaskImage) -> URL? { library?.still(MediaKey(folder: image.folder, file: image.file)) }
+
+    /// An image mask's decode, under the library's marker (B348): a still whose decode stops the engine is skipped from the
+    /// start after the second such stop (`maskFile` gets none, the readiness check lists it as unreadable).
+    private func maskImage(_ url: URL) -> CGImage? {
+        guard let library else { return StillSource.image(url) }
+        return library.decoding(url) { StillSource.image(url) }
+    }
 
     /// The library changed (a scan, a probe, a new root): the outputs compile again when a file an image mask uses changed,
     /// appeared or went, once per change, so the cache gives it a new raster.

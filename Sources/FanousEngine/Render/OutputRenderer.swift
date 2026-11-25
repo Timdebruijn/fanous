@@ -153,6 +153,8 @@ public final class OutputCompiler: @unchecked Sendable {
     private let device: MTLDevice
     /// An image mask's file in the media library, nil when it has none (§9.10 item 5).
     private let media: @Sendable (MaskImage) -> URL?
+    /// Decodes an image mask's file; the engine's guards it with a marker (B348: a mask is decoded at every start).
+    private let read: @Sendable (URL) -> CGImage?
 
     /// What a texture or slice plan is made of; a changed region, display mode or drawable size gives new keys.
     enum Key: Hashable {
@@ -176,10 +178,14 @@ public final class OutputCompiler: @unchecked Sendable {
     private let logger: Logger?
     private let reported = Mutex<Set<[Int]>>([])
 
-    public init(device: MTLDevice, logger: Logger? = nil, media: @escaping @Sendable (MaskImage) -> URL? = { _ in nil }) {
+    public init(
+        device: MTLDevice, logger: Logger? = nil, media: @escaping @Sendable (MaskImage) -> URL? = { _ in nil },
+        read: (@Sendable (URL) -> CGImage?)? = nil
+    ) {
         self.device = device
         self.logger = logger
         self.media = media
+        self.read = read ?? { StillSource.image($0) }
     }
 
     /// Cache entries, a dead one until the next compile drops it (tests).
@@ -269,7 +275,7 @@ public final class OutputCompiler: @unchecked Sendable {
             var images: [MaskImage: ImageRaster] = [:]
             for (image, file) in zip(urls, files) where images[image.image] == nil {
                 guard let url = image.url else { continue }
-                images[image.image] = cached(.image(file, width: w, height: h)) { ImageRaster(StillSource.image(url).map { Self.draw($0, width: w, height: h) }) }
+                images[image.image] = cached(.image(file, width: w, height: h)) { ImageRaster(read(url).map { Self.draw($0, width: w, height: h) }) }
             }
             var mask: MTLTexture? = nil
             // keyed by the masks alone: moving the slice keeps its raster
