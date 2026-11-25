@@ -131,7 +131,8 @@ public final class LayerAudioChannel: @unchecked Sendable {
 
     // MARK: Compositor
 
-    /// Called by the compositor every tick. `wantedPTS` is the media time (seconds) the layer clock is at now;
+    /// Called by the compositor every tick. `wantedPTS` is the media time (seconds) the layer clock is at host time
+    /// `nanos`: the compositor passes its tick's target, the time the frame at that position is shown (B320);
     /// `active` means speed is 100 % forward and the layer is playing; `pan` is -1 (left) ... 1 (right).
     /// `loop` is the media range [start, end) in seconds a forward loop plays; the producer then reads across the
     /// wrap (the ring holds the unwrapped timeline) and `wantedPTS` is compared modulo the loop length. Ignored
@@ -139,8 +140,8 @@ public final class LayerAudioChannel: @unchecked Sendable {
     /// `jumped` says the layer was retriggered this tick (its clock jumped back): the producer reseeks, whatever the
     /// size of the jump.
     /// Between ticks the audio side extrapolates the clock with the host clock (`wantedPTS(atHostNanos:)`), so the
-    /// up to 16.7 ms age of the value does not eat into the ±20 ms window. `nanos`: the host time `wantedPTS` belongs
-    /// to (tests pass one).
+    /// up to 16.7 ms age of the value does not eat into the ±20 ms window. `nanos` is on the clock of
+    /// `CACurrentMediaTime()` (both are `mach_absolute_time()` converted), so a target in host seconds × 1e9 is one.
     public func setState(
         wantedPTS: Double, active: Bool, volume: Float, pan: Float, loop: (start: Double, end: Double)? = nil, jumped: Bool = false,
         atHostNanos nanos: UInt64 = LayerAudioChannel.hostNanos()

@@ -29,8 +29,8 @@ enum SlaveClock {
     /// `offsetMs`: how far the entry's position is from where the slave's clock would have been without it (its
     /// previous position advanced by the entry's rate), i.e. the correction a locked tick applies; a whole-file jump
     /// (the master looping) does not count. `jumped`: a locked tick set the clock more than `jumpMillis` away from
-    /// where it would have run on, both in host time (`elapsed` seconds since the previous tick; the audio
-    /// extrapolates its clock in host time, so a slave tick that starts late moved no audio) and in target time
+    /// where it would have run on, both in host time (`elapsed` seconds since the previous tick; a remote master's
+    /// entry is extrapolated in host time, so a slave tick that starts late is no step there) and in target time
     /// (`dt`; a local master's entry steps with the target, so the same late tick reads as a step there): the master
     /// was retriggered, or the slave locked on (first, or again after freewheeling or a freeze); its audio then
     /// reseeks to the new clock instead of nudging towards it (B395). A tick that clamps the clock to the file (the
