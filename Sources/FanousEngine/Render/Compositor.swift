@@ -616,7 +616,8 @@ public final class Compositor: @unchecked Sendable {
         let time: Float
         /// Host time at the start of the tick: the age of sync entries is taken against it.
         let now: Double
-        /// Host seconds since the previous tick's `now` (0 at the first): a slave's clock jump is judged in host time (B395).
+        /// Host seconds since the previous tick's `now` (0 at the first): with `dt`, a slave's clock jump is judged in host
+        /// time and in target time (B395).
         let elapsed: Double
         var misses: UInt16 = 0
         /// Movie pictures queued with a frame other than the clock's (B371); see `prepare`.
