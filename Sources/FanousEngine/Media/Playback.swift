@@ -164,10 +164,10 @@ public final class LayerPlayback: @unchecked Sendable {
     var holdFrame: DecodedFrame?
     /// `holdFrame`'s media frame as it was when it was taken (B371). −1 = none.
     var holdFrameIndex = -1
-    /// The frame held after a drain (B386): a copy of the slot's textures and labels, owned here, so the slot can be
-    /// refilled by the decode thread while the GPU still reads the held picture. A shown ring slot is never freed, so the
-    /// other held frames are the slots themselves.
-    private let held = DecodedFrame(poolIndex: -1)
+    /// The frame held after a drain (B386): it exchanges pictures with the drained slot, pool texture included (the
+    /// movie's pool has one texture more than the ring for it), so the decode thread refills the slot while the GPU
+    /// still reads the held picture. A shown ring slot is never freed, so the other held frames are the slots themselves.
+    private let held: DecodedFrame
     /// The mixer channel this playback's decoder fills (movies with an audio track only).
     public var audioChannel: LayerAudioChannel? { decoder?.audioChannel }
 
@@ -175,6 +175,7 @@ public final class LayerPlayback: @unchecked Sendable {
         self.key = key
         self.decoder = decoder
         self.ring = ring
+        held = DecodedFrame(poolIndex: ring.capacity)  // the spare pool texture (B386)
         still = nil
         live = nil
         width = movie.info.width
@@ -187,6 +188,7 @@ public final class LayerPlayback: @unchecked Sendable {
     /// `pixelAspect`: the movie's, when the still is one decoded movie frame (the thumbnailer); 1 for a real still.
     public init(key: MediaKey, still: DecodedFrame, pixelAspect: Double = 1) {
         self.key = key
+        held = DecodedFrame(poolIndex: 0)  // no ring: never held
         self.still = still
         decoder = nil
         ring = nil
@@ -200,6 +202,7 @@ public final class LayerPlayback: @unchecked Sendable {
 
     public init(key: MediaKey, live: any LiveTextureSource) {
         self.key = key
+        held = DecodedFrame(poolIndex: 0)  // no ring: never held
         self.live = live
         decoder = nil
         ring = nil
@@ -257,7 +260,7 @@ public final class LayerPlayback: @unchecked Sendable {
         }
         guard let best, behind(best.frameIndex) < ring.capacity + 2 else {
             if holdFrame == nil, let best { (holdFrame, holdFrameIndex) = (best, best.frameIndex) }  // never shown (held invisible): better a stale picture than none until the seek lands
-            if let holdFrame, holdFrame !== held { held.copy(from: holdFrame); self.holdFrame = held }  // the slot is freed below (B386)
+            if let holdFrame, holdFrame !== held { held.exchange(with: holdFrame); self.holdFrame = held }  // the slot is freed below (B386)
             freed = true
             ring.drain()  // everything buffered is on the wrong side of a seek
             return holdFrame
@@ -490,7 +493,7 @@ public final class MediaLoader: @unchecked Sendable {
         notCome = Array(repeating: nil, count: layers.count)
         openFile = { url, audio in
             if StillSource.extensions.contains(url.pathExtension.lowercased()) { return .still(try StillSource.load(url: url, device: device)) }
-            let source = try blockingAwait(priority: .userInitiated) { try await MovieSource.open(url: url, device: device, poolSize: ringCapacity) }
+            let source = try blockingAwait(priority: .userInitiated) { try await MovieSource.open(url: url, device: device, poolSize: ringCapacity + 1) }  // one spare for the held frame (B386)
             return .movie(source, audio: audio ? try blockingAwait(priority: .userInitiated) { try await AudioTrackReader.open(url: url) } : nil)
         }
     }

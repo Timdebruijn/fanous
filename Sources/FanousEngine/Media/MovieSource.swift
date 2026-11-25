@@ -46,7 +46,8 @@ public enum MovieError: Error, CustomStringConvertible {
 
 /// One slot of a layer's frame ring. Reused forever: no allocation after warm-up.
 public final class DecodedFrame {
-    public let poolIndex: Int
+    /// Which HAP pool texture this frame decodes into; exchanged with the held frame's at a drain (B386).
+    public internal(set) var poolIndex: Int
     public var frameIndex = -1
     public var kind: SourcePixelKind = .rgba
     public var texture0: MTLTexture?
@@ -71,17 +72,20 @@ public final class DecodedFrame {
         bottomUp = false
     }
 
-    /// Takes over another frame's picture (its labels and references, not the pool slot): the held copy of a drained
-    /// slot (B386).
-    func copy(from other: DecodedFrame) {
-        frameIndex = other.frameIndex
-        kind = other.kind
-        texture0 = other.texture0
-        texture1 = other.texture1
-        texture2 = other.texture2
-        pixelBuffer = other.pixelBuffer
-        metalTextures = other.metalTextures
-        bottomUp = other.bottomUp
+    /// Exchanges pictures with another frame, pool slot included (B386): the held frame takes a drained slot's picture
+    /// and the slot takes the held frame's spare pool texture and old references, which the decode thread's `clear`
+    /// then releases on its own thread. A HAP frame is decoded in place into its pool texture, so a shared reference
+    /// would not do.
+    func exchange(with other: DecodedFrame) {
+        swap(&poolIndex, &other.poolIndex)
+        swap(&frameIndex, &other.frameIndex)
+        swap(&kind, &other.kind)
+        swap(&texture0, &other.texture0)
+        swap(&texture1, &other.texture1)
+        swap(&texture2, &other.texture2)
+        swap(&pixelBuffer, &other.pixelBuffer)
+        swap(&metalTextures, &other.metalTextures)
+        swap(&bottomUp, &other.bottomUp)
     }
 }
 
