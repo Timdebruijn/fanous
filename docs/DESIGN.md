@@ -3556,8 +3556,16 @@ groundwork and small engine pieces first):
   `speed == 100 %` and direction is forward; otherwise the ring is muted
   (`[OPEN-15]` varispeed/pitch later). Freeze/scrub mute instantly, dissolve
   crossfades audio with the video.
-- Sync: the layer clock is master. The render callback compares the ring's
-  head pts with the clock; drift beyond ±20 ms is corrected by dropping or
+- Sync: the layer clock is master. The compositor hands the audio the
+  clock's position with the tick's target, the tick's nominal presentation
+  time (B320: stamped with the time of the tick, the audio ran one tick's
+  lead ahead of the picture), and the audio extrapolates it in host time;
+  the decoder never takes its clock before that target, so a seek to an in
+  point or a loop's restart starts there and the first callback waits
+  silent for it. The render callback reads that clock at its own start,
+  not at the time its buffer is heard: the output path's latency is not
+  compensated (B406). It compares the ring's head pts with the clock;
+  drift beyond ±20 ms is corrected by dropping or
   repeating up to 2 ms per callback (inaudible for programme material) until
   the audio is on the clock or the drift changes sign, not only back inside
   the window (B394: a correction that stopped at the window's edge left 18 to
@@ -3570,10 +3578,12 @@ groundwork and small engine pieces first):
   time and in target time both, either way (its master was retriggered, or
   it locked on: first, or again after freewheeling or a freeze; B395), so
   its audio reseeks like the master's; a slave tick that starts late is no
-  jump (the audio runs in host time; a local master's entry steps in target
-  time), nor is a tick that holds the slave at its last frame under a
-  longer master file; the master's loop wrap leaves under a frame, a reseek
-  only below 50 fps, where the producer reseeks at the wrap anyway;
+  jump (a remote master's entry is extrapolated in host time; a local
+  master's entry steps in target time; a late tick shifts a remote slave's
+  audio clock by its lateness for that tick: nothing below 20 ms, one
+  short correction for a later tick), nor is a tick that holds the slave
+  at its last frame under a longer master file; the master's loop wrap leaves under a frame, a
+  reseek only below 50 fps, where the producer reseeks at the wrap anyway;
   between two callbacks the ring's head runs up to one callback ahead
   of the clock, so a clock a little behind the ring is normal and is never
   inferred to be a jump. From the signal until the decoder has started the new
@@ -3716,6 +3726,14 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   were sent (one at a time, on that connection's receive queue), each with a
   `sub` or a refusal (`error` with `stream`): the client matches replies to its
   requests by that order.
+- Commands run one at a time on that queue too, in the order sent, except a
+  `show.mode` entry (B287): it runs on a second queue of that connection, as
+  entering runs the readiness checks (up to about 12 s). Its ack still comes
+  after the checks, with their outcome, but every other command sent behind
+  an entering `show.mode` runs at once and its ack can come first: the order
+  between a `show.mode` entry and the connection's other commands is not kept;
+  the client matches acks by `id`. A leave waits for an entry still on that
+  queue and is done before the connection's next command runs.
 - Patches are RFC 6902 ops on a revision counter; a client that misses a
   revision (gap) re-requests a snapshot. Every change to `project` is a
   **command** on Control: validated, applied, inverse recorded for undo,
@@ -4907,9 +4925,10 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   entry at a time, and decides on the control queue (show mode still off, no
   library root change started since the checks began, no leave since the entry
   arrived; a leave from another client or source during an entry wins and the
-  entry answers ok without entering). The entering client's
-  own later commands still wait, its connection's queue being serial; the 30 s timer, `readiness.run` and the display syncs
-  queue them on a serial readiness queue, off the feed queue, and a run's items
+  entry answers ok without entering). The entering connection's later
+  commands run at once, except its own `show.mode` false, which waits for the
+  entry (B287); the 30 s timer, `readiness.run` and the display syncs queue
+  their checks on a serial readiness queue, off the feed queue, and a run's items
   are stored only if no later-started run stored first (B187). Desired display modes are applied on entering
   and restored on leaving (B33, `DisplayModeSwitcher`, matching in
   `DisplayModeMatching`; one `.forSession` transaction, re-applied on
@@ -5095,7 +5114,7 @@ shipped in v1, B36).
 | NotchLC decode in Metal | `Source` protocol + compute-shader decode stage before the ring; **blocked on licence** (R11) |
 | HAP R | `bc7_rgbaUnorm` in the HAP texture path; ingest encoder flag |
 | NDI in/out, DeckLink in/out | `FanousPluginAPI` (ADR-0016): C ABI, `dlopen`ed from `~/Library/Application Support/Fanous/Plugins/`, sources hand over IOSurfaces into the same frame rings; sinks subscribe to completed canvas textures like Syphon |
-| Pixel mapping to DMX fixtures | Art-Net/sACN *builders* already exist in Core (needed for tests); a GPU sampling pass reads canvas regions into a small buffer per universe on the preview thread |
+| Pixel mapping to DMX fixtures | `ArtDmx.encoded()` is in Core, the sACN builder in the tests; a GPU sampling pass encoded after the canvas pass reads canvas points into a small buffer per universe, which a sender thread sends at DMX cadence. The pass samples a point list with x/y/z per LED, so a volume of LEDs and LEDs on winches (height map, 16-bit DMX) are the same feature: `docs/pixelmap-3d.md` (B407) |
 | Multi-server sync, main/backup failover | the Sync channel and clock packet are designed in §23 (B60, ADR-0021); a hot backup and control from one place build on the same packet plus the WSS project patches, §23.6 / OPEN-27 |
 | 3D projection mapping | the output pass already renders arbitrary meshes through a displacement field; a projected OBJ with a calibrated camera matrix replaces the slice mesh |
 | 3D-model layers (media as texture on a mesh) | the layer pass is one quad in a perspective camera (§4.3); a mesh from Model I/O (USDZ/OBJ) with its own UVs replaces the quad, the fragment shader is unchanged; needs a depth attachment on the canvas pass and a "Geometry" parameter in the reserved Layer channels 52–64 (0 = flat, 1–255 = model from the library); `docs/BACKLOG.md` B9 |
