@@ -14,6 +14,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   bounce's turning frame, for a tick (B383). The slave extrapolated the master's last moving tick by rate × age without
   knowing the in and out points; a master in a once mode or a bounce now sends rate 0 while its clock shows the end
   frame it moves towards. The packet layout is unchanged; a loop's wrap is B426 (PR #478).
+- Docs: the owner's four decisions on the 3D pixel-mapping note (`docs/pixelmap-3d.md` §6, row B407): z up with
+  the up axis a project setting, CSV and OPC import both, the height map on its own canvas, order atlas, kinetic,
+  project (PR #483)
+- Docs: a design note for the pixel mapper in three dimensions and for pixels on winches (`docs/pixelmap-3d.md`,
+  row B407): a point list with x/y/z per LED, three sampling modes, a height map for kinetic groups, and what
+  changes on the wire when Fanous sends Art-Net/sACN (PR #481)
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
