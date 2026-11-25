@@ -190,6 +190,22 @@ struct ProjectValueRangeTests {
         #expect(store.project["layerCount"]?.int == 1)
     }
 
+    /// B339: `output.set` refused only a region side <= 0, so a height of 2^59 was accepted and the engine trapped in the
+    /// preview's size arithmetic when a client opened that output's preview. Accepted on the old code (no trap here: this
+    /// test never opens a preview).
+    @Test func aRegionSideBeyondTheLargestTextureIsRefused() throws {
+        let (store, _) = testStore(outputs: 0)
+        try addOutputs(store, 1)
+        let message = "region width and height must be at most 16384 px"
+        for (w, h) in [(1920, 1 << 59), (1 << 59, 1080), (16385, 1080)] {
+            let result = store.execute("output.set", args: ["id": 1, "path": "/region", "value": ["x": 0, "y": 0, "w": .number(Double(w)), "h": .number(Double(h))]], role: .programmer)
+            #expect(result == .failure(.invalidArgs(message)), "\(w)×\(h)")
+        }
+        _ = try store.execute("output.set", args: ["id": 1, "path": "/region", "value": ["x": 0, "y": 0, "w": 16384, "h": 16384]], role: .programmer).get()
+        #expect(store.execute("output.set", args: ["id": 1, "path": "/region", "value": ["x": 0, "y": 0, "w": 0, "h": 1080]], role: .programmer)
+            == .failure(.invalidArgs("region needs a positive size")))
+    }
+
     /// Every value above in one project file: it loads, and the loaded document is the file's as a JSON tree (what the
     /// engine writes at start, the live catalogs, is an edit of that tree, so the values stay); what the engine derives
     /// from it is computed without a trap.

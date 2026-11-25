@@ -18,6 +18,9 @@ public enum ProjectDocument {
     public static let frameRates: [Double] = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60]
     /// Canvas width and height `canvas.set` accepts (even values only).
     public static let canvasSides = 320...8192
+    /// The largest width or height `output.set` accepts for an output's region (B339): Metal's largest texture side,
+    /// so no drawable is larger; `OutputRenderer.compile` clamps a region to its drawable.
+    public static let maxRegionSide = 16384
 
     /// Checks a canvas format and returns it with the rate snapped to the list entry (23.976 for 24000/1001).
     /// Even sizes only (the H.264 preview halves them); no multiple of 4 is needed: HAP's 4×4 blocks apply to media,
@@ -306,6 +309,9 @@ public enum ProjectDocument {
             if let problem = output.slices[i].masks.lazy.compactMap(\.problem).first { throw CommandError.invalidArgs("slice \(output.slices[i].id): \(problem)") }
         }
         if let region = output.region, region.w <= 0 || region.h <= 0 { throw CommandError.invalidArgs("region needs a positive size") }
+        if let region = output.region, region.w > maxRegionSide || region.h > maxRegionSide {
+            throw CommandError.invalidArgs("region width and height must be at most \(maxRegionSide) px")  // B339: the preview's size arithmetic
+        }
     }
 
     static func setOutputs(_ outputs: [OutputConfig], in project: inout JSONValue) throws {
