@@ -88,7 +88,7 @@
     }
   }
 
-  // Every rescan (a file landed, Rescan pressed) bumps scannedAt in the live document.
+  // Every rescan that changes the library (a file landed, Rescan pressed after a change) bumps scannedAt in the live document.
   $effect(() => {
     void app.live.library.scannedAt;
     untrack(() => void load());

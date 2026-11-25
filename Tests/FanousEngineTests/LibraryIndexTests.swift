@@ -159,6 +159,10 @@ struct LibraryIndexTests {
         try Self.touch(root.appending(path: "001_Show/002_b.mov"))
         #expect(await waitUntil(every: .milliseconds(50)) { index.snapshot.fileCount == 2 })
         #expect(index.snapshot.scannedAt > stamp)
+        // the ingest's last step: its hidden temp file renamed to the numbered name
+        try Self.touch(root.appending(path: "001_Show/.ingest-x.mov"))
+        try FileManager.default.moveItem(at: root.appending(path: "001_Show/.ingest-x.mov"), to: root.appending(path: "001_Show/003_c.mov"))
+        #expect(await waitUntil(every: .milliseconds(50)) { index.snapshot.fileCount == 3 }, "the rename onto a listed name rescans")
         #expect(LibraryIndex.ignoredEvent("/r/_incoming", watched: "/r") && LibraryIndex.ignoredEvent("/r/001_A/.x", watched: "/r/"))
         #expect(!LibraryIndex.ignoredEvent("/r", watched: "/r") && !LibraryIndex.ignoredEvent("/r/001_A/002_b.mov", watched: "/r"))
         #expect(!LibraryIndex.ignoredEvent("/elsewhere/_x", watched: "/r"), "a path outside the root rescans")
