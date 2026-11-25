@@ -24,7 +24,7 @@ struct ReferenceSwapGPUTests {
         let (compositor, parameters) = try makeCompositor(context, size: (64, 36))
         let url = tempFile("fanous-b273-chase", ext: "mov")
         try await writePatternMovie(to: url, size: (64, 36), fps: 25, frames: 100, codec: .hap(.hap))
-        let movie = try await MovieSource.open(url: url, device: context.device, poolSize: 2)
+        let movie = try await MovieSource.open(url: url, device: context.device, poolSize: 3)  // ring + 1, as the loader opens it (B386)
         let ring = FrameRing(capacity: 2)
         let playback = LayerPlayback(key: MediaKey(folder: 1, file: 1), movie: movie, decoder: LayerDecoder(source: movie, ring: ring, logger: testLogger), ring: ring)
         compositor.setLayers([.playing(playback)])

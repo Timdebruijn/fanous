@@ -73,9 +73,9 @@ public final class DecodedFrame {
     }
 
     /// Exchanges pictures with another frame, pool slot included (B386): the held frame takes a drained slot's picture
-    /// and the slot takes the held frame's spare pool texture and old references, which the decode thread's `clear`
-    /// then releases on its own thread. A HAP frame is decoded in place into its pool texture, so a shared reference
-    /// would not do.
+    /// and the slot takes the held frame's pool texture (the spare at first, later whichever it last kept) and old
+    /// references, which the decode thread's `clear` then releases on its own thread. A HAP frame is decoded in place
+    /// into its pool texture, so a shared reference would not do.
     func exchange(with other: DecodedFrame) {
         swap(&poolIndex, &other.poolIndex)
         swap(&frameIndex, &other.frameIndex)

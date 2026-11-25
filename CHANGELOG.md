@@ -10,7 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Playback: the frame a layer keeps showing across a seek is a copy, not the ring slot (B386). After the ring drained,
+- Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
+  slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in
   the same tick: a wrong label and a replaced texture under the GPU, and a HAP frame, decoded in place into its pool
   texture, changed pixels. The playback's own held frame now exchanges pictures with the drained slot, pool texture

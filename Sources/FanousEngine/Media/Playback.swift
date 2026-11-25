@@ -162,11 +162,14 @@ public final class LayerPlayback: @unchecked Sendable {
     var currentShown = -1
     var previousShown = -1
     var holdFrame: DecodedFrame?
-    /// `holdFrame`'s media frame as it was when it was taken (B371). −1 = none.
+    /// `holdFrame`'s media frame (B371), equal to `holdFrame?.frameIndex` since B386 (nothing relabels a held frame).
+    /// −1 = none.
     var holdFrameIndex = -1
     /// The frame held after a drain (B386): it exchanges pictures with the drained slot, pool texture included (the
     /// movie's pool has one texture more than the ring for it), so the decode thread refills the slot while the GPU
-    /// still reads the held picture. A shown ring slot is never freed, so the other held frames are the slots themselves.
+    /// still reads the held picture. Outside a drain the pop loop keeps the shown slot (`currentShown`), so there
+    /// `holdFrame` is the slot itself. After a seek lands, `held` keeps the old picture (one ProRes frame, about 8 MB
+    /// at 1080p 4:2:2) until the next drain or the playback's end.
     private let held: DecodedFrame
     /// The mixer channel this playback's decoder fills (movies with an audio track only).
     public var audioChannel: LayerAudioChannel? { decoder?.audioChannel }
