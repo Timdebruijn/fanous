@@ -66,7 +66,7 @@ things up in the third.
 | | [show-day-checklist.md](show-day-checklist.md) | A printable checklist for the day of the show: Mac settings, the readiness list, show mode and what comes back after a crash |
 | | [troubleshooting.md](troubleshooting.md) | From the symptom to the cause, with flowcharts: unreachable engine, silent universe, black layer or output, timecode, CITP, logs, versions, reset, a forgotten password |
 | Look up | [screens/](#the-seven-screens) | One page per screen with every control, status word and message: see The seven screens below |
-| | [channel-map.md](../channel-map.md) | Every DMX channel of the four fixtures with its default, bands and OSC key |
+| | [channel-map.md](../channel-map.md) | Every DMX channel of the five fixtures with its default, bands and OSC key |
 | | [reference/files-and-ports.md](reference/files-and-ports.md) | Every file the engine writes, every port, the command line, service names |
 | | [reference/osc.md](reference/osc.md) | Every OSC address in and out, argument types, the subscribe handshake, limits |
 | | [reference/api.md](reference/api.md) | REST routes with their roles, the WebSocket protocol, every command, error codes, limits |

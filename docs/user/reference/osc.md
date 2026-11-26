@@ -52,6 +52,7 @@ show, and they are never refused by the show lock or show mode.
 | `/fanous/show/lock` | 1 bool-like (`i` or `f` non-zero, `T`, `F`, or an impulse `I` for true; `h` and `d` are ignored) | Locks or unlocks | programmer, also while locked |
 | `/fanous/show/mode` | 1 bool-like | Enters or leaves show mode; entering is refused while readiness items block, with a warning in the engine log | operator |
 | `/fanous/timecode/enable` | 1 bool-like | The timecode switch | operator |
+| `/fanous/timecode/{key}` | 1 value | Timecode fixture: `control hours minutes seconds frames rate source`; nothing reads it yet (`docs/timecode-out.md`) | none |
 | `/fanous/project/load` | 1 string | Restores the newest named project version with that name (case-insensitive), else the version with that id; the same version within 2 s is ignored; refused in show mode and while the show is locked | programmer |
 
 Operator commands work while the show is locked. Nothing that names a file
@@ -111,7 +112,7 @@ Readable addresses:
 |---|---|---|
 | `/fanous/layer/{n}/{key}` | f | The layer parameter as applied, after Who controls, as 0 to 1 of its range (`folder` and `file` as fractions of 255: use `media`) |
 | `/fanous/layer/{n}/media` | i i | Folder, file |
-| `/fanous/master/{key}`, `/fanous/output/{n}/{key}`, `/fanous/keystone/{n}/{key}` | f | The same for the Master, the outputs and the keystones |
+| `/fanous/master/{key}`, `/fanous/output/{n}/{key}`, `/fanous/keystone/{n}/{key}`, `/fanous/timecode/{key}` | f | The same for the Master, the outputs, the keystones and the Timecode fixture |
 | `/fanous/output/{n}/state` | s | `bound`, `lost` or `unassigned` |
 | `/fanous/output/{n}/bound` | i | 1 when the output shows on its display |
 | `/fanous/cue/current` | f | The current cue's number, −1 for none |

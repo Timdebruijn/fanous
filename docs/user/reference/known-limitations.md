@@ -40,6 +40,9 @@ link here. Back to the [index](../README.md).
 | The OSC feedback target for a controller that cannot subscribe can only be set in `settings.json`, not on the System screen. OSC listens on port 8000 on every interface; neither can be changed. | — |
 | The OSC panel's address list shows `/fanous/cue/goto` with `i` although any number works. | — |
 | A slave layer's freewheel before it reads lost is 2 s and cannot be changed. Two Macs with the same machine id (a cloned install) throw each other's packets away with no warning. | B179 |
+| A sync slave can show the frame past the seam for one tick at the wrap of a loop with in and out points, and at a once end or a bounce turn when the master steps more than one frame per tick (speed above 100 %, or content faster than the output). | B426 |
+| An MTC locate holds the clock, Locked, at the locate position; when the MTC source is unplugged while it holds, the Timecode panel and the status bar go on reading Locked. | B409 |
+| A cue fade starts from the cue's own last value, not from what shows: after a console, UI or MIDI fader moved a parameter a cue holds, the next cue that fades that parameter jumps to the old cue value first. | B446 |
 
 ## Media and inputs
 
@@ -55,6 +58,11 @@ link here. Back to the [index](../README.md).
 | A UVC webcam (Logitech C920, Brio) may stay at its driver's default format, for example 640 × 480 on a larger canvas. Capture cards follow their input. | B131 |
 | Blackmagic DeckLink and AJA cards do not appear: they need their own SDK, which is planned for the Pro build. Windows of other apps (folder 0, files 29 to 32) are reserved but not available. | B73 |
 | Audio plays on the Mac's default output device in one stereo mix: no device choice, no output routing per layer. The device's latency is compensated as the device reports it; a projector's own picture delay is not measured: set `audio.offsetMs` in `settings.json` after a clap check. Because the sound leaves with the picture, the part of every start or retrigger by which the output's latency exceeds the picture's own lead is not heard: about 11 ms on MacBook Pro speakers at 60 Hz, 100 ms or more on Bluetooth, seconds if an AirPlay device reports its full latency. With a positive `audio.offsetMs`, a cut to another file has a silent gap of about the offset less 11 ms; a retrigger of the same clip has none, but its new start loses its first few milliseconds. | B4, B76, B472 |
+| A correction of drift between sound and picture plays the sound up to about 3 semitones higher or lower for 0.1 to 0.16 s; it has not been listened to. | B445 |
+| A movie whose audio track has a sample rate outside 1 Hz–768 kHz does not open on a layer at all, picture included: transcode it. | B471 |
+| A file whose decoding stops the engine after it opened on a layer (not during the open) is not marked unreadable: it stops the engine again each time a layer selects it. | B440 |
+| A large file copied into a numbered folder in Finder can show as **unreadable** while the copy runs, and every open UI fetches the library again about once a second until it is done; the file is read again when the copy ends. Copy into a folder whose name starts with `_` and move the file in afterwards. | B430 |
+| A crash or power cut while a thumbnail is being written can leave a cut-off thumbnail, shown on the Media and Layers screens and over CITP until the file changes. | B470 |
 | Audio plays only forward at 100 % speed (layer speed × Master speed); at any other speed, and in Freeze, Scrub and Timecode, the layer is silent. A looping clip whose audio is shorter than its video has a short gap at the loop; the first moment after a long pause can be silent. | B3 |
 
 ## Outputs and mapping

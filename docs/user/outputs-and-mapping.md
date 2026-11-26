@@ -33,7 +33,7 @@ warp, one or more slices with their masks, and a colour match. A new output
 shows the whole canvas, unblended and unwarped. Everything an output does
 runs on the GPU in the last step, so it costs no layer capacity. Each
 output is also an 8-channel Output fixture on the console
-([Console setup](console-setup.md#the-four-fixtures)): intensity,
+([Console setup](console-setup.md#the-five-fixtures)): intensity,
 blackout and freeze (channel 3), test pattern (channel 4), Raw (channel 5),
 mapping preset and fade (channels 6 and 7). Console control covers outputs
 1 to 8; outputs 9 and up are driven from the UI only.
@@ -71,7 +71,7 @@ projector; use the warp for the fine trim, not to square up a big rotation.
    one added on the Patch screen.
 4. Name it after the projector (**Name** under the list). When one display
    carries several outputs, set the **Region** each output draws on, in
-   display pixels: a 3840 × 2160 port into a splitter that feeds four
+   display pixels (16384 at most each way): a 3840 × 2160 port into a splitter that feeds four
    1920 × 1080 projectors gets 0 · 0 · 1920 · 1080, 1920 · 0 · 1920 · 1080,
    0 · 1080 · 1920 · 1080 and 1920 · 1080 · 1920 · 1080.
 5. Leave **Intensity** at 100 %: the console's Output and Master intensity
@@ -175,7 +175,7 @@ you leave show mode.
 | "Mode differs: … wanted …. Applied in show mode." | The display runs another mode now | Nothing: show mode applies it |
 | "Mode … is not available on this display; closest …" | The display does not offer that mode | Pick the closest, or set the projector itself |
 | "N Hz is not a multiple of the canvas M fps: motion judders" | The wanted refresh rate, or without a Mode the rate its display runs at in show mode, and the canvas rate do not match | Change the Mode or the canvas frame rate |
-| "Conflicts with Output N on the same display" | Two outputs on one display want different modes | The first output with a Mode wins; make them agree |
+| "Conflicts with Output N on the same display: its mode … is used." | Two outputs on one display want different modes | The first output with a Mode wins; make them agree |
 | "Not applied: screen locked: modes applied when unlocked" | macOS refuses display changes on a locked screen | Unlock the Mac; the mode follows while show mode is on |
 
 The judder warning, and the readiness item **Outputs in their desired

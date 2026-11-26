@@ -105,10 +105,11 @@ goto is always taken, and a goto to a number that does not exist fires nothing.
 | `/fanous/cue/{number}/go` | none | That cue |
 | `/fanous/show/lock`, `/fanous/show/mode` | i | 1 locks or enters, 0 unlocks or leaves |
 | `/fanous/timecode/enable` | i | The timecode switch |
+| `/fanous/timecode/{key}` | f or i | A Timecode fixture parameter (`control`, `hours`, `minutes`, `seconds`, `frames`, `rate`, `source`); nothing reads it yet |
 | `/fanous/project/load` | s | The newest named project version with that name (or a version id); refused in show mode and while the show is locked |
 
 Parameter messages show or not by Who controls. Cue, show-mode and
-timecode messages run as the operator and show lock as the programmer, so
+timecode switch messages run as the operator and show lock as the programmer, so
 all of them work while the show is locked; a refusal (show mode blocked by
 the readiness list, project load under the lock) is logged, not sent back.
 Cue, show and timecode messages run one at a time in the order they arrive

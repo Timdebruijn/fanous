@@ -33,7 +33,10 @@ Good to know: only movies have a clock, so a still, built-in content from
 folder 0 and a live input neither send nor follow. A slave ignores its own
 Play mode, Speed, In and Out points, timecode chase and Retrigger while it
 has a master; a master in Freeze, Scrub or Timecode keeps sending with a
-clock that stands still, so its slaves hold or step with it. The Sync
+clock that stands still, so its slaves hold or step with it. A master in
+a once mode sends rate 0 when it reaches its end frame, and in Bounce at
+each turn, so its slaves do not run past that frame; at a loop's wrap with in and
+out points a slave can show the frame past the seam for one tick. The Sync
 channel is a layer parameter like any other, so Who controls applies, and
 its home value is 0: every cue and palette on the console must hold it.
 
@@ -140,7 +143,9 @@ lost, and links to the Layers screen.
 
 System › Sync shows the **Machine** (this Mac's name and the first 8
 characters of its id; the lower id wins a group with two masters),
-**Packets** in, out and decode errors counting up live (out counts at the
+**Packets** in, out and decode errors counting up live (a decode error is
+a damaged packet or one with a clock no real master sends; a repeated or
+late packet never replaces a newer one; out counts at the
 frame rate while a master plays, one a second otherwise; in stays 0 on a
 Mac that hears no other), **Masters here**, **Conflicts**, and the settings
 below ([System screen](screens/system.md#sync)). While nothing renders

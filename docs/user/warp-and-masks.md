@@ -317,7 +317,7 @@ all of them have).
 ### From the console
 
 Output fixture channels 6, **Mapping preset**, and 7, **Mapping fade**
-([Console setup](console-setup.md#the-four-fixtures)), on outputs 1 to
+([Console setup](console-setup.md#the-five-fixtures)), on outputs 1 to
 8:
 
 ```mermaid
@@ -379,7 +379,7 @@ channel 7 if that preset differs from what it shows.
 
 To move an output's four corners from the console, patch a **Keystone**
 fixture (16 channels,
-[Console setup](console-setup.md#the-four-fixtures)). It works on top of
+[Console setup](console-setup.md#the-five-fixtures)). It works on top of
 the alignment made here, for moving scenery or a quick fix from front of
 house; it is not the projector's own keystone setting.
 

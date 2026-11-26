@@ -174,7 +174,8 @@ through. A locate on the playback skips the cues between the old and the
 new position, which is intended: MTC sends a locate as its own message,
 which fires nothing; LTC has none, so a jump while LTC runs skips only at
 5 s or more, and a shorter one fires the cues it passes; one that lands on
-a still frame fires nothing. Fire a skipped cue with Go to. Triggers
+a still frame fires nothing. An LTC start or jump counts only once the next
+frame continues it, so one damaged frame moves no layer and fires no cue. Fire a skipped cue with Go to. Triggers
 use the incoming time as it is: the **Offset** on the Timecode panel moves
 the layers that chase timecode, not the triggers, so write the triggers at
 the times the timecode really shows. A follow is set each time the cue
@@ -270,14 +271,14 @@ stateDiagram-v2
   Freewheel --> Locked: a frame arrives
   Freewheel --> Lost: no frame for the Freewheel time (2 s)
   Lost --> Locked: a frame arrives
-  Locked --> Off: switch off, or a setting changes
+  Locked --> Off: switch off, or Source, Device or Channel changes
   Freewheel --> Off: switch off
   Lost --> Off: switch off
 ```
 
 | State | Layers that chase | Triggers | Shown |
 |---|---|---|---|
-| **Locked** (green) | Follow the time | Fire | Readout runs (stands after an MTC locate); status bar `timecode · locked` |
+| **Locked** (green) | Follow the time (an LTC sender parked on a still frame holds them there) | Fire | Readout runs (stands after an MTC locate or on an LTC still frame); status bar `timecode · locked` |
 | **Freewheel** (yellow): the clock keeps counting for a moment after the signal dropped | Keep running at the last rate (after a still frame they stand) | Do not fire | Readout keeps counting (after a still frame it stands) |
 | **Lost** (red): no signal for the Freewheel time | Hold their position | Do not fire | Status bar red while the show is locked |
 | **Off** | Stand still; other layers play as set | Do not fire | Readout dashed |
@@ -296,7 +297,8 @@ needs an Offset of one hour: type `01:00:00:00` in Start (90000 frames at
 25 fps), else it shows the file one hour in, wrapped; the triggers are
 written at 01:00:… whatever the Offset. A change of Source, Device,
 Channel or the switch restarts the input: the state drops to Off for a
-moment and comes back Locked. Offset and Freewheel apply at once. The
+moment and comes back Locked. Offset, Layer offset and Freewheel apply at
+once, without a restart. The
 settings are the programmer's and are refused while the show is locked,
 so set them before you lock.
 

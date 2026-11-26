@@ -221,6 +221,7 @@ The Layers screen shows the problem in the row's Media column.
 | The row reads | Do |
 |---|---|
 | "no file N in folder M" | The number does not exist or the file is not playable: Media screen, that folder: invalid name, needs transcode, unreadable ("AVFoundation cannot open .webm files": a `.webm`, `.mkv`, `.mxf`, `.wmv`, `.flv`, `.ogv`, `.asf`, `.f4v`, `.divx`, convert it on another machine) ([Media library](media-library.md)) |
+| "<file>: the engine stopped twice while reading it: replace or re-save the file to try again" | The engine stopped twice while this file was read, opened on a layer or decoded as a mask, so it is listed as unreadable: replace or re-save the file; it is read again when it changes ([Media library](media-library.md#thumbnails-and-probing)) |
 | A decoder error ("unsupported codec", "VideoToolbox error", "no video track", "frame rate above 1000 fps") | Transcode the file again or replace it, then select another clip on the layer and this one again, or send Clear error (Layer channel 50 at 24 to 31): the file is opened anew |
 | A decoder error on a movie that was playing ("HapDecode failed", "VideoToolbox error") | For half a second or more no frame of the file decoded. The layer shows the last frame that did. When not one frame of a newly selected file decodes from its start frame, the layer goes on playing the clip it showed before. The error goes by itself when a frame decodes again, or when another clip is selected. Transcode the file again or replace it |
 | "no capture device / display / Syphon server numbered N" | Nothing has that number in folder 0: Inputs screen, **Number** ([Live inputs](live-inputs.md)) |
@@ -284,8 +285,9 @@ damaged clip that loops does not fill the log.
 - Its Intensity up, and the Output and Master fixtures' Intensity up with
   no Blackout: a test pattern follows them like the picture, so a pattern
   that stays black points at them.
-- No output at all: the status bar's outputs item reads 0 and its caption
-  "no outputs rendering: add or assign one (Outputs)".
+- No output at all: the status bar's outputs item reads 0 (the project has
+  no output) or off (the engine renders nothing; the fps item then reads
+  "no outputs rendering: add or assign one (Outputs)").
 - After a library root change the layers look their media up in the new
   library at once: a number that does not exist there reads "no file N in
   folder M".
@@ -328,9 +330,9 @@ against the frame budget ([System screen](screens/system.md#live-metrics)).
 `/metrics` (see [the API](reference/api.md)) counts `staleFrames`: a movie
 shown with an older frame than its play position. `layerStaleFrames` says
 which layer (the first number is layer 1, counted since the engine started).
-Some counts are by design: a bounce turn or a change from forward to reverse
-holds 22 to 23 frames of a 60 Hz output (about 0.4 s), a retrigger and every
-pass of a loop with in and out points 1. A count that keeps rising on a plain
+Some counts are by design: a retrigger, a switch of play mode and a bounce
+turn above about 1.2x speed hold about 1; a bounce turn at normal speed and
+the wrap of a loop with in and out points hold none. A count that keeps rising on a plain
 loop means the decoder cannot keep up: too many or too heavy layers (4K60 on
 several layers), or a slow volume for the library.
 
@@ -340,7 +342,9 @@ Audio plays on the Mac's default output device in one stereo mix
 ([Media library](media-library.md#audio)). System Settings › Sound ›
 Output: the right device; a replugged HDMI display can switch it. The
 layer's audio channels on the console (volume, mute); audio plays only at
-100 % speed forward. System › Live metrics › audio counts underruns.
+100 % speed forward. System › Live metrics › audio counts underruns. Sound
+late or early against a display that delays the picture: set
+`audio.offsetMs` in `settings.json` ([Media library](media-library.md#audio)).
 
 ## A cue does not fire
 
@@ -378,7 +382,8 @@ count up ([Show control](show-control.md#timecode)).
   (or **Authorize microphone** on the Inputs screen, not in show mode).
 - Freewheel (yellow) means the signal dropped; Lost (red) means it stayed
   away longer than the Freewheel time.
-- Turning **Timecode** off and on again reopens the input.
+- An input whose device drops, changes its sample rate or comes back opens
+  again by itself; turning **Timecode** off and on again reopens it by hand.
 
 For MTC the MIDI panel must list the source; connect the interface or
 enable a network MIDI session, then choose it under Device or All sources.
