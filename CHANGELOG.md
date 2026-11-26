@@ -14,6 +14,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   addresses, LTC still frames and frame checks, the timecode restart rule, stale-frame counts, sync slaves at once ends,
   the stopped-twice reason on a layer, `audio.offsetMs`, message limits, the connection cap; known limitations gain
   B409 B426 B430 B440 B445 B446 B470 B471 (PR #503)
+- Docs: screenshots retaken for the show mode popover, the refused-command banner, two Patch screen layer groups, the
+  content template, and the System screen, Logs panel and tour frame that showed an old engine version (PR #504).
 - Release: 1.0.0-rc.19 is on GitHub as a pre-release with the signed, notarized dmg, built from main 59c1f2e
   (PR #501).
 

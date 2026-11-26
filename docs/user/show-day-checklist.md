@@ -163,7 +163,7 @@ flowchart TD
   fail -- no --> in["Show mode is on"]
 ```
 
-<img src="images/show-mode-popover.png" width="321" alt="The popover Cannot enter show mode listing five items with their fix hints, and the buttons Open System and Close">
+<img src="images/show-mode-popover.png" width="321" alt="The popover Cannot enter show mode listing four items with their fix hints, and the buttons Open System and Close">
 
 ### Show mode
 
