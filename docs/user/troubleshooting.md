@@ -330,8 +330,8 @@ against the frame budget ([System screen](screens/system.md#live-metrics)).
 `/metrics` (see [the API](reference/api.md)) counts `staleFrames`: a movie
 shown with an older frame than its play position. `layerStaleFrames` says
 which layer (the first number is layer 1, counted since the engine started).
-Some counts are by design: a retrigger, a switch of play mode and a bounce
-turn above about 1.2x speed hold about 1; a bounce turn at normal speed and
+Some counts are by design: a retrigger, a seek by in or out point, a switch
+of play mode and a bounce turn above about 1.2x speed hold about 1; a bounce turn at normal speed and
 the wrap of a loop with in and out points hold none. A count that keeps rising on a plain
 loop means the decoder cannot keep up: too many or too heavy layers (4K60 on
 several layers), or a slow volume for the library.

@@ -132,7 +132,7 @@ browser's find for a word. Back to the [index](../README.md).
 | **Frame budget** | The time one frame may take: 16.7 ms at 60 fps, 40 ms at 25 fps. GPU p99 above it means dropped frames. |
 | **DMX to photon** | Time from a DMX change arriving to the engine handing the frame that shows it to the display: measured p99 about 30 ms on the M1 Pro at 60 fps. The display's or LED processor's own delay comes on top and is not measured. |
 | **Texture miss** | A layer that had no frame at all when the compositor needed it: the layer is left out of that frame and what is below it shows (rare for a movie, which holds its last frame; a blink for a live input). |
-| **Stale frame** | A movie layer shown with a frame other than the one its play position is on: an older frame held while the decoder catches up (after a seek, a retrigger or a play mode switch) or falls behind. `/metrics` counts it as `staleFrames`, per layer in `layerStaleFrames`. |
+| **Stale frame** | A movie layer shown with a frame other than the one its play position is on: an older frame held while the decoder catches up (after a seek, such as a retrigger or a seek by in or out point, or a play mode switch) or falls behind. `/metrics` counts it as `staleFrames`, per layer in `layerStaleFrames`. |
 | **dBFS** | Decibels relative to full scale, for the LTC level meter: 0 is the loudest the input can take, −3 is close to clipping, −60 is silence. |
 | **Bonjour** | macOS's way of announcing services on the local network; Fanous appears as `_fanous._tcp` and `_https._tcp`. |
 | **TLS fingerprint** | The SHA-256 checksum of the engine's self-made certificate, shown under System › Network, to confirm a browser's certificate warning. |
