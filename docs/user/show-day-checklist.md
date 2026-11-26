@@ -28,7 +28,10 @@ on the night, [Troubleshooting](troubleshooting.md).
       screen recording with an engine restart after it, microphone); they
       cannot be asked in show mode.
 - [ ] Sound output device chosen in macOS (System Settings › Sound) and a
-      level test on the PA; a replugged HDMI display can switch it.
+      level test on the PA; a replugged HDMI display can switch it. A clap
+      check on the outputs: sound against picture; correct it with
+      `audio.offsetMs` in `settings.json` and restart the engine
+      ([Media library](media-library.md#audio)).
 - [ ] A full run in show mode with the show locked, on this Mac.
 - [ ] System screen: **Run checks**; the list green except what you
       acknowledge on purpose.

@@ -37,7 +37,7 @@ Everything below is in `~/Library/Application Support/Fanous/` (mode 0700).
 | `show-state.json`, `restart-pending` | Show mode across a crash or restart | The first is written every 30 s while show mode is on, and when the current cue or the values the cues hold change (a cue fires, the cue list is edited): show mode resumes, on that cue (or, when the project no longer has it, the nearest cue numbered before it) with those values, when the engine starts within two hours of the last write, after a crash, a Force Quit or a power cut (an ordinary quit of `fanousd` leaves show mode); an older file is ignored and removed; a planned Restart or Shut Down of the Mac removes it. The second is written by the app right before Engine › Restart Engine and honoured for 60 s. |
 | `display-modes.json` | The display modes to put back after show mode | Only while modes are switched |
 | `ingest-queue.json` | The ingest queue | Survives an engine restart; done jobs leave the list after a minute |
-| `cache/library-index.json`, `cache/thumbnails/*.jpg` | Media metadata and thumbnails | Keyed by path, size and modification time; a changed file is probed again, and after an update that rewords the reasons so is every file that is not playable, once |
+| `cache/library-index.json`, `cache/thumbnails/*.jpg` | Media metadata and thumbnails | Keyed by path, size and modification time; a changed file is probed again, and after an update that rewords the reasons so is every file that is not playable, once. Written every 200 files or 2 s while files are read and when the engine stops, not in show mode; entries and thumbnails of files that left the library are removed |
 | `tls/` | The engine's certificate and `fingerprint.sha256` | An ad-hoc build keeps the private key here (mode 0600); a signed build keeps it in the keychain. `fanousd reset-tls` makes a new one |
 
 ### Logs
@@ -101,6 +101,7 @@ Connection limits on TCP 8443 and the CITP port (B269):
 | Open connections per IP address | 64; this Mac (127.0.0.1) is not counted, so the app window and `/healthz` are never refused | 8 |
 | A request that stops arriving, a connection idle between requests, or a response the device stops taking (counted while the engine waits on the device, not while it works) | closed after 30 s; the TLS handshake has its own 30 s from connecting | a console that holds half a message, or stops taking what is sent to it, is closed after 30 s |
 | A WebSocket | `hello` within 10 s of connecting; then the engine pings every 15 s and closes a socket that sent nothing, not even the answer, for 45 s | — |
+| A message | A WebSocket frame or message: 4 KiB before `hello`, 64 KiB for the monitor role, 4 MiB for operator and programmer; all connections together hold at most 64 MiB of unfinished messages ([API](api.md#revisions-and-reconnecting)) | 1 MiB |
 
 A browser answers the pings by itself, so a UI left open on a screen nobody
 touches stays connected. A connection past the limit is closed at once, the
@@ -134,7 +135,7 @@ fanousd ingest DIR OUT.mov [--fps N] [--codec prores4444|prores422hq|prores422|h
 
 Exit codes: 0 after SIGTERM or SIGINT, 64 for a wrong argument, 75 when
 another engine of this user already runs ("fanousd is already running
-(pid n)"), 1 when the engine cannot start or an export or ingest fails.
+(pid n): one engine per user"), 1 when the engine cannot start or an export or ingest fails.
 
 ## Service and process names
 

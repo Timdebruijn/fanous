@@ -57,7 +57,7 @@ flowchart TD
   dlg -- "Open System Settings" --> settings["System Settings › General › Login Items &amp; Extensions ›<br>Allow in the Background: Fanous on"]
   dlg -- "Later" --> later["The app's Engine menu reads<br>service needs approval in Login Items"]
   later --> settings
-  settings --> running["Engine menu: Engine running · service installed.<br>The UI appears in the window"]
+  settings --> running["Engine menu: Engine 1.0.0-rc.19 running · service installed.<br>The UI appears in the window"]
   running --> lan{"macOS: Local Network access?"}
   lan -- Allow --> ok["The engine starts at every login<br>and restarts by itself after a crash"]
   lan -- "Don't allow" --> nodmx["No Art-Net, sACN, OSC or CITP arrives;<br>every universe pill stays silent"]

@@ -4,7 +4,7 @@
 
 # Console setup
 
-How a lighting console takes control of Fanous: the four fixtures, the patch
+How a lighting console takes control of Fanous: the five fixtures, the patch
 on both sides, Art-Net or sACN on a show network, what happens when the
 console goes silent, and how the console's values combine with Fanous's own.
 Every control of the Patch screen is in [Patch screen](screens/patch.md);
@@ -17,16 +17,16 @@ then come back here for the desk. Changing the patch needs the programmer
 role and is refused while the show is locked
 ([The user interface](ui.md#roles-and-logging-in)).
 
-## The four fixtures
+## The five fixtures
 
-Fanous is one fixture type, "Fanous", with four modes. Each mode is patched
+Fanous is one fixture type, "Fanous", with five modes. Each mode is patched
 as its own fixture on the console.
 
 | Fixture | Channels | One per | Controls |
 |---|---|---|---|
 | **Layer** | 64 | layer | Everything about one layer: intensity, folder and file, play mode, speed, in and out points, dissolve, position, scale, rotation, colour, blend mode, two effects, crop, audio, sync |
 | **Master** | 8 | machine | Master intensity (multiplies every output), Freeze all or Blackout, a test pattern on every output, Master speed |
-| **Timecode** | 8 | machine, optional | The timecode generator (not built yet: `docs/timecode-out.md`): Stop, Run or Locate, the time it is set to, its rate, and whether it counts on its own or follows a layer |
+| **Timecode** | 8 | machine, optional | The timecode generator (not built yet: `docs/timecode-out.md`): Stop, Run, Locate or Locate and run, the time it is set to, its rate, and its source: counting on its own (Internal) or following a layer |
 | **Output** | 8 | output (outputs 1 to 8) | Output intensity, Blackout or Freeze, a test pattern, Blend on or Raw, mapping preset and its fade |
 | **Keystone** | 16 | output, optional | Moves the output's four corners on top of its alignment ([Warp, slices and masks](warp-and-masks.md#keystone-from-the-console)) |
 
@@ -115,7 +115,7 @@ and start at 1.
    fixtures that exist, and adding layers later can move the Master
    ([below](#add-a-layer-when-its-place-is-taken)).
 2. **Export GDTF** on the Patch screen downloads `Fanous.gdtf` (GDTF 1.2):
-   the fixture type "Fanous" with its four modes, every channel's bands,
+   the fixture type "Fanous" with its five modes, every channel's bands,
    the 16-bit links and the home values, generated from the same table as
    the channel map. Take it to the desk the way the desk imports fixture
    files (a USB stick, the desk's network share). The file's revision text
@@ -153,7 +153,7 @@ and start at 1.
 
 ```mermaid
 flowchart TD
-  gdtf["Import Fanous.gdtf on the desk"] --> ok{"Fixture type Fanous<br>with four modes?"}
+  gdtf["Import Fanous.gdtf on the desk"] --> ok{"Fixture type Fanous<br>with five modes?"}
   ok -- yes --> patch["Patch the modes as the Patch sheet lists them"]
   ok -- "an older Fanous file is already there" --> again["Delete that fixture type on the desk,<br>then import the new file"] --> patch
   ok -- "import refused" --> hand["Build the fixture by hand from channel-map.md"] --> patch

@@ -51,7 +51,7 @@ and the TLS fingerprint from programmer.
 | Route | Method | Role | Does |
 |---|---|---|---|
 | `/healthz` | any | none | `{"status":"ok","version":"…","uptimeSeconds":N,"chip":"…"}` |
-| `/metrics` | any | none | The last second as JSON: `frames`, `missed`, `late`, `textureMisses`, `cpuMsP50`, `cpuMsP99`, `cpuMsMax`, `gpuMsP50`, `gpuMsP99`, `gpuMsMax`, `dmxToPhotonMsP50`, `dmxToPhotonMsP99`, `dmxSamples`, `windowSeconds`, `clients`, `lagging`, `showMode`, `uptimeSeconds`, `totalFrames`, `totalMissed`, `totalLate`, `pid`, `staleFrames` (pictures of a movie layer queued with a frame other than the one its clock is on, in the last second: a layer that holds or lags behind, which `textureMisses` does not see; 0 on a healthy playing layer; measured on a 25p clip at 60 Hz: 1 per retrigger and per pass of a loop with in and out points, 22 to 23 per bounce turn; counted also while nothing watches the canvas and for a layer whose canvas is not rendered), `totalStaleFrames` (the same since start), `layerStaleFrames` (since start, one number per layer, the first is layer 1: which layer it was; the sum can differ a little from `totalStaleFrames`, which leaves out a tick whose GPU work could not be encoded and keeps the count of a layer no longer listed), `openFiles` (descriptors the engine has open; it should not grow over a show; left out when they cannot be listed, as happens at the engine's limit of 10240), `refusedConnections` (`https`, and `citp` when the CITP server runs, so not with `--no-network`: connections closed at the cap per address since start), and when present `completionWaits`, `gpuErrors`, `audio`, `sync`, `preview` |
+| `/metrics` | any | none | The last second as JSON: `frames`, `missed`, `late`, `textureMisses`, `cpuMsP50`, `cpuMsP99`, `cpuMsMax`, `gpuMsP50`, `gpuMsP99`, `gpuMsMax`, `dmxToPhotonMsP50`, `dmxToPhotonMsP99`, `dmxSamples`, `windowSeconds`, `clients`, `lagging`, `showMode`, `uptimeSeconds`, `totalFrames`, `totalMissed`, `totalLate`, `pid`, `staleFrames` (pictures of a movie layer queued with a frame other than the one its clock is on, in the last second: a layer that holds or lags behind, which `textureMisses` does not see; 0 on a healthy playing layer; about 1 per retrigger, seek by in or out point, play mode switch or bounce turn above about 1.2x speed, none at a bounce turn at normal speed or at the wrap of a loop with in and out points; counted also while nothing watches the canvas and for a layer whose canvas is not rendered), `totalStaleFrames` (the same since start), `layerStaleFrames` (since start, one number per layer, the first is layer 1: which layer it was; the sum can differ a little from `totalStaleFrames`, which leaves out a tick whose GPU work could not be encoded and keeps the count of a layer no longer listed), `openFiles` (descriptors the engine has open; it should not grow over a show; left out when they cannot be listed, as happens at the engine's limit of 10240), `refusedConnections` (`https`, and `citp` when the CITP server runs, so not with `--no-network`: connections closed at the cap per address since start), and when present `completionWaits`, `gpuErrors`, `audio`, `sync`, `preview` |
 | `/api/metrics` | any | none | The 10-second summary as text |
 | `/api/live` | any | none | Every universe, fixture value with its source, policy and UI expiry; exposes the DMX senders' addresses. At most 0.2 s old: the live feed's last snapshot while a client is connected |
 | `/api/patch` | any | none | The patch as JSON |
@@ -205,7 +205,7 @@ are never recorded.
 The minimum role, whether the show lock refuses the command, and whether
 Undo records it. Every command below the programmer's level also works
 while the show is locked. A fixture is written `Layer n`, `Master`,
-`Output n` or `Keystone n`; a universe `artnet:<net>.<subnet>.<universe>`
+`Output n`, `Keystone n` or `Timecode`; a universe `artnet:<net>.<subnet>.<universe>`
 (0–127, 0–15, 0–15) or `sacn:<1–63999>`; a path is a JSON pointer.
 
 | Command | Args | Does | Role | Lock | Undo |
@@ -240,7 +240,7 @@ while the show is locked. A fixture is written `Layer n`, `Master`,
 | `output.preset.recall` | `ids, number` | Copies the preset into each output's mapping | programmer | refused | yes |
 | `output.preset.rename` | `ids, number, name` | Renames it (1–64 characters) | programmer | refused | yes |
 | `output.preset.remove` | `ids, number` | Removes it | programmer | refused | yes |
-| `patch.set` | `fixture, universe, address` | Patches a fixture (address 0 unpatches); layers up to the layer count, outputs and keystones 1–8 | programmer | refused | yes |
+| `patch.set` | `fixture, universe, address` | Patches a fixture (address 0 unpatches); layers up to the layer count, outputs and keystones 1–8, the Master and the Timecode fixture | programmer | refused | yes |
 | `patch.setMany` | `entries` | Several in one step; one bad entry refuses all | programmer | refused | yes |
 | `project.set` | `path, value` | One project value: `/name`, `/policy` (`dmx`, `internal`, `ltp`, `htp`), `/library/root`, `/ui/…` | programmer | refused | yes |
 | `project.snapshot` | `name?` | Saves a version now; named ones never expire | programmer | allowed | no |
@@ -272,7 +272,7 @@ while the show is locked. A fixture is written `Layer n`, `Master`,
 |---|---|
 | Login attempts | 5 a minute per address |
 | Session | 24 hours, in memory |
-| WebSocket clients | No cap; `/metrics` counts them and the lagging ones |
+| WebSocket clients | 64 connections per address together with every other HTTPS connection, this Mac not counted; `/metrics` counts the clients and the lagging ones |
 | Live patches | Every 50 ms, latest value per path; the live document is rebuilt every 100 ms |
 | DMX stream | One 512-byte frame per subscription every 50 ms; at most 16 per connection, the next `sub` gets the error `tooManyStreams` (with `id` and `stream`, as a refused preview) |
 | H.264 preview encoders | 4 in total, shared per target and size; the preview width is 160–1280 in four classes |

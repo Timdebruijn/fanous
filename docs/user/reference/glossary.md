@@ -80,7 +80,7 @@ browser's find for a word. Back to the [index](../README.md).
 
 | Term | Meaning |
 |---|---|
-| **Fixture** | On the console, one patched unit with a DMX address. Fanous has one fixture type, "Fanous", with four modes: Layer (64 ch), Master (8), Output (8), Keystone (16). |
+| **Fixture** | On the console, one patched unit with a DMX address. Fanous has one fixture type, "Fanous", with five modes: Layer (64 ch), Master (8), Output (8), Keystone (16) and Timecode (8, optional; nothing reads it yet). |
 | **Universe** | 512 DMX channels. Fanous writes Art-Net universes as `A net.subnet.universe` (`A 0.0.1`) and sACN universes as `S n`. `A 0.0.0` is port-address 0; a console that counts from 1 calls it universe 1. sACN universes run from 1 to 63999: there is no sACN universe 0. |
 | **Art-Net** | DMX over Ethernet, UDP port 6454, usually broadcast. Fanous does not merge Art-Net: the latest packet for a universe wins, so two consoles on one Art-Net universe fight. Send each universe from one console. |
 | **sACN** (E1.31) | DMX over Ethernet, UDP port 5568, multicast, with a **priority** per source: the highest priority wins; at equal priority the latest packet wins, or the channels merge by highest value if the universe is set so. A source silent for 2.5 s drops out. Per-address priority is not supported. |
@@ -132,7 +132,7 @@ browser's find for a word. Back to the [index](../README.md).
 | **Frame budget** | The time one frame may take: 16.7 ms at 60 fps, 40 ms at 25 fps. GPU p99 above it means dropped frames. |
 | **DMX to photon** | Time from a DMX change arriving to the engine handing the frame that shows it to the display: measured p99 about 30 ms on the M1 Pro at 60 fps. The display's or LED processor's own delay comes on top and is not measured. |
 | **Texture miss** | A layer that had no frame at all when the compositor needed it: the layer is left out of that frame and what is below it shows (rare for a movie, which holds its last frame; a blink for a live input). |
-| **Stale frame** | A movie layer shown with a frame other than the one its play position is on: an older frame held while the decoder catches up (after a seek, a retrigger or a bounce turn) or falls behind. `/metrics` counts it as `staleFrames`, per layer in `layerStaleFrames`. |
+| **Stale frame** | A movie layer shown with a frame other than the one its play position is on: an older frame held while the decoder catches up (after a seek, such as a retrigger or a seek by in or out point, or a play mode switch) or falls behind. `/metrics` counts it as `staleFrames`, per layer in `layerStaleFrames`. |
 | **dBFS** | Decibels relative to full scale, for the LTC level meter: 0 is the loudest the input can take, −3 is close to clipping, −60 is silence. |
 | **Bonjour** | macOS's way of announcing services on the local network; Fanous appears as `_fanous._tcp` and `_https._tcp`. |
 | **TLS fingerprint** | The SHA-256 checksum of the engine's self-made certificate, shown under System › Network, to confirm a browser's certificate warning. |

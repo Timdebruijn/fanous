@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: the guide audited against main after the stability round: five fixture modes and the Timecode fixture's OSC
+  addresses, LTC still frames and frame checks, the timecode restart rule, stale-frame counts, sync slaves at once ends,
+  the stopped-twice reason on a layer, `audio.offsetMs`, message limits, the connection cap; known limitations gain
+  B409 B426 B430 B440 B445 B446 B470 B471 (PR #503)
 - Release: 1.0.0-rc.19 is on GitHub as a pre-release with the signed, notarized dmg, built from main 59c1f2e
   (PR #501).
 
@@ -153,12 +157,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   still restarts it (B289) (PR #460).
 - Audio: a layer's audio clock is stamped with the tick's target, the time its frame is shown, not the time of the
   tick (B320); its clock ran that lead (about 16.7 ms at 60 Hz) ahead of the picture. The decoder never takes its
-  clock before the target, so a cue to an in point plays nothing from before it. The output path's own latency is
-  still not compensated (B406) (PR #457).
+  clock before the target, so a cue to an in point plays nothing from before it (PR #457).
 - Audio: a drift correction is spread over the callback instead of a hard drop or repeat (B321). Up to 2 ms more or
   fewer of the ring is resampled by linear interpolation over the whole callback, so the waveform has no jump; the
   old cut of up to 96 frames clicked on every correction (PR #461).
-  clock before the target, so a cue to an in point plays nothing from before it (PR #457).
 - Playback: the frame a layer keeps showing across a seek is the playback's own, exchanged with the drained ring
   slot, not the slot itself (B386). After the ring drained,
   the decode thread could refill that slot with the frame after the seek while the compositor was still drawing it in

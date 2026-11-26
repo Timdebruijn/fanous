@@ -47,7 +47,9 @@ Fanous Library/
 | Folder 0 | Not on disk: built-in content and live inputs ([Built-in content](reference/built-in-content.md)) |
 
 A layer that points at a number that does not exist, or at a file that is
-not playable, reads "no file N in folder M" in red on the Layers screen.
+not playable, reads "no file N in folder M" in red on the Layers screen; at
+a file listed as stopping the engine twice it reads the file's name and
+that reason.
 
 ![The Media screen: the folder list on the left, the files of folder 1 as tiles, the ingest queue below](images/media.png)
 
@@ -246,9 +248,9 @@ for a movie in a codec Fanous cannot decode, such as H.264) and caches both unde
 then, and a layer pointing at the file shows "no file" until the probe is
 done. The same thumbnails go to a console over CITP and stand in on the
 Layers screen for a layer that shows nothing. A file that changes, moves or
-is renamed is probed again. A file the engine stopped on while reading it
-(a crash, or a power cut) is read once more at the next start; after the
-second time it is listed as unreadable and not read again until it changes,
+is renamed is probed again. A file the engine stopped on while reading it, while a layer opened it or
+while it was decoded as an image mask (a crash, or a power cut) is read once
+more at the next start; after the second time it is listed as unreadable and not read again until it changes,
 so a file that crashes the engine while it is read cannot keep it from starting (a still used as an image mask that
 is listed so is treated as a missing mask). After an update that rewords the reasons, every file that is not playable
 (needs transcode, unreadable) is probed again once and shows "probing…" until then; playable files and files listed
@@ -263,7 +265,14 @@ then.
 ## Audio
 
 A movie's audio plays on the Mac's default output device in one stereo mix
-with every other layer: no device choice, no routing. Per layer, the Audio
+with every other layer: no device choice, no routing. The sound is timed to
+when it is heard: the latency the output device reports is taken off (the
+log's "audio output opened" line names it), so AirPlay and Bluetooth play
+too. A display or LED processor that delays the picture is covered by
+`audio.offsetMs` in `settings.json` (−200 to +200 ms, positive plays the
+sound later, read at engine start); set it after a clap check, and see the
+[known limitations](reference/known-limitations.md#media-and-inputs) for
+what a positive offset does to a cut. Per layer, the Audio
 volume channel (48, 0 by default, so a clip is silent until the console or a
 cue raises it) and Audio pan (49) apply, and a dissolve crossfades the sound
 with the picture; the layer's intensity does not change the volume. A file
