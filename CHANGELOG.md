@@ -13,7 +13,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Docs: the guide audited against main after the stability round: five fixture modes and the Timecode fixture's OSC
   addresses, LTC still frames and frame checks, the timecode restart rule, stale-frame counts, sync slaves at once ends,
   the stopped-twice reason on a layer, `audio.offsetMs`, message limits, the connection cap; known limitations gain
-  B409 B426 B430 B440 B445 B446 B470 B471 (PR #N)
+  B409 B426 B430 B440 B445 B446 B470 B471 (PR #503)
 - Release: 1.0.0-rc.19 is on GitHub as a pre-release with the signed, notarized dmg, built from main 59c1f2e
   (PR #501).
 
