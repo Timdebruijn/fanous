@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: screenshots retaken for the show mode popover, the refused-command banner, two Patch screen layer groups and
+  the content template (PR #N).
 - Release: 1.0.0-rc.19 is on GitHub as a pre-release with the signed, notarized dmg, built from main 59c1f2e
   (PR #501).
 
